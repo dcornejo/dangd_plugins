@@ -1,0 +1,17 @@
+{
+  "Dhcp6": {
+    "interfaces-config": {"interfaces": ["dangkea0"]},
+    "control-sockets": [{
+      "socket-type": "unix",
+      "socket-name": "/var/run/kea/kea6-ctrl-socket"
+    }],
+    "lease-database": {"type": "memfile", "persist": false},
+    "preferred-lifetime": 300,
+    "valid-lifetime": 600,
+    "loggers": [{
+      "name": "kea-dhcp6",
+      "severity": "INFO",
+      "output-options": [{"output": "stderr"}]
+    }]
+  }
+}

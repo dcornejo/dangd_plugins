@@ -1,0 +1,19 @@
+{
+  "Dhcp4": {
+    "interfaces-config": {
+      "interfaces": ["dangkea0"],
+      "dhcp-socket-type": "udp"
+    },
+    "control-sockets": [{
+      "socket-type": "unix",
+      "socket-name": "/var/run/kea/kea4-ctrl-socket"
+    }],
+    "lease-database": {"type": "memfile", "persist": false},
+    "valid-lifetime": 600,
+    "loggers": [{
+      "name": "kea-dhcp4",
+      "severity": "INFO",
+      "output-options": [{"output": "stderr"}]
+    }]
+  }
+}

@@ -1,0 +1,29 @@
+// Copyright 2026 David Cornejo
+// SPDX-License-Identifier: Apache-2.0
+
+module dang-plugins-example {
+  yang-version 1.1;
+  namespace "urn:dang:plugins:example";
+  prefix dpe;
+
+  revision 2026-08-25 {
+    description
+      "Initial external plugin example.";
+  }
+
+  container example-settings {
+    description
+      "Configuration implemented by the external example plugin.";
+
+    leaf mode {
+      type enumeration {
+        enum active;
+        enum reject;
+      }
+      default active;
+      description
+        "Demonstration mode. The provider rejects the reject value to show
+         implementation-specific validation and error attribution.";
+    }
+  }
+}
