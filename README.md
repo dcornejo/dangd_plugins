@@ -46,6 +46,8 @@ For an installed development package, omit `DANGD_ROOT` when
 `dangd/plugin_api.h` is already on CMake's search path, or set
 `DANGD_INCLUDE_DIR` directly.
 
+Native Debian and FreeBSD package generation is documented in `PACKAGING.md`.
+
 The example produces `dangd_example_external_plugin.so` on ELF systems or the
 corresponding module suffix on another supported POSIX platform. Load it with:
 

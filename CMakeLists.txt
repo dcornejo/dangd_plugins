@@ -181,9 +181,14 @@ install(FILES
   plugins/system/models/ietf-system@2014-08-06.yang
   plugins/system/models/iana-crypt-hash@2014-08-06.yang
   DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules")
+install(FILES LICENSE README.md CHANGELOG.md PACKAGING.md
+  plugins/kea/README.md plugins/system/README.md
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/dangd-plugins")
 if(TARGET dangd_system_plugin)
   install(TARGETS dangd_system_plugin
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/dangd/plugins")
   install(TARGETS pam_dangd
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/security")
 endif()
+
+include(packaging/Packaging.cmake)

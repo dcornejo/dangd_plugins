@@ -9,6 +9,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added native Debian and FreeBSD package generation for the plugin collection,
+  YANG models, and PAM module, with explicit dangd dependencies and deployment
+  documentation that leaves PAM, SSH, Kea, and daemon activation under
+  administrator control.
 - Created the independent `dang_plugins` repository.
 - Added a buildable ABI-v1 example with an embedded YANG source, retained
   transaction state, validation failure attribution, apply, and rollback.
