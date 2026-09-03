@@ -47,6 +47,12 @@ file(READ plugins/kea/models/kea-dhcp6-server@2026-06-24.yang KEA_DHCP6_YANG)
 configure_file(plugins/kea/src/kea_model_sources.h.in
   generated/kea_model_sources.h @ONLY)
 
+file(READ plugins/system/models/ietf-system@2014-08-06.yang IETF_SYSTEM_YANG)
+file(READ plugins/system/models/iana-crypt-hash@2014-08-06.yang
+  IANA_CRYPT_HASH_YANG)
+configure_file(plugins/system/src/system_model_sources.h.in
+  generated/system_model_sources.h @ONLY)
+
 add_library(dangd_kea_plugin MODULE
   plugins/kea/src/kea_adapter.cc
   plugins/kea/src/kea_plugin.cc)
@@ -59,6 +65,44 @@ target_link_libraries(dangd_kea_plugin PRIVATE
 target_compile_options(dangd_kea_plugin PRIVATE
   -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 set_target_properties(dangd_kea_plugin PROPERTIES PREFIX "")
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(DANG_SYSTEM_PLATFORM_SOURCE
+      plugins/system/src/linux/platform_linux.cc)
+    find_library(DANG_CRYPT_LIBRARY crypt REQUIRED)
+  else()
+    set(DANG_SYSTEM_PLATFORM_SOURCE
+      plugins/system/src/freebsd/platform_freebsd.cc)
+    find_library(DANG_CRYPT_LIBRARY crypt REQUIRED)
+  endif()
+  add_library(dangd_system_plugin MODULE
+    plugins/system/src/auth_server.cc
+    plugins/system/src/platform.cc
+    plugins/system/src/system_config.cc
+    plugins/system/src/system_plugin.cc
+    ${DANG_SYSTEM_PLATFORM_SOURCE})
+  target_compile_features(dangd_system_plugin PRIVATE cxx_std_20)
+  target_include_directories(dangd_system_plugin PRIVATE
+    "${DANGD_INCLUDE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(dangd_system_plugin PRIVATE
+    LibXml2::LibXml2 ${DANG_CRYPT_LIBRARY})
+  target_compile_options(dangd_system_plugin PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  set_target_properties(dangd_system_plugin PROPERTIES PREFIX "")
+
+  find_path(DANG_PAM_INCLUDE_DIR security/pam_modules.h REQUIRED)
+  find_library(DANG_PAM_LIBRARY pam REQUIRED)
+  add_library(pam_dangd MODULE pam/pam_dangd.cc)
+  target_compile_features(pam_dangd PRIVATE cxx_std_20)
+  target_include_directories(pam_dangd PRIVATE
+    "${DANG_PAM_INCLUDE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(pam_dangd PRIVATE "${DANG_PAM_LIBRARY}")
+  target_compile_options(pam_dangd PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  set_target_properties(pam_dangd PROPERTIES PREFIX "")
+endif()
 
 if(BUILD_TESTING)
   add_executable(plugin_loader_smoke_test tests/plugin_loader_smoke_test.cc)
@@ -86,6 +130,31 @@ if(BUILD_TESTING)
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME kea_xml_to_control_json COMMAND kea_adapter_test)
 
+  if(TARGET dangd_system_plugin)
+    add_test(NAME system_plugin_discovery
+      COMMAND plugin_loader_smoke_test $<TARGET_FILE:dangd_system_plugin>
+        ietf-system ietf-system)
+    add_executable(system_config_test
+      tests/system_config_test.cc plugins/system/src/system_config.cc)
+    target_compile_features(system_config_test PRIVATE cxx_std_20)
+    target_include_directories(system_config_test PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(system_config_test PRIVATE
+      LibXml2::LibXml2 ${DANG_CRYPT_LIBRARY})
+    target_compile_options(system_config_test PRIVATE
+      -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    add_test(NAME system_configuration_translation COMMAND system_config_test)
+    add_executable(system_plugin_integration_test
+      tests/system_plugin_integration_test.cc)
+    target_compile_features(system_plugin_integration_test PRIVATE cxx_std_20)
+    target_include_directories(system_plugin_integration_test PRIVATE
+      "${DANGD_INCLUDE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(system_plugin_integration_test PRIVATE
+      "${CMAKE_DL_LIBS}" "${DANG_PAM_LIBRARY}")
+    target_compile_options(system_plugin_integration_test PRIVATE
+      -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  endif()
+
   add_executable(kea_plugin_integration_test
     tests/kea_plugin_integration_test.cc)
   target_compile_features(kea_plugin_integration_test PRIVATE cxx_std_20)
@@ -108,3 +177,13 @@ install(FILES
   plugins/kea/models/kea-dhcp4-server@2026-06-24.yang
   plugins/kea/models/kea-dhcp6-server@2026-06-24.yang
   DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules")
+install(FILES
+  plugins/system/models/ietf-system@2014-08-06.yang
+  plugins/system/models/iana-crypt-hash@2014-08-06.yang
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules")
+if(TARGET dangd_system_plugin)
+  install(TARGETS dangd_system_plugin
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/dangd/plugins")
+  install(TARGETS pam_dangd
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/security")
+endif()

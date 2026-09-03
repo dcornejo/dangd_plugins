@@ -1,0 +1,4 @@
+<config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"
+        xmlns:sys="urn:ietf:params:xml:ns:yang:ietf-system">
+  <sys:system/>
+</config>

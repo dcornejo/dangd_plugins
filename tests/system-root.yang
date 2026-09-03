@@ -1,0 +1,14 @@
+// Copyright 2026 David Cornejo
+// SPDX-License-Identifier: Apache-2.0
+
+module system-root {
+  yang-version 1.1;
+  namespace "urn:dang:tests:system-root";
+  prefix root;
+
+  import ietf-system { prefix sys; }
+
+  revision 2026-08-26 {
+    description "RFC 7317 plugin validation root.";
+  }
+}

@@ -1,0 +1,33 @@
+<config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"
+        xmlns:sys="urn:ietf:params:xml:ns:yang:ietf-system">
+  <sys:system>
+    <sys:contact>Operations</sys:contact>
+    <sys:hostname>dang-system-test</sys:hostname>
+    <sys:location>isolated validation root</sys:location>
+    <sys:clock><sys:timezone-utc-offset>-330</sys:timezone-utc-offset></sys:clock>
+    <sys:ntp>
+      <sys:enabled>true</sys:enabled>
+      <sys:server>
+        <sys:name>documentation</sys:name>
+        <sys:udp><sys:address>192.0.2.123</sys:address></sys:udp>
+        <sys:association-type>server</sys:association-type>
+        <sys:iburst>true</sys:iburst>
+      </sys:server>
+    </sys:ntp>
+    <sys:dns-resolver>
+      <sys:search>example.test</sys:search>
+      <sys:server>
+        <sys:name>documentation</sys:name>
+        <sys:udp-and-tcp><sys:address>192.0.2.53</sys:address></sys:udp-and-tcp>
+      </sys:server>
+      <sys:options><sys:timeout>2</sys:timeout><sys:attempts>1</sys:attempts></sys:options>
+    </sys:dns-resolver>
+    <sys:authentication>
+      <sys:user-authentication-order>sys:local-users</sys:user-authentication-order>
+      <sys:user>
+        <sys:name>alice</sys:name>
+        <sys:password>$6$dangtest$IvFCQOzNCVuN8EQr3eZgj91mObsVhDznFFd805A8gCz.tSc8SFg0Lu6mfeus6L2CiFcl8LVMTaLad6X1YbyWE.</sys:password>
+      </sys:user>
+    </sys:authentication>
+  </sys:system>
+</config>

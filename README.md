@@ -75,3 +75,7 @@ transaction, and worker-recovery contract.
 - `example` is the minimal ABI-v1 development template.
 - `kea` implements the pinned Kea DHCPv4 and DHCPv6 YANG models through native
   local control sockets and includes isolated Linux and FreeBSD interactions.
+- `system` implements RFC 7317 system identity, hostname, clock/timezone, NTP,
+  DNS, local authentication, platform state, and control RPCs. It also supplies
+  the root-only verifier used by `pam_dangd`; its explicit compliance gaps are
+  maintained in `plugins/system/README.md`.

@@ -20,3 +20,17 @@ All notable changes to the external dangd plugin collection are recorded here.
   bounded UNIX control communication, two-server validation and apply, partial
   failure compensation, rollback, translation tests, and native isolated
   interactions on Ubuntu 26.04 and FreeBSD 16-CURRENT.
+- Added the RFC 7317 `ietf-system` plugin with official embedded models,
+  transactional Linux and FreeBSD hostname, timezone, NTP, and static DNS
+  backends, local-user password verification, platform/clock operational
+  state, and guarded system-control RPCs.
+- Added `pam_dangd`, a fail-closed PAM password module using a bounded,
+  root-peer-only UNIX verification service owned by the supervised plugin.
+- Added native Linux and FreeBSD integration tests covering successful and
+  failed authentication through PAM, system configuration application,
+  operational state, and rollback without using any network interface.
+
+### Changed
+
+- Updated the shared plugin loader smoke test to discover and validate every
+  currently supported dangd plugin ABI version rather than ABI v1 only.
