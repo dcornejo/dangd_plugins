@@ -75,7 +75,9 @@ not a PAM operation and remains separate.
    by dangd's embedded SSH server or an OpenSSH `AuthorizedKeysCommand` helper.
 4. The PAM verifier receives the applied user set after the first successful
    transaction involving `ietf-system`. The plugin ABI does not currently
-   hydrate a plugin with the initial running configuration at daemon startup.
+   hydrate a plugin with the initial or restored running configuration at
+   daemon startup. This is tracked with configuration lifecycle work in the
+   main dang `TODO.md`.
 5. Linux systems whose `/etc/resolv.conf` is a resolver-manager symbolic link
    are rejected to avoid breaking systemd-resolved or resolvconf ownership.
    Native manager APIs are not implemented. Static resolver files work on both
@@ -121,3 +123,7 @@ sudo tests/platform/freebsd/run_system_isolated.sh "$PWD"
 Each script checks successful and failed password authentication through the
 host PAM framework, verifies generated DNS and NTP files, reads live platform
 state, rolls the transaction back, and removes its temporary PAM policy.
+
+Native packages install this plugin and `pam_dangd`, but deliberately do not
+enable a PAM policy or alter sshd. The administrator must opt into the local
+verification path described above.

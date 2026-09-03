@@ -36,5 +36,7 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Refreshed collection-wide documentation for native packaging, RFC 7317
+  startup hydration, PAM opt-in behavior, and current deployment boundaries.
 - Updated the shared plugin loader smoke test to discover and validate every
   currently supported dangd plugin ABI version rather than ABI v1 only.

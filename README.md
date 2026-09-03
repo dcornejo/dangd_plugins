@@ -47,6 +47,8 @@ For an installed development package, omit `DANGD_ROOT` when
 `DANGD_INCLUDE_DIR` directly.
 
 Native Debian and FreeBSD package generation is documented in `PACKAGING.md`.
+Packages install plugins and models but do not enable PAM, modify sshd,
+configure Kea, or start dangd.
 
 The example produces `dangd_example_external_plugin.so` on ELF systems or the
 corresponding module suffix on another supported POSIX platform. Load it with:
