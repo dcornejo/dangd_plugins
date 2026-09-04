@@ -15,6 +15,10 @@ All notable changes to the external dangd plugin collection are recorded here.
   read-only diagnostic mode without changing FRR configuration. Publication is
   initially scoped to the provider-owned `/frr-zebra:zebra` root so broad
   replies cannot collide with core or other plugins' operational trees.
+- Added ownership-preserving publication of zebra augments beneath imported
+  `frr-interface` and `frr-vrf` lists. The filter retains only list keys and
+  `frr-zebra` subtrees, preventing unrelated parent-module state from being
+  claimed by the routing provider.
 - Added the FRR provider's bounded installed-schema inventory and transitive
   import-closure resolver. It selects one version-consistent Linux or FreeBSD
   YANG directory, rejects malformed, duplicate, oversized, and incomplete

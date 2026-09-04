@@ -12,6 +12,7 @@
 #include "dangd/plugin_api.h"
 
 #include "frr_config.h"
+#include "frr_operational.h"
 #include "frr_transaction.h"
 #include "mgmtd_session.h"
 #include "mgmtd_transport.h"
@@ -214,18 +215,40 @@ int Operational(void* raw, DangOperationalDataV1* result,
   auto session = dang::plugins::frr::mgmtd::Session::Open(
       std::move(transport), client, "dangd-frr-operational", &callback_error);
   if (!session) return Fail(error, callback_error, "/");
-  // Publish only the implemented top-level zebra state. A broad /* request
-  // also returns mgmtd's own YANG-library and imported-module state, which this
-  // provider does not own and which would collide with dangd core providers.
-  auto xml = session->GetOperationalData("/frr-zebra:zebra", &callback_error);
+  std::vector<std::string> fragments;
+  auto zebra = session->GetOperationalData("/frr-zebra:zebra", &callback_error);
+  if (zebra && !zebra->empty()) fragments.push_back(std::move(*zebra));
+  for (const auto& [xpath, descriptor] : {
+           std::pair{
+               "/frr-interface:lib",
+               dang::plugins::frr::AugmentedList{
+                   "http://frrouting.org/yang/interface", "lib", "interface",
+                   {"name", "vrf"}}},
+           std::pair{
+               "/frr-vrf:lib",
+               dang::plugins::frr::AugmentedList{
+                   "http://frrouting.org/yang/vrf", "lib", "vrf", {"name"}}}}) {
+    if (!zebra) break;
+    auto imported = session->GetOperationalData(xpath, &callback_error);
+    if (!imported) {
+      zebra.reset();
+      break;
+    }
+    if (imported->empty()) continue;
+    auto filtered = dang::plugins::frr::ExtractZebraAugments(
+        *imported, descriptor, &callback_error);
+    if (!filtered) {
+      zebra.reset();
+      break;
+    }
+    if (!filtered->empty()) fragments.push_back(std::move(*filtered));
+  }
   std::string close_error;
   const bool closed = session->Close(&close_error);
-  if (!xml)
+  if (!zebra)
     return Fail(error, callback_error, "/frr-routing:routing");
   if (!closed) return Fail(error, close_error, "/");
-  operational_xml = xml->empty()
-      ? "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\"/>"
-      : std::move(*xml);
+  operational_xml = dang::plugins::frr::OperationalDocument(fragments);
   result->data_xml = operational_xml.c_str();
   return 1;
 }

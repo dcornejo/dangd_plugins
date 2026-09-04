@@ -90,6 +90,7 @@ set_target_properties(dangd_kea_plugin PROPERTIES PREFIX "")
 
 add_library(dangd_frr_plugin MODULE
   plugins/frr/src/frr_config.cc
+  plugins/frr/src/frr_operational.cc
   plugins/frr/src/frr_plugin.cc
   plugins/frr/src/frr_transaction.cc
   plugins/frr/src/mgmtd_session.cc
@@ -264,6 +265,18 @@ if(BUILD_TESTING)
   target_compile_options(frr_config_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME frr_snapshot_root_extraction COMMAND frr_config_test)
+
+  add_executable(frr_operational_test
+    tests/frr_operational_test.cc
+    plugins/frr/src/frr_operational.cc)
+  target_compile_features(frr_operational_test PRIVATE cxx_std_20)
+  target_include_directories(frr_operational_test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(frr_operational_test PRIVATE
+    LibXml2::LibXml2 GTest::gtest_main)
+  target_compile_options(frr_operational_test PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME frr_operational_augment_ownership COMMAND frr_operational_test)
 
   add_executable(frr_plugin_discovery_test tests/frr_plugin_discovery_test.cc)
   target_compile_features(frr_plugin_discovery_test PRIVATE cxx_std_20)

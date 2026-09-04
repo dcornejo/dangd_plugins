@@ -44,15 +44,16 @@ uncommitted edits. Wiring this orchestration into ABI v7 and extracting the FRR
 subtrees from dangd snapshots are converted to atomic root replace/delete
 edits.
 
-The provider retrieves the implemented top-level `/frr-zebra:zebra` state from
-FRR's operational datastore with native `GET_DATA` and publishes the XML
-through dangd's operational callback. It deliberately avoids a broad `/*`
-request, which also returns mgmtd and imported-module trees owned by other
-providers. Message type, request and session correlation, XML format,
-partial-error status, and continuation state are checked before any bytes reach
-dangd. A partial result fails the retrieval rather than presenting an
-incomplete tree as authoritative. State supplied by `frr-zebra` augments below
-imported `frr-interface` and `frr-vrf` roots remains future work.
+The provider retrieves the implemented top-level `/frr-zebra:zebra` state and
+zebra augments below `/frr-interface:lib` and `/frr-vrf:lib` from FRR's
+operational datastore with native `GET_DATA`. For augmented lists it retains
+only the parent keys needed to identify each instance and children in the
+`frr-zebra` namespace; base interface and VRF state remains owned by those
+modules. It deliberately avoids a broad `/*` request, which also returns mgmtd
+and YANG-library trees owned by other providers. Message type, request and
+session correlation, XML format, partial-error status, and continuation state
+are checked before any bytes reach dangd. A partial result fails the retrieval
+rather than presenting an incomplete tree as authoritative.
 
 Applied-state reconciliation, drift detection, RPCs, notifications, FRR
 feature discovery, and protocols beyond zebra/staticd are not yet implemented.
