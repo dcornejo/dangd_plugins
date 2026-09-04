@@ -56,6 +56,8 @@ bool ValidString(std::string_view value) {
 bool KnownCode(Code code) {
   switch (code) {
     case Code::kError:
+    case Code::kTreeData:
+    case Code::kGetData:
     case Code::kEdit:
     case Code::kEditReply:
     case Code::kSessionRequest:
@@ -146,6 +148,24 @@ std::vector<std::byte> Commit(std::uint64_t session_id,
   return output;
 }
 
+std::vector<std::byte> GetData(std::uint64_t session_id,
+                               std::uint64_t request_id,
+                               Datastore datastore, bool include_state,
+                               bool include_config, std::string_view xpath,
+                               DefaultsMode defaults) {
+  if (!ValidString(xpath)) return {};
+  auto output = Message(Code::kGetData, session_id, request_id, 0,
+                        8 + xpath.size() + 1);
+  if (output.empty()) return {};
+  output[32] = std::byte{1};  // LYD_XML / MGMT_MSG_FORMAT_XML.
+  output[33] = static_cast<std::byte>((include_state ? 0x01 : 0) |
+                                     (include_config ? 0x02 : 0));
+  output[34] = static_cast<std::byte>(defaults);
+  output[35] = static_cast<std::byte>(datastore);
+  AppendString(&output, 40, xpath);
+  return output;
+}
+
 std::optional<DecodedFrame> Decode(std::span<const std::byte> frame,
                                    std::string* error) {
   if (frame.size() < kFrameHeaderBytes + kFixedMessageBytes) {
@@ -191,6 +211,40 @@ std::optional<std::string> ErrorText(const DecodedFrame& frame,
     return std::nullopt;
   }
   return std::string(bytes + 8, text_bytes - 1);
+}
+
+std::optional<TreeDataResult> TreeData(const DecodedFrame& frame,
+                                       std::string* error) {
+  if (frame.header.code != Code::kTreeData || frame.body.size() < 8) {
+    if (error) *error = "mgmtd tree-data reply has an invalid fixed body";
+    return std::nullopt;
+  }
+  const auto partial_error = std::to_integer<std::int8_t>(frame.body[0]);
+  if (partial_error != 0) {
+    if (error)
+      *error = "mgmtd returned partial operational data (error " +
+               std::to_string(partial_error) + ")";
+    return std::nullopt;
+  }
+  if (frame.body[1] != std::byte{1}) {
+    if (error) *error = "mgmtd tree-data reply is not XML";
+    return std::nullopt;
+  }
+  if (frame.body[2] != std::byte{0} && frame.body[2] != std::byte{1}) {
+    if (error) *error = "mgmtd tree-data continuation flag is invalid";
+    return std::nullopt;
+  }
+  const auto* data = reinterpret_cast<const char*>(frame.body.data() + 8);
+  std::size_t size = frame.body.size() - 8;
+  // FRR's native serializer includes a conventional terminal NUL in the
+  // result length. Treat it as framing, while rejecting any earlier NUL that
+  // could truncate the XML seen by dangd.
+  if (size > 0 && data[size - 1] == '\0') --size;
+  if (std::memchr(data, '\0', size) != nullptr) {
+    if (error) *error = "mgmtd XML tree-data contains an embedded NUL";
+    return std::nullopt;
+  }
+  return TreeDataResult{std::string(data, size), frame.body[2] == std::byte{1}};
 }
 
 }  // namespace dang::plugins::frr::mgmtd

@@ -49,6 +49,9 @@ class Session : public SessionOperations {
   bool ApplyCandidate(std::string* error) override;
   bool AbortCandidate(std::string* error) override;
   bool UnlockCandidate(std::string* error) override;
+  /** Retrieves a complete live operational XML tree for xpath. */
+  std::optional<std::string> GetOperationalData(std::string_view xpath,
+                                                std::string* error);
   bool Close(std::string* error) override;
 
   std::uint64_t id() const { return session_id_; }

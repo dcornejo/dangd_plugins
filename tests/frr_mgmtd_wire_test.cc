@@ -17,6 +17,11 @@ Value Load(const std::vector<std::byte>& bytes, std::size_t offset) {
   return value;
 }
 
+template <typename Value>
+void Store(std::vector<std::byte>* bytes, std::size_t offset, Value value) {
+  std::memcpy(bytes->data() + offset, &value, sizeof(value));
+}
+
 TEST(FrrMgmtdWireTest, EncodesSessionLockEditAndCommitLayouts) {
   const auto session = SessionCreate(41, "dangd-frr");
   EXPECT_EQ(Load<std::uint32_t>(session, 0), kNativeMarker);
@@ -58,6 +63,49 @@ TEST(FrrMgmtdWireTest, EncodesSessionLockEditAndCommitLayouts) {
   EXPECT_EQ(commit[32], std::byte{2});
   EXPECT_EQ(commit[33], std::byte{1});
   EXPECT_EQ(commit[34], std::byte{2});
+
+  const auto get = GetData(82, 9, Datastore::kOperational, true, false,
+                           "/*", DefaultsMode::kExplicit);
+  EXPECT_EQ(Load<std::uint16_t>(get, 8),
+            static_cast<std::uint16_t>(Code::kGetData));
+  EXPECT_EQ(get[32], std::byte{1});
+  EXPECT_EQ(get[33], std::byte{1});
+  EXPECT_EQ(get[34], std::byte{0});
+  EXPECT_EQ(get[35], std::byte{3});
+  EXPECT_STREQ(reinterpret_cast<const char*>(get.data() + 40), "/*");
+}
+
+TEST(FrrMgmtdWireTest, DecodesCompleteXmlTreeData) {
+  auto frame = GetData(82, 9, Datastore::kOperational, true, false, "/*");
+  Store(&frame, 8, static_cast<std::uint16_t>(Code::kTreeData));
+  const std::string xml = "<routing xmlns=\"http://frrouting.org/yang/routing\"/>";
+  frame.resize(40 + xml.size() + 1);
+  Store(&frame, 4, static_cast<std::uint32_t>(frame.size()));
+  frame[32] = std::byte{0};
+  frame[33] = std::byte{1};
+  frame[34] = std::byte{0};
+  std::memcpy(frame.data() + 40, xml.data(), xml.size());
+  frame.back() = std::byte{0};
+  std::string error;
+  auto decoded = Decode(frame, &error);
+  ASSERT_TRUE(decoded) << error;
+  auto result = TreeData(*decoded, &error);
+  ASSERT_TRUE(result) << error;
+  EXPECT_EQ(result->xml, xml);
+  EXPECT_FALSE(result->more);
+
+  frame[41] = std::byte{0};
+  decoded = Decode(frame, &error);
+  ASSERT_TRUE(decoded);
+  EXPECT_FALSE(TreeData(*decoded, &error));
+  EXPECT_NE(error.find("embedded NUL"), std::string::npos);
+  frame[41] = static_cast<std::byte>(xml[1]);
+
+  frame[32] = std::byte{5};
+  decoded = Decode(frame, &error);
+  ASSERT_TRUE(decoded);
+  EXPECT_FALSE(TreeData(*decoded, &error));
+  EXPECT_NE(error.find("partial"), std::string::npos);
 }
 
 TEST(FrrMgmtdWireTest, DecodesAndValidatesCompleteFrames) {

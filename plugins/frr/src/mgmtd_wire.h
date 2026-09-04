@@ -24,6 +24,8 @@ constexpr std::size_t kMaximumFrameBytes = 16 * 1024 * 1024;
 /** Native message codes used by the supported session/edit transaction slice. */
 enum class Code : std::uint16_t {
   kError = 0,
+  kTreeData = 2,
+  kGetData = 3,
   kEdit = 5,
   kEditReply = 6,
   kSessionRequest = 10,
@@ -32,6 +34,14 @@ enum class Code : std::uint16_t {
   kLockReply = 20,
   kCommit = 21,
   kCommitReply = 22,
+};
+
+/** RFC 6243 default-reporting modes accepted by FRR GET_DATA. */
+enum class DefaultsMode : std::uint8_t {
+  kExplicit = 0,
+  kTrim = 1,
+  kAll = 2,
+  kAllTagged = 3,
 };
 
 enum class Datastore : std::uint8_t {
@@ -68,6 +78,12 @@ struct DecodedFrame {
   std::span<const std::byte> body;
 };
 
+/** Validated view of one XML TREE_DATA reply body. */
+struct TreeDataResult {
+  std::string xml;
+  bool more = false;
+};
+
 /** Message builders below return one complete length-prefixed native frame. */
 std::vector<std::byte> SessionCreate(std::uint64_t client_id,
                                      std::string_view client_name);
@@ -87,6 +103,12 @@ std::vector<std::byte> Commit(std::uint64_t session_id,
                               std::uint64_t request_id, Datastore source,
                               Datastore target, CommitAction action,
                               bool unlock);
+/** Requests config and/or state data rooted at an FRR schema XPath. */
+std::vector<std::byte> GetData(std::uint64_t session_id,
+                               std::uint64_t request_id,
+                               Datastore datastore, bool include_state,
+                               bool include_config, std::string_view xpath,
+                               DefaultsMode defaults = DefaultsMode::kExplicit);
 
 // Decodes exactly one complete frame. FRR's native local protocol uses host
 // byte order and natural C layout; it is therefore intentionally limited to a
@@ -95,6 +117,9 @@ std::optional<DecodedFrame> Decode(std::span<const std::byte> frame,
                                    std::string* error);
 std::optional<std::string> ErrorText(const DecodedFrame& frame,
                                      std::string* error);
+/** Decodes a successful XML TREE_DATA body and rejects partial results. */
+std::optional<TreeDataResult> TreeData(const DecodedFrame& frame,
+                                       std::string* error);
 
 }  // namespace dang::plugins::frr::mgmtd
 

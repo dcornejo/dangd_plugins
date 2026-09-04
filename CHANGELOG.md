@@ -9,6 +9,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added live FRR operational-state publication through the native mgmtd
+  `GET_DATA`/`TREE_DATA` API. The codec and session layer require correlated,
+  complete XML results, reject partial or continued replies, and expose a
+  read-only diagnostic mode without changing FRR configuration. Publication is
+  initially scoped to the provider-owned `/frr-zebra:zebra` root so broad
+  replies cannot collide with core or other plugins' operational trees.
 - Added the FRR provider's bounded installed-schema inventory and transitive
   import-closure resolver. It selects one version-consistent Linux or FreeBSD
   YANG directory, rejects malformed, duplicate, oversized, and incomplete

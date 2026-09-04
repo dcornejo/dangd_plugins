@@ -79,6 +79,19 @@ void SuccessfulServer(int socket, std::vector<Code>* requests) {
       case Code::kCommit:
         reply_code = Code::kCommitReply;
         break;
+      case Code::kGetData: {
+        reply_code = Code::kTreeData;
+        const std::string xml =
+            "<routing xmlns=\"http://frrouting.org/yang/routing\"/>";
+        frame.resize(40 + xml.size() + 1);
+        Store(&frame, 4, static_cast<std::uint32_t>(frame.size()));
+        frame[32] = std::byte{0};
+        frame[33] = std::byte{1};
+        frame[34] = std::byte{0};
+        std::memcpy(frame.data() + 40, xml.data(), xml.size());
+        frame.back() = std::byte{0};
+        break;
+      }
       default:
         close(socket);
         return;
@@ -133,6 +146,26 @@ TEST(FrrMgmtdSessionTest, RejectsOutOfOrderOperationsLocally) {
   server.join();
   EXPECT_EQ(requests,
             std::vector<Code>({Code::kSessionRequest, Code::kSessionRequest}));
+}
+
+TEST(FrrMgmtdSessionTest, RetrievesLiveOperationalXml) {
+  int sockets[2]{-1, -1};
+  ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), 0);
+  std::vector<Code> requests;
+  std::thread server(SuccessfulServer, sockets[1], &requests);
+  std::string error;
+  auto transport = Transport::AdoptConnectedSocket(
+      sockets[0], std::chrono::seconds(1), &error);
+  auto session = Session::Open(std::move(transport), 79, "dangd-frr-test", &error);
+  ASSERT_TRUE(session) << error;
+  auto xml = session->GetOperationalData("/*", &error);
+  ASSERT_TRUE(xml) << error;
+  EXPECT_NE(xml->find("<routing"), std::string::npos);
+  EXPECT_TRUE(session->Close(&error)) << error;
+  server.join();
+  EXPECT_EQ(requests,
+            std::vector<Code>({Code::kSessionRequest, Code::kGetData,
+                               Code::kSessionRequest}));
 }
 
 }  // namespace

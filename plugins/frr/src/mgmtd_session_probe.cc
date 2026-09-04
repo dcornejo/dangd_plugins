@@ -8,12 +8,17 @@
 #include <chrono>
 #include <cstdint>
 #include <iostream>
+#include <optional>
+#include <string>
+#include <string_view>
 
 #include <unistd.h>
 
 int main(int argc, char** argv) {
-  if (argc != 2) {
-    std::cerr << "usage: frr-mgmtd-session-check SOCKET\n";
+  if (argc < 2 || argc > 4 ||
+      (argc >= 3 && std::string_view(argv[2]) != "--operational")) {
+    std::cerr <<
+        "usage: frr-mgmtd-session-check SOCKET [--operational [XPATH]]\n";
     return 2;
   }
   std::string error;
@@ -34,10 +39,23 @@ int main(int argc, char** argv) {
     return 1;
   }
   const std::uint64_t session_id = session->id();
+  std::optional<std::string> operational;
+  if (argc >= 3) {
+    operational = session->GetOperationalData(argc == 4 ? argv[3] : "/*",
+                                               &error);
+    if (!operational) {
+      std::cerr << error << '\n';
+      (void)session->Close(&error);
+      return 1;
+    }
+  }
   if (!session->Close(&error)) {
     std::cerr << error << '\n';
     return 1;
   }
-  std::cout << "created and destroyed mgmtd session " << session_id << '\n';
+  if (operational)
+    std::cout << *operational << '\n';
+  else
+    std::cout << "created and destroyed mgmtd session " << session_id << '\n';
   return 0;
 }

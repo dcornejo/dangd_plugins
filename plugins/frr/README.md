@@ -44,11 +44,20 @@ uncommitted edits. Wiring this orchestration into ABI v7 and extracting the FRR
 subtrees from dangd snapshots are converted to atomic root replace/delete
 edits.
 
-Operational data, applied-state reconciliation, drift detection, RPCs,
-notifications, FRR feature discovery, and protocols beyond zebra/staticd are
-not yet implemented. The plugin deliberately leaves the reconciliation and
-operational callbacks unset; it does not represent requested configuration as
-observed state.
+The provider retrieves the implemented top-level `/frr-zebra:zebra` state from
+FRR's operational datastore with native `GET_DATA` and publishes the XML
+through dangd's operational callback. It deliberately avoids a broad `/*`
+request, which also returns mgmtd and imported-module trees owned by other
+providers. Message type, request and session correlation, XML format,
+partial-error status, and continuation state are checked before any bytes reach
+dangd. A partial result fails the retrieval rather than presenting an
+incomplete tree as authoritative. State supplied by `frr-zebra` augments below
+imported `frr-interface` and `frr-vrf` roots remains future work.
+
+Applied-state reconciliation, drift detection, RPCs, notifications, FRR
+feature discovery, and protocols beyond zebra/staticd are not yet implemented.
+The operational callback publishes FRR's observed tree; it does not substitute
+requested configuration for observed state.
 
 ## Installation and configuration
 
@@ -115,6 +124,12 @@ sudo ./build/frr-mgmtd-session-check /var/run/frr/mgmtd_fe.sock
 
 The command creates and immediately destroys one frontend session. Socket
 access normally requires the FRR service account or root.
+
+Retrieve the live operational XML without changing FRR configuration:
+
+```sh
+sudo ./build/frr-mgmtd-session-check /var/run/frr/mgmtd_fe.sock --operational
+```
 
 On FreeBSD, ensure the package's runtime state directory exists before starting
 `mgmtd`; a missing directory produces an FRR startup warning and can prevent

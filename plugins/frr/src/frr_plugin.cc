@@ -96,6 +96,7 @@ struct Prepared {
 Context context;
 thread_local std::string callback_error;
 thread_local std::string callback_path;
+thread_local std::string operational_xml;
 
 int Fail(DangPluginErrorV1* error, std::string message,
          std::string path = "/frr-routing:routing") {
@@ -201,6 +202,34 @@ int Rollback(void*, void* raw, DangPluginErrorV1* error) {
 
 void Release(void*, void* raw) { delete static_cast<Prepared*>(raw); }
 
+int Operational(void* raw, DangOperationalDataV1* result,
+                DangPluginErrorV1* error) {
+  auto* owner = static_cast<Context*>(raw);
+  if (!result) return Fail(error, "FRR operational output is missing", "/");
+  auto transport = dang::plugins::frr::mgmtd::Transport::Connect(
+      owner->socket_path, owner->timeout, &callback_error);
+  if (!transport) return Fail(error, callback_error, "/");
+  std::uint64_t client = owner->next_client.fetch_add(1);
+  if (client == 0) client = owner->next_client.fetch_add(1);
+  auto session = dang::plugins::frr::mgmtd::Session::Open(
+      std::move(transport), client, "dangd-frr-operational", &callback_error);
+  if (!session) return Fail(error, callback_error, "/");
+  // Publish only the implemented top-level zebra state. A broad /* request
+  // also returns mgmtd's own YANG-library and imported-module state, which this
+  // provider does not own and which would collide with dangd core providers.
+  auto xml = session->GetOperationalData("/frr-zebra:zebra", &callback_error);
+  std::string close_error;
+  const bool closed = session->Close(&close_error);
+  if (!xml)
+    return Fail(error, callback_error, "/frr-routing:routing");
+  if (!closed) return Fail(error, close_error, "/");
+  operational_xml = xml->empty()
+      ? "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\"/>"
+      : std::move(*xml);
+  result->data_xml = operational_xml.c_str();
+  return 1;
+}
+
 std::size_t HardwareActionCount(void*, void*) { return 0; }
 int UnsupportedHardwareAction(void*, void*, std::size_t,
                               DangHardwareActionV1*, DangPluginErrorV1* error) {
@@ -216,29 +245,30 @@ const char* ResourceAt(void*, std::size_t index) {
 }
 
 const DangPluginV7 kPlugin{
-    {{{{{{DANG_PLUGIN_ABI_V7,
-          "dang-frr",
-          &context,
-          SourceCount,
-          SourceAt,
-          DependencyCount,
-          DependencyAt,
-          Prepare,
-          Validate,
-          Apply,
-          Rollback,
-          Release,
-          nullptr},
-         nullptr},
-        nullptr},
-       HardwareActionCount,
-       UnsupportedHardwareAction,
-       UnsupportedApplyAction,
-       UnsupportedApplyAction},
-      nullptr},
-     nullptr},
-    ResourceCount,
-    ResourceAt};
+    .v6 = {.v5 = {.v4 = {.v3 = {.v2 = {.v1 = {
+                                            .abi_version = DANG_PLUGIN_ABI_V7,
+                                            .plugin_name = "dang-frr",
+                                            .context = &context,
+                                            .yang_source_count = SourceCount,
+                                            .yang_source_at = SourceAt,
+                                            .dependency_count = DependencyCount,
+                                            .dependency_at = DependencyAt,
+                                            .prepare = Prepare,
+                                            .validate = Validate,
+                                            .apply = Apply,
+                                            .rollback = Rollback,
+                                            .release = Release,
+                                            .destroy = nullptr},
+                                        .invoke = nullptr},
+                                .get_operational_data = Operational},
+                        .hardware_action_count = HardwareActionCount,
+                        .hardware_action_at = UnsupportedHardwareAction,
+                        .apply_hardware_action = UnsupportedApplyAction,
+                        .rollback_hardware_action = UnsupportedApplyAction},
+                .get_operational_data_v2 = nullptr},
+           .reconcile_applied_configuration = nullptr},
+    .resource_domain_count = ResourceCount,
+    .resource_domain_at = ResourceAt};
 
 }  // namespace
 

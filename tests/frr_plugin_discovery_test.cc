@@ -49,6 +49,7 @@ int main(int argc, char** argv) {
       plugin->v6.v5.v4.v3.v2.v1.abi_version == DANG_PLUGIN_ABI_V7 &&
       std::string_view(plugin->v6.v5.v4.v3.v2.v1.plugin_name) == "dang-frr" &&
       plugin->resource_domain_count(plugin->v6.v5.v4.v3.v2.v1.context) == 1 &&
+      plugin->v6.v5.v4.v3.get_operational_data != nullptr &&
       std::string_view(plugin->resource_domain_at(
           plugin->v6.v5.v4.v3.v2.v1.context, 0)) == "routing";
   std::set<std::string> implemented;

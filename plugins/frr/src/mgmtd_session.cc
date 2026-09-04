@@ -203,6 +203,31 @@ bool Session::UnlockCandidate(std::string* error) {
   return true;
 }
 
+std::optional<std::string> Session::GetOperationalData(std::string_view xpath,
+                                                       std::string* error) {
+  if (candidate_locked_) {
+    if (error) *error = "cannot retrieve operational data while candidate is locked";
+    return std::nullopt;
+  }
+  auto request = NextRequest(error);
+  if (!request) return std::nullopt;
+  auto reply = transport_->Exchange(
+      GetData(session_id_, *request, Datastore::kOperational, true, false,
+              xpath),
+      Code::kTreeData, false, error);
+  if (!reply) return std::nullopt;
+  DecodedFrame frame{reply->header, reply->body};
+  auto result = TreeData(frame, error);
+  if (!result) return std::nullopt;
+  // The frontend currently aggregates backend chunks into one final reply. A
+  // continuation here cannot be consumed safely by Exchange's request model.
+  if (result->more) {
+    if (error) *error = "mgmtd returned an unsupported continued tree-data reply";
+    return std::nullopt;
+  }
+  return std::move(result->xml);
+}
+
 bool Session::Close(std::string* error) {
   if (!transport_ || session_id_ == 0) return true;
   if (candidate_locked_) {
