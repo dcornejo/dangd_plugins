@@ -19,6 +19,14 @@ with standard IETF imports packaged by libyang. The loader resolves a transitive
 import closure and rejects missing imports, duplicate modules, malformed input,
 and size-limit violations.
 
+Discovery then opens a short-lived mgmtd session and reads FRR's RFC 8525 YANG
+Library. Enabled `feature` values are copied into dangd's source descriptors,
+so the compiled schema matches the running daemon rather than every feature
+statement present in a source file. Startup fails closed if mgmtd is
+unavailable, a required module is absent, or its revision or namespace differs
+from the installed source. `DANG_FRR_YANG_LIBRARY_FILE` is a test-only seam for
+supplying a captured library document without a daemon.
+
 The loadable `dangd_frr_plugin` currently implements the `frr-routing`,
 `frr-staticd`, and `frr-zebra` configuration modules. It publishes their exact
 installed import closure and claims ABI-v7 resource domain `routing`, so dangd
@@ -55,8 +63,8 @@ session correlation, XML format, partial-error status, and continuation state
 are checked before any bytes reach dangd. A partial result fails the retrieval
 rather than presenting an incomplete tree as authoritative.
 
-RPCs, notifications, FRR feature discovery, and protocols beyond zebra/staticd
-are not yet implemented.
+RPCs, notifications, and protocols beyond zebra/staticd are not yet
+implemented.
 The operational callback publishes FRR's observed tree; it does not substitute
 requested configuration for observed state.
 

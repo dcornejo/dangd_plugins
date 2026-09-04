@@ -17,6 +17,9 @@ All notable changes to the external dangd plugin collection are recorded here.
   outside dangd. The provider retains reconciled roots, compares subsequent
   mgmtd running reads semantically, and reports drift with the affected model
   path through dangd's operational-provider failure telemetry.
+- Added runtime FRR feature discovery from mgmtd's RFC 8525 YANG Library. The
+  plugin advertises only daemon-enabled features and rejects installed-file
+  versus running-daemon revision or namespace skew during discovery.
 - Added live FRR operational-state publication through the native mgmtd
   `GET_DATA`/`TREE_DATA` API. The codec and session layer require correlated,
   complete XML results, reject partial or continued replies, and expose a

@@ -40,7 +40,18 @@ int main(int argc, char** argv) {
   Write(directory / "frr-zebra.yang",
         "module frr-zebra { namespace \"http://frrouting.org/yang/zebra\";"
         " prefix zebra; revision 2019-06-01; container zebra {} }");
+  const auto library_path = directory / "yang-library.xml";
+  Write(library_path, R"(<yang-library xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-library"><module-set>
+    <module><name>frr-routing</name><revision>2019-08-15</revision>
+      <namespace>http://frrouting.org/yang/routing</namespace></module>
+    <module><name>frr-staticd</name><revision>2019-12-03</revision>
+      <namespace>http://frrouting.org/yang/staticd</namespace></module>
+    <module><name>frr-zebra</name><revision>2019-06-01</revision>
+      <namespace>http://frrouting.org/yang/zebra</namespace>
+      <feature>ipv6-router-advertisements</feature></module>
+  </module-set></yang-library>)");
   setenv("DANG_FRR_YANG_DIR", directory.c_str(), 1);
+  setenv("DANG_FRR_YANG_LIBRARY_FILE", library_path.c_str(), 1);
   void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
   auto initialize = library ? reinterpret_cast<DangPluginInitV7>(
       dlsym(library, "dang_plugin_init_v7")) : nullptr;
@@ -54,6 +65,7 @@ int main(int argc, char** argv) {
       std::string_view(plugin->resource_domain_at(
           plugin->v6.v5.v4.v3.v2.v1.context, 0)) == "routing";
   std::set<std::string> implemented;
+  bool found_runtime_feature = false;
   if (valid) {
     const DangPluginV1& base = plugin->v6.v5.v4.v3.v2.v1;
     for (std::size_t index = 0; index < base.yang_source_count(base.context);
@@ -66,8 +78,13 @@ int main(int argc, char** argv) {
       }
       if (source.role == DANG_YANG_IMPLEMENTED_V1)
         implemented.emplace(source.module_name);
+      if (std::string_view(source.module_name) == "frr-zebra" &&
+          source.enabled_feature_count == 1 && source.enabled_features &&
+          std::string_view(source.enabled_features[0]) ==
+              "ipv6-router-advertisements")
+        found_runtime_feature = true;
     }
-    valid = valid && implemented ==
+    valid = valid && found_runtime_feature && implemented ==
         std::set<std::string>({"frr-routing", "frr-staticd", "frr-zebra"});
     const std::string before = "<config/>";
     const std::string proposed =

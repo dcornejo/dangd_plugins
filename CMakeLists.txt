@@ -17,6 +17,7 @@ add_executable(frr-schema-inventory
   plugins/frr/src/schema_inventory_probe.cc)
 target_compile_features(frr-schema-inventory PRIVATE cxx_std_20)
 target_include_directories(frr-schema-inventory PRIVATE plugins/frr/src)
+target_link_libraries(frr-schema-inventory PRIVATE LibXml2::LibXml2)
 target_compile_options(frr-schema-inventory PRIVATE
   -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 
@@ -199,7 +200,8 @@ if(BUILD_TESTING)
   target_compile_features(frr_schema_inventory_test PRIVATE cxx_std_20)
   target_include_directories(frr_schema_inventory_test PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}")
-  target_link_libraries(frr_schema_inventory_test PRIVATE GTest::gtest_main)
+  target_link_libraries(frr_schema_inventory_test PRIVATE
+    LibXml2::LibXml2 GTest::gtest_main)
   target_compile_options(frr_schema_inventory_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME frr_installed_schema_inventory COMMAND frr_schema_inventory_test)

@@ -22,6 +22,8 @@
 #include <charconv>
 #include <chrono>
 #include <cstdlib>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -89,7 +91,44 @@ struct Context {
       initialization_error = "installed FRR roots have unexpected namespaces";
       sources.clear();
       source_uris.clear();
+      return;
     }
+    std::optional<std::string> library_xml;
+    if (const char* path = std::getenv("DANG_FRR_YANG_LIBRARY_FILE");
+        path && *path) {
+      std::error_code size_error;
+      const auto bytes = std::filesystem::file_size(path, size_error);
+      if (size_error || bytes == 0 || bytes > options.maximum_total_bytes) {
+        initialization_error =
+            "DANG_FRR_YANG_LIBRARY_FILE size is invalid";
+        return;
+      }
+      std::ifstream input(path, std::ios::binary);
+      std::string contents{std::istreambuf_iterator<char>(input), {}};
+      if ((!input.good() && !input.eof()) || contents.empty()) {
+        initialization_error =
+            "cannot read DANG_FRR_YANG_LIBRARY_FILE";
+        return;
+      }
+      library_xml = std::move(contents);
+    } else {
+      auto transport = dang::plugins::frr::mgmtd::Transport::Connect(
+          socket_path, timeout, &initialization_error);
+      if (!transport) return;
+      auto session = dang::plugins::frr::mgmtd::Session::Open(
+          std::move(transport), next_client.fetch_add(1), "dangd-frr-discovery",
+          &initialization_error);
+      if (!session) return;
+      library_xml = session->GetOperationalData(
+          "/ietf-yang-library:yang-library", &initialization_error);
+      std::string close_error;
+      if (!session->Close(&close_error) && initialization_error.empty())
+        initialization_error = std::move(close_error);
+      if (!library_xml || !initialization_error.empty()) return;
+    }
+    if (!dang::plugins::frr::ApplyRuntimeYangLibrary(
+            *library_xml, &sources, &initialization_error))
+      return;
   }
 };
 
@@ -102,6 +141,7 @@ thread_local std::string callback_error;
 thread_local std::string callback_path;
 thread_local std::string operational_xml;
 thread_local std::string reconciled_xml;
+thread_local std::vector<const char*> callback_features;
 
 const std::vector<dang::plugins::frr::RootDescriptor>& RootDescriptors() {
   static const std::vector<dang::plugins::frr::RootDescriptor> descriptors{
@@ -133,6 +173,9 @@ int SourceAt(void* raw, std::size_t index, DangYangSourceV1* output,
   if (!output || index >= owner->sources.size())
     return Fail(error, "FRR YANG source index is out of range", "/");
   const auto& source = owner->sources[index];
+  callback_features.clear();
+  for (const std::string& feature : source.enabled_features)
+    callback_features.push_back(feature.c_str());
   static const std::set<std::string> implemented{
       "frr-routing", "frr-zebra", "frr-staticd"};
   *output = {.module_name = source.module_name.c_str(),
@@ -143,8 +186,10 @@ int SourceAt(void* raw, std::size_t index, DangYangSourceV1* output,
              .role = implemented.contains(source.module_name)
                  ? DANG_YANG_IMPLEMENTED_V1
                  : DANG_YANG_IMPORT_ONLY_V1,
-             .enabled_features = nullptr,
-             .enabled_feature_count = 0};
+             .enabled_features = callback_features.empty()
+                 ? nullptr
+                 : callback_features.data(),
+             .enabled_feature_count = callback_features.size()};
   return 1;
 }
 

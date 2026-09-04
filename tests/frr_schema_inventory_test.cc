@@ -102,4 +102,31 @@ TEST(FrrSchemaInventoryTest, EnforcesSourceSizeLimit) {
   EXPECT_NE(error.find("size limit"), std::string::npos);
 }
 
+TEST(FrrSchemaInventoryTest, AppliesRuntimeFeaturesAndRejectsSchemaSkew) {
+  std::vector<dang::plugins::frr::YangSchema> schemas{
+      {.module_name = "frr-zebra",
+       .revision = "2019-06-01",
+       .namespace_uri = "urn:frr:zebra"}};
+  std::string error;
+  EXPECT_TRUE(dang::plugins::frr::ApplyRuntimeYangLibrary(
+      R"(<yang-library xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-library">
+           <module-set><name>complete</name><module>
+             <name>frr-zebra</name><revision>2019-06-01</revision>
+             <namespace>urn:frr:zebra</namespace><feature>ra</feature>
+           </module></module-set></yang-library>)",
+      &schemas, &error)) << error;
+  EXPECT_EQ(schemas.front().enabled_features,
+            std::vector<std::string>({"ra"}));
+
+  schemas.front().revision = "different";
+  EXPECT_FALSE(dang::plugins::frr::ApplyRuntimeYangLibrary(
+      R"(<yang-library xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-library"><module-set><module><name>frr-zebra</name>
+           <revision>2019-06-01</revision><namespace>urn:frr:zebra</namespace>
+         </module></module-set></yang-library>)",
+      &schemas, &error));
+  EXPECT_NE(error.find("disagree"), std::string::npos);
+  EXPECT_EQ(schemas.front().enabled_features,
+            std::vector<std::string>({"ra"}));
+}
+
 }  // namespace

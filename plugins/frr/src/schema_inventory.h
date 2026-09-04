@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace dang::plugins::frr {
@@ -18,6 +19,7 @@ struct YangSchema {
   std::string revision;
   std::string namespace_uri;
   std::vector<std::string> imports;
+  std::vector<std::string> enabled_features;
   std::string source;
   std::filesystem::path path;
 };
@@ -43,6 +45,17 @@ std::optional<std::vector<YangSchema>> DiscoverSchemaInventory(
 std::optional<std::vector<std::size_t>> ResolveImportClosure(
     const std::vector<YangSchema>& inventory,
     const std::vector<std::string>& roots, std::string* error);
+
+/**
+ * Applies the running FRR daemon's RFC 8525 feature declarations.
+ *
+ * Every selected source must occur with the same nonempty revision and
+ * namespace in the advertised module set. On success its enabled feature list
+ * is replaced atomically from the runtime document.
+ */
+bool ApplyRuntimeYangLibrary(std::string_view xml,
+                             std::vector<YangSchema>* schemas,
+                             std::string* error);
 
 }  // namespace dang::plugins::frr
 

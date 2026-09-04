@@ -14,12 +14,35 @@
 #include <algorithm>
 #include <fstream>
 #include <iterator>
+#include <limits>
+#include <memory>
 #include <set>
 #include <string_view>
 #include <unordered_map>
 
+#include <libxml/parser.h>
+#include <libxml/tree.h>
+
 namespace dang::plugins::frr {
 namespace {
+
+using Document = std::unique_ptr<xmlDoc, decltype(&xmlFreeDoc)>;
+
+std::string Text(const xmlNode* node) {
+  xmlChar* value = node ? xmlNodeGetContent(node) : nullptr;
+  std::string result = value ? reinterpret_cast<const char*>(value) : "";
+  if (value) xmlFree(value);
+  return result;
+}
+
+const xmlNode* Child(const xmlNode* parent, std::string_view name) {
+  for (const xmlNode* child = parent ? parent->children : nullptr; child;
+       child = child->next)
+    if (child->type == XML_ELEMENT_NODE &&
+        name == reinterpret_cast<const char*>(child->name))
+      return child;
+  return nullptr;
+}
 
 std::vector<std::string> Tokens(std::string_view source, std::string* error) {
   std::vector<std::string> result;
@@ -240,6 +263,75 @@ std::optional<std::vector<std::size_t>> ResolveImportClosure(
       pending.push_back(dependency);
   }
   return std::vector<std::size_t>(selected.begin(), selected.end());
+}
+
+bool ApplyRuntimeYangLibrary(std::string_view xml,
+                             std::vector<YangSchema>* schemas,
+                             std::string* error) {
+  if (!schemas || xml.empty() ||
+      xml.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    if (error) *error = "invalid FRR YANG Library document";
+    return false;
+  }
+  Document document(xmlReadMemory(
+      xml.data(), static_cast<int>(xml.size()), "frr-yang-library.xml", nullptr,
+      XML_PARSE_NONET | XML_PARSE_NOBLANKS | XML_PARSE_NOERROR |
+          XML_PARSE_NOWARNING), xmlFreeDoc);
+  const xmlNode* root = document ? xmlDocGetRootElement(document.get()) : nullptr;
+  if (!root || std::string_view(reinterpret_cast<const char*>(root->name)) !=
+                   "yang-library" ||
+      !root->ns || !root->ns->href ||
+      std::string_view(reinterpret_cast<const char*>(root->ns->href)) !=
+          "urn:ietf:params:xml:ns:yang:ietf-yang-library") {
+    if (error) *error = "FRR returned an invalid YANG Library root";
+    return false;
+  }
+  std::unordered_map<std::string, const xmlNode*> modules;
+  const xmlNode* module_set = Child(root, "module-set");
+  if (!module_set) {
+    if (error) *error = "FRR YANG Library has no module-set";
+    return false;
+  }
+  for (const xmlNode* node = module_set ? module_set->children : nullptr; node;
+       node = node->next) {
+    if (node->type != XML_ELEMENT_NODE) continue;
+    const std::string_view kind(reinterpret_cast<const char*>(node->name));
+    if (kind != "module" && kind != "import-only-module") continue;
+    const xmlNode* name = Child(node, "name");
+    if (name && !modules.emplace(Text(name), node).second) {
+      if (error) *error = "FRR YANG Library repeats a module name";
+      return false;
+    }
+  }
+  std::vector<std::vector<std::string>> enabled;
+  enabled.reserve(schemas->size());
+  for (const YangSchema& schema : *schemas) {
+    const auto found = modules.find(schema.module_name);
+    if (found == modules.end()) {
+      if (error) *error = "running FRR omits YANG module " + schema.module_name;
+      return false;
+    }
+    const std::string revision = Text(Child(found->second, "revision"));
+    const std::string namespace_uri = Text(Child(found->second, "namespace"));
+    if ((!schema.revision.empty() && revision != schema.revision) ||
+        (!schema.namespace_uri.empty() && namespace_uri != schema.namespace_uri)) {
+      if (error)
+        *error = "installed and running FRR disagree on YANG module " +
+                 schema.module_name;
+      return false;
+    }
+    std::vector<std::string> features;
+    for (const xmlNode* child = found->second->children; child;
+         child = child->next)
+      if (child->type == XML_ELEMENT_NODE &&
+          std::string_view(reinterpret_cast<const char*>(child->name)) ==
+              "feature")
+        features.push_back(Text(child));
+    enabled.push_back(std::move(features));
+  }
+  for (std::size_t index = 0; index < schemas->size(); ++index)
+    (*schemas)[index].enabled_features = std::move(enabled[index]);
+  return true;
 }
 
 }  // namespace dang::plugins::frr
