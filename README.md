@@ -20,6 +20,7 @@ plugins/
     models/       YANG modules, imports, and deviations owned by the plugin
     src/          provider implementation
   kea/            Kea DHCPv4/DHCPv6 provider and deployment guide
+  frr/            FRR-native provider and mgmtd integration (in progress)
   rib/            RFC 8431 schema and in-progress native backend
   system/         RFC 7317 provider and platform implementations
 pam/              PAM adapter and recovery-first installation guide
@@ -103,6 +104,9 @@ only with one another. Packaging does not weaken dangd's duplicate-owner check.
   maintained in `plugins/system/README.md`.
 - `pam_dangd` is packaged independently. Follow `pam/README.md`, including its
   recovery-first SSH/PAM procedure.
+- `frr` is the top-priority routing provider. Its version-aware native schema
+  inventory is implemented; runtime publication remains deliberately disabled
+  until the `mgmtd` transaction adapter is complete. See `plugins/frr/README.md`.
 - `rib` currently stages the exact RFC 8431 schema family and independent
   conformance test. Runtime Linux/FreeBSD RIB ownership is not advertised until
   the transaction and operation backends are complete.

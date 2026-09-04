@@ -9,6 +9,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added the FRR provider's bounded installed-schema inventory and transitive
+  import-closure resolver. It selects one version-consistent Linux or FreeBSD
+  YANG directory, rejects malformed, duplicate, oversized, and incomplete
+  model sets, and does not yet advertise unsupported runtime functionality.
 - Updated the external plugin discovery smoke test for dangd plugin ABI v7.
   The loader now exercises v7 entry-point precedence and accepts the exclusive
   resource-domain ABI used by the forthcoming FRR provider.

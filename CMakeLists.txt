@@ -11,6 +11,14 @@ include(CTest)
 find_package(LibXml2 REQUIRED)
 find_package(nlohmann_json 3.11 REQUIRED)
 
+add_executable(frr-schema-inventory
+  plugins/frr/src/schema_inventory.cc
+  plugins/frr/src/schema_inventory_probe.cc)
+target_compile_features(frr-schema-inventory PRIVATE cxx_std_20)
+target_include_directories(frr-schema-inventory PRIVATE plugins/frr/src)
+target_compile_options(frr-schema-inventory PRIVATE
+  -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+
 set(DANGD_ROOT "" CACHE PATH "Path to a dang source tree")
 set(DANGD_INCLUDE_DIR "" CACHE PATH "Directory containing dangd/plugin_api.h")
 if(NOT DANGD_INCLUDE_DIR)
@@ -156,6 +164,17 @@ if(BUILD_TESTING)
   target_compile_options(rib_config_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME rfc8431_configuration_planning COMMAND rib_config_test)
+
+  add_executable(frr_schema_inventory_test
+    tests/frr_schema_inventory_test.cc
+    plugins/frr/src/schema_inventory.cc)
+  target_compile_features(frr_schema_inventory_test PRIVATE cxx_std_20)
+  target_include_directories(frr_schema_inventory_test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(frr_schema_inventory_test PRIVATE GTest::gtest_main)
+  target_compile_options(frr_schema_inventory_test PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME frr_installed_schema_inventory COMMAND frr_schema_inventory_test)
 
   add_executable(rib_native_test
     tests/rib_native_test.cc
