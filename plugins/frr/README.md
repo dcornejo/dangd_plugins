@@ -25,6 +25,14 @@ reconciliation remain disabled until the `mgmtd` adapter can uphold dangd's
 transaction contract. This prevents a schema-only component from falsely
 advertising runtime support.
 
+The transport foundation encodes FRR's public native frontend session, lock,
+XML edit, validate, apply, abort, and unlock messages without requiring FRR's
+development headers. This is a local ABI protocol: it uses host byte order and
+natural C layout and is permitted only over the local `mgmtd_fe.sock` UNIX
+socket. Frame length, protocol marker, reply correlation, message type, and
+NUL-terminated error data must be checked before a reply reaches transaction
+logic. The socket/session state machine remains the next implementation layer.
+
 ## Development dependencies
 
 - A C++20 compiler and CMake 3.24 or later

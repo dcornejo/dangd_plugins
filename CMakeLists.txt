@@ -176,6 +176,16 @@ if(BUILD_TESTING)
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME frr_installed_schema_inventory COMMAND frr_schema_inventory_test)
 
+  add_executable(frr_mgmtd_wire_test
+    tests/frr_mgmtd_wire_test.cc plugins/frr/src/mgmtd_wire.cc)
+  target_compile_features(frr_mgmtd_wire_test PRIVATE cxx_std_20)
+  target_include_directories(frr_mgmtd_wire_test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(frr_mgmtd_wire_test PRIVATE GTest::gtest_main)
+  target_compile_options(frr_mgmtd_wire_test PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME frr_mgmtd_native_wire_contract COMMAND frr_mgmtd_wire_test)
+
   add_executable(rib_native_test
     tests/rib_native_test.cc
     plugins/rib/src/rib_config.cc
