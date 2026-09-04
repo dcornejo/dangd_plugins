@@ -16,11 +16,13 @@ struct NativeCommand {
   std::vector<std::string> arguments;
 };
 
+/** Maps a checked portable plan to Linux iproute2 argv vectors. */
 [[nodiscard]] bool BuildLinuxCommands(const std::vector<Change>& changes,
                                       std::vector<NativeCommand>* commands,
                                       std::string* error,
                                       std::string* error_path);
 
+/** Maps a checked portable plan to FreeBSD route(8) argv vectors. */
 [[nodiscard]] bool BuildFreeBsdCommands(const std::vector<Change>& changes,
                                         std::vector<NativeCommand>* commands,
                                         std::string* error,

@@ -1,6 +1,14 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file
+ * Minimal transaction plugin used as both an executable example and an ABI
+ * smoke test.  It intentionally has no external side effects: apply and
+ * rollback print the proposed and retained configurations so developers can
+ * see the lifetime and ordering guarantees made by dangd.
+ */
+
 #include "dangd/plugin_api.h"
 
 #include "example_model_source.h"

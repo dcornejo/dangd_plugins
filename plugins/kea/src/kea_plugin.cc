@@ -1,6 +1,13 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file
+ * dangd transaction adapter for the Kea DHCPv4 and DHCPv6 services.  Validate
+ * uses Kea's config-test command; apply uses config-set; rollback reapplies the
+ * retained before-image to every service that was changed successfully.
+ */
+
 #include "dangd/plugin_api.h"
 
 #include "kea_adapter.h"
@@ -22,6 +29,8 @@ using dang::plugins::kea::ServerConfiguration;
 using dang::plugins::kea::TranslateConfiguration;
 
 struct Prepared {
+  // Vector order is fixed as DHCPv4 then DHCPv6 and is shared by both images;
+  // this makes index-based compensation unambiguous after a partial apply.
   std::vector<ServerConfiguration> before;
   std::vector<ServerConfiguration> proposed;
 };
@@ -164,6 +173,8 @@ int ApplyConfiguration(void*, void* opaque, DangPluginErrorV1* error) {
     const ServerConfiguration& server = prepared->proposed[completed];
     std::string reason;
     if (Execute(server, "config-set", &reason)) continue;
+    // Restore only services already changed in this callback.  The service
+    // whose config-set failed is assumed not to have accepted the new image.
     std::string compensation;
     while (completed > 0) {
       --completed;

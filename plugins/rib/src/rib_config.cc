@@ -1,6 +1,13 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file
+ * Parses the supported RFC 8431 static-route projection and produces a stable
+ * host-operation plan.  Strict rejection of unsupported route forms prevents
+ * the native backends from approximating model semantics unexpectedly.
+ */
+
 #include "plugins/rib/src/rib_config.h"
 
 #include <algorithm>
@@ -90,6 +97,8 @@ bool ParseBoolean(xmlNodePtr node, bool* output) {
 }
 
 auto Key(const Route& route) {
+  // RFC 8431 identifies a route by its containing instance/RIB and route-index;
+  // forwarding attributes are values, so changing one replaces the same key.
   return std::tie(route.routing_instance, route.rib, route.index);
 }
 
@@ -179,6 +188,8 @@ bool ParseConfig(const char* xml, Config* config, std::string* error,
       config->routes.push_back(std::move(route));
     }
   }
+  // Canonical ordering keeps plans deterministic regardless of XML sibling
+  // order and makes dry-run/test output stable.
   std::ranges::sort(config->routes, {}, Key);
   return true;
 }

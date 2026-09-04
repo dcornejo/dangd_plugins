@@ -1,6 +1,8 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/** @file Linux file layout and service commands for RFC 7317 integration. */
+
 #include "plugins/system/src/platform.h"
 
 namespace dang::system {

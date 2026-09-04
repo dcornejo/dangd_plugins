@@ -1,6 +1,13 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file
+ * Executes prepared RIB changes and compensates a partial failure in reverse
+ * order.  Commands are argv vectors passed directly to posix_spawnp(3); model
+ * content is never interpreted by a shell.
+ */
+
 #include "plugins/rib/src/platform_executor.h"
 
 #include <cerrno>

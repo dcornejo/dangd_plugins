@@ -1,6 +1,13 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file
+ * Stateful, correlation-checked wrapper around FRR's local mgmtd messages.
+ * The wrapper records candidate-lock ownership and rejects operations in an
+ * invalid order before bytes are placed on the transport.
+ */
+
 #include "mgmtd_session.h"
 
 #include <limits>

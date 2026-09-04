@@ -13,6 +13,7 @@
 
 namespace dang::plugins::frr {
 
+/** Identifies one top-level configuration container owned by an FRR module. */
 struct RootDescriptor {
   std::string module_name;
   std::string namespace_uri;
@@ -20,6 +21,14 @@ struct RootDescriptor {
   std::string xpath;
 };
 
+/**
+ * Extracts paired before/proposed XML fragments for every descriptor.
+ *
+ * An absent container is represented by std::nullopt and therefore remains
+ * distinguishable from a present empty container.  On malformed XML or an
+ * ambiguous duplicate root, returns std::nullopt and supplies both a diagnostic
+ * and the affected model path.
+ */
 std::optional<std::vector<ConfigurationRoot>> ExtractConfigurationRoots(
     std::string_view before_xml, std::string_view proposed_xml,
     const std::vector<RootDescriptor>& descriptors, std::string* error,

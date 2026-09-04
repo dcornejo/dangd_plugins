@@ -1,6 +1,13 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file
+ * Encoder and decoder for the subset of FRR's native mgmtd wire ABI used by
+ * this plugin.  The format mirrors FRR C structure layout and host byte order;
+ * consequently these frames are valid only between local compatible builds.
+ */
+
 #include "mgmtd_wire.h"
 
 #include <cstring>

@@ -1,6 +1,14 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file
+ * Discovers an installed, internally consistent FRR schema set and computes
+ * import closure without trying to implement a complete YANG parser.  The
+ * tokenizer understands enough lexical structure to ignore comments and
+ * quoted text safely while reading module metadata and imports.
+ */
+
 #include "schema_inventory.h"
 
 #include <algorithm>

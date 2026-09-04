@@ -18,17 +18,20 @@
 
 namespace dang::plugins::frr::mgmtd {
 
+/** Validated native header plus an owned copy of its variable payload. */
 struct Reply {
   NativeHeader header;
   std::vector<std::byte> body;
 };
 
+/** Deadline-bounded owner of one connected local mgmtd stream socket. */
 class Transport {
  public:
   ~Transport();
   Transport(const Transport&) = delete;
   Transport& operator=(const Transport&) = delete;
 
+  /** Connects only to a UNIX socket path and applies one timeout per exchange. */
   static std::unique_ptr<Transport> Connect(
       const std::filesystem::path& socket_path,
       std::chrono::milliseconds timeout, std::string* error);

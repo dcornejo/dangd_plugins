@@ -1,6 +1,13 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file
+ * Extracts the FRR-owned top-level subtrees from complete dangd datastore
+ * snapshots.  Namespace-aware matching is essential here because different
+ * FRR modules may reuse the same local container name.
+ */
+
 #include "frr_config.h"
 
 #include <libxml/parser.h>

@@ -12,6 +12,7 @@
 
 namespace dang::plugins::kea {
 
+/** One Kea daemon endpoint and the JSON arguments translated for it. */
 struct ServerConfiguration {
   std::string module_name;
   std::string service_name;
@@ -19,7 +20,11 @@ struct ServerConfiguration {
   nlohmann::json arguments;
 };
 
-/** Converts the two official Kea configuration containers into control JSON. */
+/**
+ * Converts one official Kea configuration container into control JSON.
+ * Returns no value when XML is malformed, the requested module is unsupported,
+ * or values cannot be represented by Kea's control API.
+ */
 [[nodiscard]] std::optional<ServerConfiguration> TranslateConfiguration(
     std::string_view datastore_xml, std::string_view module_name,
     std::string_view socket_path, std::string* error);

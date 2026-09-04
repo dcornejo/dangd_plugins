@@ -1,6 +1,13 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file
+ * Bounded UNIX-domain transport for FRR's native mgmtd protocol.  Framing,
+ * timeouts, peer locality, message-size limits, and reply correlation are
+ * enforced here so the session layer never handles an untrusted partial frame.
+ */
+
 #include "mgmtd_transport.h"
 
 #include <cerrno>

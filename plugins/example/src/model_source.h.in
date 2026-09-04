@@ -4,6 +4,7 @@
 #ifndef DANG_PLUGINS_EXAMPLE_MODEL_SOURCE_H_
 #define DANG_PLUGINS_EXAMPLE_MODEL_SOURCE_H_
 
+/** YANG text embedded at build time so the plugin is self-describing. */
 inline constexpr char kExampleYangSource[] = R"yang(@DANG_PLUGINS_EXAMPLE_YANG@)yang";
 
 #endif  // DANG_PLUGINS_EXAMPLE_MODEL_SOURCE_H_

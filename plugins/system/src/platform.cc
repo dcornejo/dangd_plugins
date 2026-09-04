@@ -1,6 +1,13 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file
+ * Portable RFC 7317 operating-system integration.  Configuration files are
+ * staged atomically and snapshotted before mutation; runtime changes are made
+ * only after validation and are paired with best-effort rollback data.
+ */
+
 #include "plugins/system/src/platform.h"
 
 #include <chrono>

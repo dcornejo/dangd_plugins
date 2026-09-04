@@ -1,6 +1,13 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file
+ * Maps dangd's prepare/validate/apply/rollback lifecycle onto isolated FRR
+ * mgmtd candidate sessions.  Each phase owns a fresh session so no candidate
+ * lock or uncommitted edit can leak across callback boundaries.
+ */
+
 #include "frr_transaction.h"
 
 #include <string_view>

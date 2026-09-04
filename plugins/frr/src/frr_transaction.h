@@ -14,6 +14,7 @@
 
 namespace dang::plugins::frr {
 
+/** Opens one independent mgmtd session, or returns null with an explanation. */
 using SessionFactory =
     std::function<std::unique_ptr<mgmtd::SessionOperations>(std::string*)>;
 
@@ -26,14 +27,18 @@ struct ConfigurationRoot {
   std::optional<std::string> proposed_xml;
 };
 
+/** Coordinates a single dangd transaction across all changed FRR roots. */
 class FrrTransaction {
  public:
   FrrTransaction(SessionFactory sessions, std::vector<ConfigurationRoot> roots)
       : sessions_(std::move(sessions)),
         roots_(std::move(roots)) {}
 
+  /** Tests the proposed replacement in an abort-only mgmtd candidate. */
   bool Validate(std::string* error);
+  /** Repeats the validated edits and commits them to FRR running state. */
   bool Apply(std::string* error);
+  /** Restores and commits the retained before-image after a successful apply. */
   bool Rollback(std::string* error);
   bool applied() const { return applied_; }
 

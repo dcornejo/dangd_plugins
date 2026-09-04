@@ -1,6 +1,14 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file
+ * Translates the official Kea DHCPv4/DHCPv6 YANG configuration containers to
+ * Kea control-agent JSON and exchanges bounded commands over local UNIX
+ * sockets.  Translation is deliberately explicit so unsupported YANG shapes
+ * fail instead of silently producing a plausible but different configuration.
+ */
+
 #include "kea_adapter.h"
 
 #include <libxml/parser.h>
@@ -82,6 +90,8 @@ std::string JsonName(std::string_view yang_name) {
 }
 
 nlohmann::json Scalar(std::string_view name, const std::string& value) {
+  // Kea models carry two deliberately JSON-valued extension leaves.  Other
+  // scalar types are reconstructed from their canonical XML lexical forms.
   if (name == "user-context" || name == "parameters") {
     try {
       return nlohmann::json::parse(value);
@@ -117,6 +127,8 @@ nlohmann::json ConvertPool(const xmlNode* node) {
 nlohmann::json ConvertNode(const xmlNode* node) {
   const auto children = ElementChildren(node);
   if (children.empty()) return Scalar(LocalName(node), Text(node));
+  // Group siblings before conversion because singleton and repeated YANG
+  // nodes require different JSON shapes even when their child syntax matches.
   std::map<std::string, std::vector<const xmlNode*>, std::less<>> grouped;
   for (const xmlNode* child : children) grouped[LocalName(child)].push_back(child);
   nlohmann::json result = nlohmann::json::object();
@@ -248,6 +260,7 @@ std::optional<nlohmann::json> SendControlCommand(
       return std::nullopt;
     }
   }
+  // EOF terminates Kea's request.  Keep the read half open for its one reply.
   (void)shutdown(descriptor, SHUT_WR);
   std::string reply;
   char buffer[4096];

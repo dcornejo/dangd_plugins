@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
+ * @file
  * PAM authentication adapter for RFC 7317 local users managed by dangd.
  *
  * The module never reads datastore files or password hashes. It submits the
@@ -96,6 +97,8 @@ bool Verify(std::string_view socket_path, std::string_view username,
 }
 
 std::optional<std::string> Password(pam_handle_t* pamh) {
+  // Reuse a token supplied by an earlier PAM module before invoking the
+  // application's conversation callback.  PAM owns the stored copy.
   const void* existing = nullptr;
   if (pam_get_item(pamh, PAM_AUTHTOK, &existing) == PAM_SUCCESS && existing)
     return std::string(static_cast<const char*>(existing));

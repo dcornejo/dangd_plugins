@@ -34,12 +34,15 @@ struct Route {
   bool operator==(const Route&) const = default;
 };
 
+/** Canonical, order-independent set of supported routes in one snapshot. */
 struct Config {
   std::vector<Route> routes;
 };
 
+/** Native operation required to transform the before-image into the proposal. */
 enum class ChangeKind { kDelete, kInstall };
 
+/** One reversible route operation retained through the plugin transaction. */
 struct Change {
   ChangeKind kind = ChangeKind::kInstall;
   Route route;

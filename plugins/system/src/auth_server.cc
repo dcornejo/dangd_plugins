@@ -1,6 +1,13 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file
+ * Privilege-separated local authentication service used by pam_dangd.  It
+ * accepts only suitably privileged UNIX-socket peers, bounds credential sizes,
+ * and erases the in-memory password copy after each verification attempt.
+ */
+
 #include "plugins/system/src/auth_server.h"
 
 #include "plugins/system/src/auth_protocol.h"

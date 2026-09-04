@@ -21,8 +21,13 @@ class AuthServer {
   AuthServer(const AuthServer&) = delete;
   AuthServer& operator=(const AuthServer&) = delete;
 
+  /**
+   * Creates a mode-restricted UNIX socket and begins serving in a worker
+   * thread.  The verifier must remain safe to call until Stop() returns.
+   */
   [[nodiscard]] bool Start(std::string path, Verifier verifier,
                            std::string* error);
+  /** Stops accepting clients, joins the worker, and removes the socket path. */
   void Stop();
 
  private:

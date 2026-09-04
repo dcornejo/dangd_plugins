@@ -83,6 +83,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Audited every plugin and PAM source file for maintainability. Added Doxygen
+  file summaries and public-contract documentation covering ownership,
+  transaction lifetime, rollback and compensation, protocol trust boundaries,
+  platform behavior, model translation, and non-obvious security invariants.
 - Required new plugins to prefer programmatic operating-system and daemon APIs
   over command execution, including consideration of netlink on both Linux and
   FreeBSD. Documented, argv-only command fallbacks require failure and rollback

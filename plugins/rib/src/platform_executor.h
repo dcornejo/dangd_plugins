@@ -12,11 +12,14 @@
 
 namespace dang::rib {
 
+/** Supported host command dialects; selected at plugin build time. */
 enum class NativePlatform { kLinux, kFreeBsd };
 
+/** Injectable process boundary used to exercise partial failures safely. */
 using CommandRunner =
     std::function<bool(const NativeCommand&, std::string* error)>;
 
+/** Apply outcome, primary failure, and any failures while compensating it. */
 struct ExecutionResult {
   bool ok = false;
   std::string error;

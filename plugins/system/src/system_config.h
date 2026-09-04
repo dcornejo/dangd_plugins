@@ -10,18 +10,21 @@
 
 namespace dang::system {
 
+/** RFC 7317 authorized-key entry retained without altering its key material. */
 struct AuthorizedKey {
   std::string name;
   std::string algorithm;
   std::string key_data;
 };
 
+/** Local authentication data consumed only by the privileged PAM endpoint. */
 struct User {
   std::string name;
   std::optional<std::string> password_hash;
   std::vector<AuthorizedKey> authorized_keys;
 };
 
+/** Platform-neutral NTP association after YANG defaults are applied. */
 struct NtpServer {
   std::string name;
   std::string address;
@@ -31,12 +34,14 @@ struct NtpServer {
   bool prefer = false;
 };
 
+/** Resolver endpoint; non-default ports may be rejected by a host backend. */
 struct DnsServer {
   std::string name;
   std::string address;
   unsigned port = 53;
 };
 
+/** Supported RFC 7317 configuration projection with explicit YANG defaults. */
 struct Config {
   std::optional<std::string> contact;
   std::optional<std::string> hostname;

@@ -1,6 +1,8 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/** @file Live diagnostic that creates and cleanly destroys one mgmtd session. */
+
 #include "mgmtd_session.h"
 
 #include <chrono>

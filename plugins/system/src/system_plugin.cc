@@ -1,6 +1,13 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file
+ * dangd ABI adapter for RFC 7317 configuration, operational data, RPCs, and
+ * the local PAM verification endpoint.  A mutex protects the live config
+ * snapshot shared by transaction callbacks and authentication requests.
+ */
+
 #include "dangd/plugin_api.h"
 #include "plugins/system/src/auth_server.h"
 #include "plugins/system/src/platform.h"

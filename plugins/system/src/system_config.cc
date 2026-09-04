@@ -1,6 +1,13 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file
+ * Namespace-aware parser for the supported RFC 7317 system configuration and
+ * password verification helper.  Parsing produces a platform-neutral value
+ * object; operating-system changes are intentionally deferred to platform.cc.
+ */
+
 #include "plugins/system/src/system_config.h"
 
 #include <algorithm>
@@ -212,6 +219,9 @@ bool ParseConfig(const char* xml, Config* config, std::string* error,
 }
 
 bool VerifyPassword(std::string_view password, std::string_view stored_hash) {
+  // Limit work and accept only the SHA crypt schemes promised by the plugin.
+  // In particular, never let crypt interpret an arbitrary attacker-controlled
+  // method selector supplied through a malformed datastore.
   if (password.size() > 4096 || stored_hash.size() > 4096 ||
       !(stored_hash.starts_with("$5$") || stored_hash.starts_with("$6$")))
     return false;
@@ -219,6 +229,7 @@ bool VerifyPassword(std::string_view password, std::string_view stored_hash) {
   const std::string hash(stored_hash);
   const char* calculated = nullptr;
 #if defined(__FreeBSD__)
+  // FreeBSD exposes crypt(3), whose returned static buffer is process-global.
   static std::mutex crypt_mutex;
   std::lock_guard lock(crypt_mutex);
   calculated = crypt(secret.c_str(), hash.c_str());
@@ -229,6 +240,8 @@ bool VerifyPassword(std::string_view password, std::string_view stored_hash) {
   if (!calculated) return false;
   const std::size_t actual = std::strlen(calculated);
   if (actual != hash.size()) return false;
+  // Compare every byte so a mismatching hash prefix does not reveal how much
+  // of the verifier output was correct.
   unsigned difference = 0;
   for (std::size_t index = 0; index < actual; ++index)
     difference |= static_cast<unsigned>(calculated[index] ^ hash[index]);

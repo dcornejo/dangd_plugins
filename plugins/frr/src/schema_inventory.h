@@ -12,6 +12,7 @@
 
 namespace dang::plugins::frr {
 
+/** Installed YANG module metadata plus its immutable source text. */
 struct YangSchema {
   std::string module_name;
   std::string revision;
@@ -21,6 +22,7 @@ struct YangSchema {
   std::filesystem::path path;
 };
 
+/** Discovery roots and denial-of-service bounds for schema loading. */
 struct SchemaInventoryOptions {
   std::optional<std::filesystem::path> explicit_directory;
   std::vector<std::filesystem::path> search_directories{

@@ -1,6 +1,8 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/** @file Linux iproute2 mapping for the portable RFC 8431 route plan. */
+
 #include "plugins/rib/src/platform_command.h"
 
 #include <charconv>

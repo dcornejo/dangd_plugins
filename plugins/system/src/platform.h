@@ -13,6 +13,7 @@
 
 namespace dang::system {
 
+/** OS-specific files and service-control commands used by the portable layer. */
 struct PlatformLayout {
   std::filesystem::path ntp_configuration;
   std::filesystem::path hostname_configuration;
@@ -25,6 +26,7 @@ struct PlatformLayout {
 /** Native layout selected by the Linux or FreeBSD translation unit. */
 [[nodiscard]] PlatformLayout NativePlatformLayout();
 
+/** Complete recoverable state for a regular file, symlink, or absent path. */
 struct FileSnapshot {
   std::filesystem::path path;
   bool existed = false;
@@ -33,6 +35,7 @@ struct FileSnapshot {
   std::string contents;
 };
 
+/** Platform transaction state retained from prepare through release. */
 struct PreparedPlatform {
   Config before;
   Config proposed;
@@ -46,18 +49,22 @@ struct PreparedPlatform {
 [[nodiscard]] bool PreparePlatform(const Config& before, const Config& proposed,
                                    PreparedPlatform* prepared,
                                    std::string* error, std::string* path);
+/** Checks paths, values, and command availability without changing the host. */
 [[nodiscard]] bool ValidatePlatform(const PreparedPlatform& prepared,
                                     std::string* error, std::string* path);
 [[nodiscard]] bool ApplyPlatform(PreparedPlatform* prepared, std::string* error,
                                  std::string* path);
+/** Restores all captured files and runtime values after a completed apply. */
 [[nodiscard]] bool RollbackPlatform(PreparedPlatform* prepared,
                                     std::string* error, std::string* path);
 
 /** RFC 7317 system-state XML populated from uname(2), clock_gettime(2). */
 [[nodiscard]] std::string OperationalStateXml();
 
+/** Implements set-current-datetime after parsing its RFC 3339 input leaf. */
 [[nodiscard]] bool SetCurrentDatetime(std::string_view xml,
                                       std::string* error);
+/** Requests restart or shutdown through the platform-specific service command. */
 [[nodiscard]] bool RequestPowerOperation(bool restart, std::string* error);
 
 }  // namespace dang::system

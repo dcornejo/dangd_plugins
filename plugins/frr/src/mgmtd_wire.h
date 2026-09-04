@@ -14,12 +14,14 @@
 
 namespace dang::plugins::frr::mgmtd {
 
+/** FRR native message marker and framing limits mirrored from mgmtd. */
 constexpr std::uint32_t kNativeMarker = 0x23232301u;
 constexpr std::size_t kFrameHeaderBytes = 8;
 constexpr std::size_t kNativeHeaderBytes = 24;
 constexpr std::size_t kFixedMessageBytes = 32;
 constexpr std::size_t kMaximumFrameBytes = 16 * 1024 * 1024;
 
+/** Native message codes used by the supported session/edit transaction slice. */
 enum class Code : std::uint16_t {
   kError = 0,
   kEdit = 5,
@@ -52,6 +54,7 @@ enum class CommitAction : std::uint8_t {
   kValidate = 2,
 };
 
+/** Decoded fields shared by every native mgmtd message. */
 struct NativeHeader {
   Code code;
   std::uint32_t split;
@@ -59,11 +62,13 @@ struct NativeHeader {
   std::uint64_t request;
 };
 
+/** Non-owning view into a caller-owned complete frame. */
 struct DecodedFrame {
   NativeHeader header;
   std::span<const std::byte> body;
 };
 
+/** Message builders below return one complete length-prefixed native frame. */
 std::vector<std::byte> SessionCreate(std::uint64_t client_id,
                                      std::string_view client_name);
 std::vector<std::byte> SessionDestroy(std::uint64_t session_id,

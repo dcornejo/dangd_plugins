@@ -4,6 +4,7 @@
 
 #include <string_view>
 
+/** Standards model sources embedded for dangd YANG-library publication. */
 inline constexpr std::string_view kIetfSystemYang = R"DANGYANG(
 @IETF_SYSTEM_YANG@)DANGYANG";
 inline constexpr std::string_view kIanaCryptHashYang = R"DANGYANG(

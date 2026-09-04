@@ -14,6 +14,7 @@
 
 namespace dang::plugins::frr::mgmtd {
 
+/** Mockable transaction surface used by FrrTransaction and its unit tests. */
 class SessionOperations {
  public:
   virtual ~SessionOperations() = default;
@@ -28,11 +29,13 @@ class SessionOperations {
   virtual bool Close(std::string* error) = 0;
 };
 
+/** One correlated client session on an already connected mgmtd transport. */
 class Session : public SessionOperations {
  public:
   Session(const Session&) = delete;
   Session& operator=(const Session&) = delete;
 
+  /** Creates the remote FRR session and consumes the returned session id. */
   static std::unique_ptr<Session> Open(std::unique_ptr<Transport> transport,
                                        std::uint64_t client_id,
                                        std::string_view client_name,

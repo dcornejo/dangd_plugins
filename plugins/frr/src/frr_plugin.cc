@@ -1,6 +1,14 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file
+ * dangd ABI adapter for FRR's native YANG schemas and mgmtd transaction API.
+ * The context owns immutable schema text for the plugin lifetime; prepared
+ * objects retain before/proposed subtrees until release so rollback remains
+ * possible after an otherwise successful apply.
+ */
+
 #include "dangd/plugin_api.h"
 
 #include "frr_config.h"
