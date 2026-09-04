@@ -29,7 +29,7 @@ supplying a captured library document without a daemon.
 
 The loadable `dangd_frr_plugin` currently implements the `frr-routing`,
 `frr-staticd`, and `frr-zebra` configuration modules. It publishes their exact
-installed import closure and claims ABI-v7 resource domain `routing`, so dangd
+installed import closure and claims ABI-v8 resource domain `routing`, so dangd
 will reject simultaneous use of another routing provider. Staticd augments the
 `frr-routing:routing` root; its nodes are retained inside that atomic edit. The
 separate `frr-zebra:zebra` root participates in the same candidate transaction.
@@ -48,7 +48,7 @@ validation, apply or candidate abort, unlock, and destruction in protocol
 order. Transaction orchestration performs validation in a disposable session,
 then repeats the replacement for a real apply. Rollback is a new validated
 commit of the retained before-image; candidate abort is used only to discard
-uncommitted edits. Wiring this orchestration into ABI v7 and extracting the FRR
+uncommitted edits. Wiring this orchestration into the plugin ABI and extracting the FRR
 subtrees from dangd snapshots are converted to atomic root replace/delete
 edits.
 
@@ -63,8 +63,10 @@ session correlation, XML format, partial-error status, and continuation state
 are checked before any bytes reach dangd. A partial result fails the retrieval
 rather than presenting an incomplete tree as authoritative.
 
-RPCs, notifications, and protocols beyond zebra/staticd are not yet
-implemented.
+RPCs, native FRR notifications, and protocols beyond zebra/staticd are not yet
+implemented. The provider additionally publishes its small implemented
+`dang-frr-monitoring` model. Its `configuration-drift` notification is provider
+health telemetry rather than an alteration of FRR's native models.
 The operational callback publishes FRR's observed tree; it does not substitute
 requested configuration for observed state.
 
@@ -81,8 +83,14 @@ namespace URIs, attributes, values, and child order independent of namespace
 prefix spelling. A semantic mismatch is reported at the affected FRR root and
 causes the operational callback to fail closed. Dangd records that provider
 failure in its modeled reconciliation telemetry, making out-of-band edits
-visible without publishing stale FRR state. Detection is retrieval-driven;
-there is not yet an unsolicited drift notification.
+visible without publishing stale FRR state. After the first successful
+reconciliation, a read-only background watcher also compares the same roots at
+one-second intervals. It queues one `configuration-drift` event per affected
+path until a later dangd commit establishes a new expected state. ABI v8 carries
+that event through worker isolation; dangd validates it against
+`dang-frr-monitoring` and applies subscription filters and NACM before delivery.
+Set `DANG_FRR_DRIFT_POLL_MS` to an integer from 100 through 60000 only when a
+different monitoring interval is operationally justified.
 
 ## Installation and configuration
 

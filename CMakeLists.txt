@@ -302,7 +302,7 @@ if(BUILD_TESTING)
   target_link_libraries(frr_plugin_discovery_test PRIVATE "${CMAKE_DL_LIBS}")
   target_compile_options(frr_plugin_discovery_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
-  add_test(NAME frr_abi_v7_plugin_discovery
+  add_test(NAME frr_abi_v8_plugin_discovery
     COMMAND frr_plugin_discovery_test $<TARGET_FILE:dangd_frr_plugin>)
 
   if(DANG_FRR_NATIVE_TESTS)

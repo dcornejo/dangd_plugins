@@ -53,21 +53,23 @@ int main(int argc, char** argv) {
   setenv("DANG_FRR_YANG_DIR", directory.c_str(), 1);
   setenv("DANG_FRR_YANG_LIBRARY_FILE", library_path.c_str(), 1);
   void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
-  auto initialize = library ? reinterpret_cast<DangPluginInitV7>(
-      dlsym(library, "dang_plugin_init_v7")) : nullptr;
-  const DangPluginV7* plugin = initialize ? initialize() : nullptr;
+  auto initialize = library ? reinterpret_cast<DangPluginInitV8>(
+      dlsym(library, "dang_plugin_init_v8")) : nullptr;
+  const DangPluginV8* plugin = initialize ? initialize() : nullptr;
   bool valid = plugin &&
-      plugin->v6.v5.v4.v3.v2.v1.abi_version == DANG_PLUGIN_ABI_V7 &&
-      std::string_view(plugin->v6.v5.v4.v3.v2.v1.plugin_name) == "dang-frr" &&
-      plugin->resource_domain_count(plugin->v6.v5.v4.v3.v2.v1.context) == 1 &&
-      plugin->v6.v5.v4.v3.get_operational_data != nullptr &&
-      plugin->v6.reconcile_applied_configuration != nullptr &&
-      std::string_view(plugin->resource_domain_at(
-          plugin->v6.v5.v4.v3.v2.v1.context, 0)) == "routing";
+      plugin->v7.v6.v5.v4.v3.v2.v1.abi_version == DANG_PLUGIN_ABI_V8 &&
+      std::string_view(plugin->v7.v6.v5.v4.v3.v2.v1.plugin_name) == "dang-frr" &&
+      plugin->v7.resource_domain_count(
+          plugin->v7.v6.v5.v4.v3.v2.v1.context) == 1 &&
+      plugin->v7.v6.v5.v4.v3.get_operational_data != nullptr &&
+      plugin->v7.v6.reconcile_applied_configuration != nullptr &&
+      plugin->next_notification != nullptr &&
+      std::string_view(plugin->v7.resource_domain_at(
+          plugin->v7.v6.v5.v4.v3.v2.v1.context, 0)) == "routing";
   std::set<std::string> implemented;
   bool found_runtime_feature = false;
   if (valid) {
-    const DangPluginV1& base = plugin->v6.v5.v4.v3.v2.v1;
+    const DangPluginV1& base = plugin->v7.v6.v5.v4.v3.v2.v1;
     for (std::size_t index = 0; index < base.yang_source_count(base.context);
          ++index) {
       DangYangSourceV1 source{};
@@ -85,7 +87,12 @@ int main(int argc, char** argv) {
         found_runtime_feature = true;
     }
     valid = valid && found_runtime_feature && implemented ==
-        std::set<std::string>({"frr-routing", "frr-staticd", "frr-zebra"});
+        std::set<std::string>({"dang-frr-monitoring", "frr-routing",
+                               "frr-staticd", "frr-zebra"});
+    DangNotificationV1 event{};
+    DangPluginErrorV1 notification_error{};
+    valid = valid && plugin->next_notification(base.context, &event,
+                                                 &notification_error) == 0;
     const std::string before = "<config/>";
     const std::string proposed =
         "<config><routing xmlns=\"http://frrouting.org/yang/routing\"/>"
@@ -99,7 +106,7 @@ int main(int argc, char** argv) {
   if (library) dlclose(library);
   std::filesystem::remove_all(directory);
   if (!valid)
-    std::cerr << (library ? "FRR ABI-v7 discovery contract failed" : dlerror())
+    std::cerr << (library ? "FRR ABI-v8 discovery contract failed" : dlerror())
               << '\n';
   return valid ? 0 : 1;
 }

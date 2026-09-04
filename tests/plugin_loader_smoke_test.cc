@@ -20,7 +20,10 @@ int main(int argc, char** argv) {
     return 1;
   }
   const DangPluginV1* plugin = nullptr;
-  if (auto initialize_v7 = reinterpret_cast<DangPluginInitV7>(
+  if (auto initialize_v8 = reinterpret_cast<DangPluginInitV8>(
+          dlsym(library, "dang_plugin_init_v8")))
+    plugin = &initialize_v8()->v7.v6.v5.v4.v3.v2.v1;
+  else if (auto initialize_v7 = reinterpret_cast<DangPluginInitV7>(
           dlsym(library, "dang_plugin_init_v7")))
     plugin = &initialize_v7()->v6.v5.v4.v3.v2.v1;
   else if (auto initialize_v6 = reinterpret_cast<DangPluginInitV6>(
@@ -44,7 +47,7 @@ int main(int argc, char** argv) {
   DangYangSourceV1 source{};
   DangPluginErrorV1 error{};
   bool valid = plugin && plugin->abi_version >= DANG_PLUGIN_ABI_V1 &&
-      plugin->abi_version <= DANG_PLUGIN_ABI_V7 &&
+      plugin->abi_version <= DANG_PLUGIN_ABI_V8 &&
       plugin->plugin_name &&
       std::string_view(plugin->plugin_name) == argv[2] &&
       plugin->yang_source_count && plugin->yang_source_at;

@@ -106,8 +106,8 @@ only with one another. Packaging does not weaken dangd's duplicate-owner check.
   recovery-first SSH/PAM procedure.
 - `frr` is the top-priority routing provider. It implements the initial native
   routing, zebra, and staticd configuration scope through `mgmtd`, with
-  disposable validation and before-image rollback. Operational state and drift
-  reconciliation remain in progress. See `plugins/frr/README.md`.
+  disposable validation, before-image rollback, operational state, and
+  deduplicated unsolicited drift notification. See `plugins/frr/README.md`.
 - `rib` currently stages the exact RFC 8431 schema family and independent
   conformance test. Runtime Linux/FreeBSD RIB ownership is not advertised until
   the transaction and operation backends are complete.

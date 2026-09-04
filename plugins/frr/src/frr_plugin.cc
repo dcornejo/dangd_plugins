@@ -22,6 +22,7 @@
 #include <charconv>
 #include <chrono>
 #include <cstdlib>
+#include <deque>
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -29,6 +30,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -37,6 +39,21 @@ constexpr std::string_view kRoutingNamespace =
     "http://frrouting.org/yang/routing";
 constexpr std::string_view kZebraNamespace =
     "http://frrouting.org/yang/zebra";
+constexpr char kMonitoringModel[] = R"yang(module dang-frr-monitoring {
+  yang-version 1.1;
+  namespace "urn:dang:plugins:frr:monitoring";
+  prefix dfm;
+  revision 2026-09-04 {
+    description "FRR provider health notifications.";
+  }
+  notification configuration-drift {
+    description
+      "The running FRR configuration differs from the last state reconciled
+       after a successful dangd commit.";
+    leaf datastore-path { type string; mandatory true; }
+    leaf reason { type string; mandatory true; }
+  }
+})yang";
 
 struct Context {
   std::vector<dang::plugins::frr::YangSchema> sources;
@@ -46,6 +63,13 @@ struct Context {
   std::atomic<std::uint64_t> next_client{1};
   std::mutex running_mutex;
   std::optional<std::vector<std::optional<std::string>>> expected_running;
+  std::chrono::milliseconds drift_poll_interval{1000};
+  std::mutex notification_mutex;
+  std::deque<std::string> pending_drift_paths;
+  std::set<std::string> reported_drift_paths;
+  // Declared after every object used by the thread so destruction joins it
+  // before those objects are released.
+  std::jthread drift_watcher;
   std::string initialization_error;
 
   Context() {
@@ -69,6 +93,21 @@ struct Context {
         return;
       }
       timeout = std::chrono::milliseconds(parsed);
+    }
+    if (const char* milliseconds = std::getenv("DANG_FRR_DRIFT_POLL_MS");
+        milliseconds && *milliseconds) {
+      long long parsed = 0;
+      const std::string_view text(milliseconds);
+      const auto conversion =
+          std::from_chars(text.data(), text.data() + text.size(), parsed);
+      if (conversion.ec != std::errc{} ||
+          conversion.ptr != text.data() + text.size() || parsed < 100 ||
+          parsed > 60000) {
+        initialization_error =
+            "DANG_FRR_DRIFT_POLL_MS must be an integer from 100 through 60000";
+        return;
+      }
+      drift_poll_interval = std::chrono::milliseconds(parsed);
     }
     auto inventory =
         dang::plugins::frr::DiscoverSchemaInventory(options, &initialization_error);
@@ -129,6 +168,14 @@ struct Context {
     if (!dang::plugins::frr::ApplyRuntimeYangLibrary(
             *library_xml, &sources, &initialization_error))
       return;
+    source_uris.emplace_back("embedded:dang-frr-monitoring");
+    sources.push_back({.module_name = "dang-frr-monitoring",
+                       .revision = "2026-09-04",
+                       .namespace_uri = "urn:dang:plugins:frr:monitoring",
+                       .imports = {},
+                       .enabled_features = {},
+                       .source = kMonitoringModel,
+                       .path = {}});
   }
 };
 
@@ -177,7 +224,7 @@ int SourceAt(void* raw, std::size_t index, DangYangSourceV1* output,
   for (const std::string& feature : source.enabled_features)
     callback_features.push_back(feature.c_str());
   static const std::set<std::string> implemented{
-      "frr-routing", "frr-zebra", "frr-staticd"};
+      "dang-frr-monitoring", "frr-routing", "frr-zebra", "frr-staticd"};
   *output = {.module_name = source.module_name.c_str(),
              .revision = source.revision.c_str(),
              .source = source.source.data(),
@@ -222,6 +269,38 @@ std::optional<std::vector<std::optional<std::string>>> ReadRunningRoots(
                                 : std::optional<std::string>(std::move(*xml)));
   }
   return roots;
+}
+
+void StartDriftWatcher(Context* owner) {
+  if (owner->drift_watcher.joinable()) return;
+  owner->drift_watcher = std::jthread([owner](std::stop_token stop) {
+    while (!stop.stop_requested()) {
+      std::this_thread::sleep_for(owner->drift_poll_interval);
+      if (stop.stop_requested()) break;
+      std::optional<std::vector<std::optional<std::string>>> expected;
+      {
+        std::lock_guard lock(owner->running_mutex);
+        expected = owner->expected_running;
+      }
+      if (!expected) continue;
+      std::string ignored_error;
+      auto session = OpenConcreteSession(owner, &ignored_error);
+      if (!session) continue;
+      auto observed = ReadRunningRoots(session.get(), &ignored_error);
+      std::string close_error;
+      const bool closed = session->Close(&close_error);
+      if (!observed || !closed || observed->size() != expected->size()) continue;
+      for (std::size_t index = 0; index < expected->size(); ++index) {
+        auto equivalent = dang::plugins::frr::EquivalentConfigurationRoot(
+            (*expected)[index], (*observed)[index], &ignored_error);
+        if (!equivalent || *equivalent) continue;
+        const std::string& path = RootDescriptors()[index].xpath;
+        std::lock_guard lock(owner->notification_mutex);
+        if (owner->reported_drift_paths.insert(path).second)
+          owner->pending_drift_paths.push_back(path);
+      }
+    }
+  });
 }
 
 int Prepare(void* raw, const DangTransactionV1* transaction, void** output,
@@ -364,6 +443,12 @@ int Reconcile(void* raw, void* prepared_raw, const char* current_xml,
     return Fail(error, callback_error,
                 reconciliation_path.empty() ? "/" : reconciliation_path);
   owner->expected_running = std::move(*observed);
+  {
+    std::lock_guard notification_lock(owner->notification_mutex);
+    owner->pending_drift_paths.clear();
+    owner->reported_drift_paths.clear();
+  }
+  StartDriftWatcher(owner);
   reconciled_xml = std::move(*reconciled);
   result->applied_xml = reconciled_xml.c_str();
   result->outcomes = nullptr;
@@ -385,9 +470,31 @@ const char* ResourceAt(void*, std::size_t index) {
   return index == 0 ? "routing" : nullptr;
 }
 
-const DangPluginV7 kPlugin{
-    .v6 = {.v5 = {.v4 = {.v3 = {.v2 = {.v1 = {
-                                            .abi_version = DANG_PLUGIN_ABI_V7,
+int NextNotification(void* raw, DangNotificationV1* event,
+                     DangPluginErrorV1* error) {
+  auto* owner = static_cast<Context*>(raw);
+  if (!event) return Fail(error, "FRR notification output is missing", "/");
+  std::lock_guard lock(owner->notification_mutex);
+  if (owner->pending_drift_paths.empty()) return 0;
+  callback_path = std::move(owner->pending_drift_paths.front());
+  owner->pending_drift_paths.pop_front();
+  operational_xml =
+      "<configuration-drift xmlns=\"urn:dang:plugins:frr:monitoring\">"
+      "<datastore-path>" + callback_path + "</datastore-path>"
+      "<reason>FRR running configuration changed outside dangd</reason>"
+      "</configuration-drift>";
+  *event = {.stream_name = "NETCONF",
+            .module_name = "dang-frr-monitoring",
+            .notification_name = "configuration-drift",
+            .content_xml = operational_xml.c_str(),
+            .instance_path = "",
+            .default_deny_all = 0};
+  return 1;
+}
+
+const DangPluginV8 kPlugin{
+    .v7 = {.v6 = {.v5 = {.v4 = {.v3 = {.v2 = {.v1 = {
+                                            .abi_version = DANG_PLUGIN_ABI_V8,
                                             .plugin_name = "dang-frr",
                                             .context = &context,
                                             .yang_source_count = SourceCount,
@@ -408,11 +515,12 @@ const DangPluginV7 kPlugin{
                         .rollback_hardware_action = UnsupportedApplyAction},
                 .get_operational_data_v2 = nullptr},
            .reconcile_applied_configuration = Reconcile},
-    .resource_domain_count = ResourceCount,
-    .resource_domain_at = ResourceAt};
+           .resource_domain_count = ResourceCount,
+           .resource_domain_at = ResourceAt},
+    .next_notification = NextNotification};
 
 }  // namespace
 
-extern "C" const DangPluginV7* dang_plugin_init_v7() {
+extern "C" const DangPluginV8* dang_plugin_init_v8() {
   return context.initialization_error.empty() ? &kPlugin : nullptr;
 }

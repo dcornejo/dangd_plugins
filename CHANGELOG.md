@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added ABI-v8 unsolicited FRR configuration-drift notification. The provider
+  publishes an embedded monitoring model and, after reconciliation, a read-only
+  background watcher compares managed running roots through mgmtd. Each changed
+  path is reported once until a successful commit resets expected state; dangd
+  performs schema validation, subscription filtering, and NACM authorization.
 - Added opt-in, privileged FRR native mutation tests for Linux and FreeBSD. A
   disposable `dangd-test` mgmtd pathspace receives an empty staticd protocol
   instance, exposes the committed value, and is restored to its exact
