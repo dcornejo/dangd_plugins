@@ -57,6 +57,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Required new plugins to prefer programmatic operating-system and daemon APIs
+  over command execution, including consideration of netlink on both Linux and
+  FreeBSD. Documented, argv-only command fallbacks require failure and rollback
+  coverage.
 - Split the monolithic native distribution into independent example, Kea,
   RFC 7317 system, PAM, RFC 8431 model, and documentation packages. Debian uses
   native CPack components; FreeBSD receives one generated package configuration

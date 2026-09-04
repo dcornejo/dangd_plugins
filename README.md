@@ -36,6 +36,12 @@ FreeBSD. Network-facing tests must create disposable isolation and must never
 attach a host LAN interface. See `plugins/kea/README.md` for the reference
 network-namespace and VNET-jail pattern.
 
+New provider code must prefer programmatic library, kernel, socket, or daemon
+APIs over invoking command-line tools. If no suitable interface exists, the
+exception must be documented and use fixed validated argv without a shell,
+with explicit failure and rollback tests. This includes investigating netlink
+on both Linux and FreeBSD before adding command-driven route or interface code.
+
 ## Build and test
 
 Point CMake at either the `dang` source tree or an installed include directory:
