@@ -9,6 +9,9 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Updated the external plugin discovery smoke test for dangd plugin ABI v7.
+  The loader now exercises v7 entry-point precedence and accepts the exclusive
+  resource-domain ABI used by the forthcoming FRR provider.
 - Added installable operator guides for every provider and for `pam_dangd`,
   covering dependencies, native and source installation, service wiring,
   verification, troubleshooting, safe rollback, and removal on Linux and
