@@ -47,8 +47,9 @@ For an installed development package, omit `DANGD_ROOT` when
 `DANGD_INCLUDE_DIR` directly.
 
 Native Debian and FreeBSD package generation is documented in `PACKAGING.md`.
-Packages install plugins and models but do not enable PAM, modify sshd,
-configure Kea, or start dangd.
+Each provider, the PAM module, the unfinished RIB model set, and shared
+documentation have separate packages. Packages install their own plugin and
+models but do not enable PAM, modify sshd, configure Kea, or start dangd.
 
 The example produces `dangd_example_external_plugin.so` on ELF systems or the
 corresponding module suffix on another supported POSIX platform. Load it with:
@@ -73,6 +74,11 @@ dangd --model /path/to/root.yang --config /path/to/config.xml \
 
 See the `dang` plugin author guide for the complete ownership, security,
 transaction, and worker-recovery contract.
+
+A deployment must have exactly one runtime owner for each implemented module.
+Separate provider packages make that choice explicit and allow two competing
+backends—such as the native RIB provider and a future FRR provider—to conflict
+only with one another. Packaging does not weaken dangd's duplicate-owner check.
 
 ## Included plugins
 

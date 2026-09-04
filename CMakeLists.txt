@@ -216,40 +216,50 @@ endif()
 
 include(GNUInstallDirs)
 install(TARGETS dangd_example_external_plugin
-  dangd_kea_plugin
-  LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/dangd/plugins")
+  LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/dangd/plugins"
+  COMPONENT example)
+install(TARGETS dangd_kea_plugin
+  LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/dangd/plugins"
+  COMPONENT kea)
 install(FILES plugins/example/models/dang-plugins-example.yang
-  DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules")
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules"
+  COMPONENT example)
 install(FILES
   plugins/kea/models/kea-types@2025-06-25.yang
   plugins/kea/models/kea-dhcp-types@2026-06-24.yang
   plugins/kea/models/kea-dhcp4-server@2026-06-24.yang
   plugins/kea/models/kea-dhcp6-server@2026-06-24.yang
-  DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules")
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules"
+  COMPONENT kea)
 install(FILES
   plugins/system/models/ietf-system@2014-08-06.yang
   plugins/system/models/iana-crypt-hash@2014-08-06.yang
-  DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules")
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules"
+  COMPONENT system)
 install(FILES
   plugins/rib/models/ietf-i2rs-rib@2018-09-13.yang
   plugins/rib/models/ietf-interfaces@2018-02-20.yang
-  DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules")
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules"
+  COMPONENT rib)
 install(FILES LICENSE README.md CHANGELOG.md PACKAGING.md
-  DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/dangd-plugins")
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/dangd-plugins"
+  COMPONENT docs)
 install(FILES plugins/kea/README.md
   DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/dangd-plugins"
-  RENAME KEA.md)
+  RENAME KEA.md COMPONENT kea)
 install(FILES plugins/system/README.md
   DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/dangd-plugins"
-  RENAME SYSTEM.md)
+  RENAME SYSTEM.md COMPONENT system)
 install(FILES plugins/rib/README.md
   DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/dangd-plugins"
-  RENAME RIB.md)
+  RENAME RIB.md COMPONENT rib)
 if(TARGET dangd_system_plugin)
   install(TARGETS dangd_system_plugin
-    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/dangd/plugins")
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/dangd/plugins"
+    COMPONENT system)
   install(TARGETS pam_dangd
-    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/security")
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/security"
+    COMPONENT pam)
 endif()
 
 include(packaging/Packaging.cmake)

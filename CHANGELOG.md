@@ -51,6 +51,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Split the monolithic native distribution into independent example, Kea,
+  RFC 7317 system, PAM, RFC 8431 model, and documentation packages. Debian uses
+  native CPack components; FreeBSD receives one generated package configuration
+  per component because its CPack generator has no component mode. The PAM
+  package alone depends on the system provider that supplies authentication.
 - Refreshed collection-wide documentation for native packaging, RFC 7317
   startup hydration, PAM opt-in behavior, and current deployment boundaries.
 - Updated the shared plugin loader smoke test to discover and validate every
