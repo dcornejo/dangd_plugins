@@ -98,4 +98,26 @@ TEST(FrrConfigTest, RejectsObservedRootFromWrongModule) {
   EXPECT_EQ(path, "/frr-routing:routing");
 }
 
+TEST(FrrConfigTest, ComparesCanonicalRootsForDrift) {
+  std::string error;
+  const std::optional<std::string> expected =
+      R"(<r:routing xmlns:r="http://frrouting.org/yang/routing"><r:value>1</r:value></r:routing>)";
+  const std::optional<std::string> equivalent =
+      R"(<routing xmlns="http://frrouting.org/yang/routing">
+            <value>1</value>
+          </routing>)";
+  auto same = dang::plugins::frr::EquivalentConfigurationRoot(
+      expected, equivalent, &error);
+  ASSERT_TRUE(same) << error;
+  EXPECT_TRUE(*same);
+  auto changed = dang::plugins::frr::EquivalentConfigurationRoot(
+      expected,
+      R"(<routing xmlns="http://frrouting.org/yang/routing"><value>2</value></routing>)",
+      &error);
+  ASSERT_TRUE(changed) << error;
+  EXPECT_FALSE(*changed);
+  EXPECT_TRUE(*dang::plugins::frr::EquivalentConfigurationRoot(
+      std::nullopt, std::nullopt, &error));
+}
+
 }  // namespace

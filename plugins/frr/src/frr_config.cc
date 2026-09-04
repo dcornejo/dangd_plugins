@@ -40,6 +40,71 @@ std::optional<std::string> Serialize(const xmlNode* node, std::string* error) {
                      static_cast<std::size_t>(length));
 }
 
+std::string_view Namespace(const xmlNode* node) {
+  return node && node->ns && node->ns->href
+      ? std::string_view(reinterpret_cast<const char*>(node->ns->href))
+      : std::string_view{};
+}
+
+std::string_view Namespace(const xmlAttr* attribute) {
+  return attribute && attribute->ns && attribute->ns->href
+      ? std::string_view(
+            reinterpret_cast<const char*>(attribute->ns->href))
+      : std::string_view{};
+}
+
+bool EquivalentNode(const xmlNode* left, const xmlNode* right) {
+  if (!left || !right || left->type != right->type) return left == right;
+  if (left->type == XML_TEXT_NODE)
+    return std::string_view(reinterpret_cast<const char*>(left->content)) ==
+           reinterpret_cast<const char*>(right->content);
+  if (left->type != XML_ELEMENT_NODE) return true;
+  if (std::string_view(reinterpret_cast<const char*>(left->name)) !=
+          reinterpret_cast<const char*>(right->name) ||
+      Namespace(left) != Namespace(right))
+    return false;
+  std::size_t left_attributes = 0;
+  std::size_t right_attributes = 0;
+  for (const xmlAttr* attribute = left->properties; attribute;
+       attribute = attribute->next) {
+    ++left_attributes;
+    const std::string_view name(
+        reinterpret_cast<const char*>(attribute->name));
+    const std::string_view namespace_uri = Namespace(attribute);
+    xmlChar* value = xmlNodeListGetString(left->doc, attribute->children, 1);
+    bool found = false;
+    for (const xmlAttr* candidate = right->properties; candidate;
+         candidate = candidate->next) {
+      xmlChar* candidate_value =
+          xmlNodeListGetString(right->doc, candidate->children, 1);
+      const char* left_value =
+          value ? reinterpret_cast<const char*>(value) : "";
+      const char* right_value = candidate_value
+          ? reinterpret_cast<const char*>(candidate_value)
+          : "";
+      found = name == reinterpret_cast<const char*>(candidate->name) &&
+              namespace_uri == Namespace(candidate) &&
+              std::string_view(left_value) == right_value;
+      if (candidate_value) xmlFree(candidate_value);
+      if (found) break;
+    }
+    if (value) xmlFree(value);
+    if (!found) return false;
+  }
+  for (const xmlAttr* attribute = right->properties; attribute;
+       attribute = attribute->next)
+    ++right_attributes;
+  if (left_attributes != right_attributes) return false;
+  const xmlNode* left_child = left->children;
+  const xmlNode* right_child = right->children;
+  while (left_child && right_child) {
+    if (!EquivalentNode(left_child, right_child)) return false;
+    left_child = left_child->next;
+    right_child = right_child->next;
+  }
+  return !left_child && !right_child;
+}
+
 std::optional<std::vector<std::optional<std::string>>> Extract(
     std::string_view xml, const std::vector<RootDescriptor>& descriptors,
     std::string* error, std::string* error_path) {
@@ -182,6 +247,35 @@ std::optional<std::string> ReconcileConfigurationRoots(
                      static_cast<std::size_t>(size));
   xmlFree(bytes);
   return result;
+}
+
+std::optional<bool> EquivalentConfigurationRoot(
+    const std::optional<std::string>& expected,
+    const std::optional<std::string>& observed, std::string* error) {
+  if (!expected || expected->empty())
+    return !observed || observed->empty();
+  if (!observed || observed->empty()) return false;
+  if (expected->size() >
+          static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
+      observed->size() >
+          static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    if (error) *error = "FRR configuration root is too large for comparison";
+    return std::nullopt;
+  }
+  Document expected_document(xmlReadMemory(
+      expected->data(), static_cast<int>(expected->size()), "expected.xml",
+      nullptr, XML_PARSE_NONET | XML_PARSE_NOBLANKS | XML_PARSE_NOERROR |
+                   XML_PARSE_NOWARNING), xmlFreeDoc);
+  Document observed_document(xmlReadMemory(
+      observed->data(), static_cast<int>(observed->size()), "observed.xml",
+      nullptr, XML_PARSE_NONET | XML_PARSE_NOBLANKS | XML_PARSE_NOERROR |
+                   XML_PARSE_NOWARNING), xmlFreeDoc);
+  if (!expected_document || !observed_document) {
+    if (error) *error = "cannot parse FRR configuration root for comparison";
+    return std::nullopt;
+  }
+  return EquivalentNode(xmlDocGetRootElement(expected_document.get()),
+                        xmlDocGetRootElement(observed_document.get()));
 }
 
 }  // namespace dang::plugins::frr

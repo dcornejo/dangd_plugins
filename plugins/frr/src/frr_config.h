@@ -45,6 +45,11 @@ std::optional<std::string> ReconcileConfigurationRoots(
     const std::vector<std::optional<std::string>>& observed,
     std::string* error, std::string* error_path);
 
+/** Compares optional XML roots semantically, independent of prefix spelling. */
+std::optional<bool> EquivalentConfigurationRoot(
+    const std::optional<std::string>& expected,
+    const std::optional<std::string>& observed, std::string* error);
+
 }  // namespace dang::plugins::frr
 
 #endif  // DANG_PLUGINS_FRR_FRR_CONFIG_H_

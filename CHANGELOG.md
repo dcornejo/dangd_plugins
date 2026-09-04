@@ -13,6 +13,10 @@ All notable changes to the external dangd plugin collection are recorded here.
   the provider reads both managed roots back from mgmtd's running datastore and
   replaces only those roots in dangd's complete applied snapshot; absent roots
   are removed and unrelated module data is preserved.
+- Added read-triggered detection of FRR running-configuration changes made
+  outside dangd. The provider retains reconciled roots, compares subsequent
+  mgmtd running reads semantically, and reports drift with the affected model
+  path through dangd's operational-provider failure telemetry.
 - Added live FRR operational-state publication through the native mgmtd
   `GET_DATA`/`TREE_DATA` API. The codec and session layer require correlated,
   complete XML results, reject partial or continued replies, and expose a

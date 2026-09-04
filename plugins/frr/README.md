@@ -55,8 +55,8 @@ session correlation, XML format, partial-error status, and continuation state
 are checked before any bytes reach dangd. A partial result fails the retrieval
 rather than presenting an incomplete tree as authoritative.
 
-Drift detection, RPCs, notifications, FRR feature discovery, and protocols
-beyond zebra/staticd are not yet implemented.
+RPCs, notifications, FRR feature discovery, and protocols beyond zebra/staticd
+are not yet implemented.
 The operational callback publishes FRR's observed tree; it does not substitute
 requested configuration for observed state.
 
@@ -66,6 +66,15 @@ Those observed roots replace only the corresponding roots in dangd's complete
 applied snapshot. An absent FRR root removes the requested root, a wrong
 namespace or malformed reply fails closed, and configuration belonging to
 other plugins is preserved byte-for-tree rather than reconstructed from FRR.
+
+The reconciled roots become the provider's expected running state. Each later
+operational retrieval reads those roots again and compares XML element names,
+namespace URIs, attributes, values, and child order independent of namespace
+prefix spelling. A semantic mismatch is reported at the affected FRR root and
+causes the operational callback to fail closed. Dangd records that provider
+failure in its modeled reconciliation telemetry, making out-of-band edits
+visible without publishing stale FRR state. Detection is retrieval-driven;
+there is not yet an unsolicited drift notification.
 
 ## Installation and configuration
 

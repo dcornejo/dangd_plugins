@@ -23,6 +23,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <string_view>
@@ -41,6 +42,8 @@ struct Context {
   std::string socket_path = "/var/run/frr/mgmtd_fe.sock";
   std::chrono::milliseconds timeout{2000};
   std::atomic<std::uint64_t> next_client{1};
+  std::mutex running_mutex;
+  std::optional<std::vector<std::optional<std::string>>> expected_running;
   std::string initialization_error;
 
   Context() {
@@ -164,6 +167,18 @@ std::unique_ptr<dang::plugins::frr::mgmtd::SessionOperations> OpenSession(
   return OpenConcreteSession(owner, error);
 }
 
+std::optional<std::vector<std::optional<std::string>>> ReadRunningRoots(
+    dang::plugins::frr::mgmtd::Session* session, std::string* error) {
+  std::vector<std::optional<std::string>> roots;
+  for (const auto& descriptor : RootDescriptors()) {
+    auto xml = session->GetRunningConfiguration(descriptor.xpath, error);
+    if (!xml) return std::nullopt;
+    roots.push_back(xml->empty() ? std::nullopt
+                                : std::optional<std::string>(std::move(*xml)));
+  }
+  return roots;
+}
+
 int Prepare(void* raw, const DangTransactionV1* transaction, void** output,
             DangPluginErrorV1* error) {
   auto* owner = static_cast<Context*>(raw);
@@ -255,11 +270,26 @@ int Operational(void* raw, DangOperationalDataV1* result,
     }
     if (!filtered->empty()) fragments.push_back(std::move(*filtered));
   }
+  std::unique_lock running_lock(owner->running_mutex);
+  auto running = zebra ? ReadRunningRoots(session.get(), &callback_error)
+                       : std::nullopt;
   std::string close_error;
   const bool closed = session->Close(&close_error);
-  if (!zebra)
+  if (!zebra || !running)
     return Fail(error, callback_error, "/frr-routing:routing");
   if (!closed) return Fail(error, close_error, "/");
+  if (owner->expected_running) {
+    for (std::size_t index = 0; index < owner->expected_running->size();
+         ++index) {
+      auto equivalent = dang::plugins::frr::EquivalentConfigurationRoot(
+          (*owner->expected_running)[index], (*running)[index], &callback_error);
+      if (!equivalent)
+        return Fail(error, callback_error, RootDescriptors()[index].xpath);
+      if (!*equivalent)
+        return Fail(error, "FRR running configuration changed outside dangd",
+                    RootDescriptors()[index].xpath);
+    }
+  }
   operational_xml = dang::plugins::frr::OperationalDocument(fragments);
   result->data_xml = operational_xml.c_str();
   return 1;
@@ -274,26 +304,21 @@ int Reconcile(void* raw, void* prepared_raw, const char* current_xml,
     return Fail(error, "FRR reconciliation input is incomplete");
   auto session = OpenConcreteSession(owner, &callback_error);
   if (!session) return Fail(error, callback_error, "/");
-  std::vector<std::optional<std::string>> observed;
-  for (const auto& descriptor : RootDescriptors()) {
-    auto xml = session->GetRunningConfiguration(descriptor.xpath,
-                                                &callback_error);
-    if (!xml) break;
-    observed.push_back(xml->empty() ? std::nullopt
-                                   : std::optional<std::string>(std::move(*xml)));
-  }
+  std::unique_lock running_lock(owner->running_mutex);
+  auto observed = ReadRunningRoots(session.get(), &callback_error);
   std::string close_error;
   const bool closed = session->Close(&close_error);
-  if (observed.size() != RootDescriptors().size())
+  if (!observed)
     return Fail(error, callback_error, "/");
   if (!closed) return Fail(error, close_error, "/");
   std::string reconciliation_path;
   auto reconciled = dang::plugins::frr::ReconcileConfigurationRoots(
-      current_xml, RootDescriptors(), observed, &callback_error,
+      current_xml, RootDescriptors(), *observed, &callback_error,
       &reconciliation_path);
   if (!reconciled)
     return Fail(error, callback_error,
                 reconciliation_path.empty() ? "/" : reconciliation_path);
+  owner->expected_running = std::move(*observed);
   reconciled_xml = std::move(*reconciled);
   result->applied_xml = reconciled_xml.c_str();
   result->outcomes = nullptr;
