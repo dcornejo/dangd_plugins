@@ -63,7 +63,16 @@ session correlation, XML format, partial-error status, and continuation state
 are checked before any bytes reach dangd. A partial result fails the retrieval
 rather than presenting an incomplete tree as authoritative.
 
-RPCs, native FRR notifications, and protocols beyond zebra/staticd are not yet
+All top-level RPCs declared by the installed `frr-zebra` module are dispatched
+through mgmtd's public native RPC request/reply API. Dangd validates input and
+output against the runtime-matched schema and applies NACM before invoking the
+provider. The provider does not translate RPCs into shell commands. Live RPC
+interoperability still requires a running zebra backend; the validation hosts
+currently expose either mgmtd without a zebra RPC backend or an inactive
+socket, so only the portable native-wire and correlated-session contract is
+confirmed here.
+
+Native FRR notifications and protocols beyond zebra/staticd are not yet
 implemented. The provider additionally publishes its small implemented
 `dang-frr-monitoring` model. Its `configuration-drift` notification is provider
 health telemetry rather than an alteration of FRR's native models.

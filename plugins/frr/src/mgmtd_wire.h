@@ -28,6 +28,8 @@ enum class Code : std::uint16_t {
   kGetData = 3,
   kEdit = 5,
   kEditReply = 6,
+  kRpc = 7,
+  kRpcReply = 8,
   kSessionRequest = 10,
   kSessionReply = 11,
   kLock = 19,
@@ -109,6 +111,9 @@ std::vector<std::byte> GetData(std::uint64_t session_id,
                                Datastore datastore, bool include_state,
                                bool include_config, std::string_view xpath,
                                DefaultsMode defaults = DefaultsMode::kExplicit);
+/** Invokes a modeled RPC or action with XML input data. */
+std::vector<std::byte> Rpc(std::uint64_t session_id, std::uint64_t request_id,
+                           std::string_view xpath, std::string_view xml);
 
 // Decodes exactly one complete frame. FRR's native local protocol uses host
 // byte order and natural C layout; it is therefore intentionally limited to a
@@ -120,6 +125,9 @@ std::optional<std::string> ErrorText(const DecodedFrame& frame,
 /** Decodes a successful XML TREE_DATA body and rejects partial results. */
 std::optional<TreeDataResult> TreeData(const DecodedFrame& frame,
                                        std::string* error);
+/** Decodes a successful XML RPC reply body. */
+std::optional<std::string> RpcReply(const DecodedFrame& frame,
+                                    std::string* error);
 
 }  // namespace dang::plugins::frr::mgmtd
 

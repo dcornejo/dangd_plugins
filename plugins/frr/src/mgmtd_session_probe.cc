@@ -16,12 +16,14 @@
 
 int main(int argc, char** argv) {
   const std::string_view mode = argc >= 3 ? argv[2] : "";
-  if (argc < 2 || argc > 4 ||
-      (argc >= 3 && mode != "--operational" && mode != "--running") ||
-      (mode == "--running" && argc != 4)) {
+  if (argc < 2 || argc > 5 ||
+      (argc >= 3 && mode != "--operational" && mode != "--running" &&
+       mode != "--rpc") ||
+      (mode == "--running" && argc != 4) ||
+      (mode == "--rpc" && (argc < 4 || argc > 5))) {
     std::cerr <<
         "usage: frr-mgmtd-session-check SOCKET "
-        "[--operational [XPATH] | --running XPATH]\n";
+        "[--operational [XPATH] | --running XPATH | --rpc XPATH [XML]]\n";
     return 2;
   }
   std::string error;
@@ -44,9 +46,14 @@ int main(int argc, char** argv) {
   const std::uint64_t session_id = session->id();
   std::optional<std::string> operational;
   if (argc >= 3) {
-    operational = mode == "--running"
-        ? session->GetRunningConfiguration(argv[3], &error)
-        : session->GetOperationalData(argc == 4 ? argv[3] : "/*", &error);
+    if (mode == "--running")
+      operational = session->GetRunningConfiguration(argv[3], &error);
+    else if (mode == "--rpc")
+      operational = session->InvokeRpc(argv[3], argc == 5 ? argv[4] : "",
+                                       &error);
+    else
+      operational = session->GetOperationalData(argc == 4 ? argv[3] : "/*",
+                                                &error);
     if (!operational) {
       std::cerr << error << '\n';
       (void)session->Close(&error);

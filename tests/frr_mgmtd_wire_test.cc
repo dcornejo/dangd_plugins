@@ -73,6 +73,16 @@ TEST(FrrMgmtdWireTest, EncodesSessionLockEditAndCommitLayouts) {
   EXPECT_EQ(get[34], std::byte{0});
   EXPECT_EQ(get[35], std::byte{3});
   EXPECT_STREQ(reinterpret_cast<const char*>(get.data() + 40), "/*");
+
+  const auto rpc = Rpc(82, 10, "/frr-zebra:get-vrf-info", "<input/>");
+  EXPECT_EQ(Load<std::uint16_t>(rpc, 8),
+            static_cast<std::uint16_t>(Code::kRpc));
+  EXPECT_EQ(Load<std::uint32_t>(rpc, 12),
+            std::string_view("/frr-zebra:get-vrf-info").size() + 1);
+  EXPECT_EQ(rpc[32], std::byte{1});
+  EXPECT_EQ(rpc[33], std::byte{0});
+  EXPECT_STREQ(reinterpret_cast<const char*>(rpc.data() + 40),
+               "/frr-zebra:get-vrf-info");
 }
 
 TEST(FrrMgmtdWireTest, DecodesCompleteXmlTreeData) {
@@ -125,6 +135,27 @@ TEST(FrrMgmtdWireTest, DecodesAndValidatesCompleteFrames) {
   frame[0] = std::byte{0};
   EXPECT_FALSE(Decode(frame, &error));
   EXPECT_NE(error.find("marker"), std::string::npos);
+}
+
+TEST(FrrMgmtdWireTest, DecodesNativeXmlRpcReply) {
+  auto frame = Rpc(82, 10, "/frr-zebra:get-vrf-info", "");
+  Store(&frame, 8, static_cast<std::uint16_t>(Code::kRpcReply));
+  const std::string xml = "<vrf-list><name>blue</name></vrf-list>";
+  frame.resize(40 + xml.size() + 1);
+  Store(&frame, 4, static_cast<std::uint32_t>(frame.size()));
+  frame[32] = std::byte{1};
+  frame[33] = std::byte{0};
+  std::memcpy(frame.data() + 40, xml.data(), xml.size());
+  frame.back() = std::byte{0};
+  std::string error;
+  auto decoded = Decode(frame, &error);
+  ASSERT_TRUE(decoded) << error;
+  EXPECT_EQ(RpcReply(*decoded, &error), xml) << error;
+
+  frame[33] = std::byte{1};
+  decoded = Decode(frame, &error);
+  ASSERT_TRUE(decoded);
+  EXPECT_FALSE(RpcReply(*decoded, &error));
 }
 
 TEST(FrrMgmtdWireTest, RejectsUnterminatedErrorText) {

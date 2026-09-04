@@ -55,6 +55,10 @@ class Session : public SessionOperations {
   /** Retrieves config-true XML exactly as accepted in FRR's running store. */
   std::optional<std::string> GetRunningConfiguration(std::string_view xpath,
                                                      std::string* error);
+  /** Invokes one modeled FRR RPC and returns its native XML output. */
+  std::optional<std::string> InvokeRpc(std::string_view xpath,
+                                      std::string_view input_xml,
+                                      std::string* error);
   bool Close(std::string* error) override;
 
   std::uint64_t id() const { return session_id_; }

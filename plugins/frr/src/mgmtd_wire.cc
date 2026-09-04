@@ -60,6 +60,8 @@ bool KnownCode(Code code) {
     case Code::kGetData:
     case Code::kEdit:
     case Code::kEditReply:
+    case Code::kRpc:
+    case Code::kRpcReply:
     case Code::kSessionRequest:
     case Code::kSessionReply:
     case Code::kLock:
@@ -166,6 +168,23 @@ std::vector<std::byte> GetData(std::uint64_t session_id,
   return output;
 }
 
+std::vector<std::byte> Rpc(std::uint64_t session_id, std::uint64_t request_id,
+                           std::string_view xpath, std::string_view xml) {
+  const std::size_t xpath_bytes = xpath.size() + 1;
+  if (!ValidString(xpath) || !ValidString(xml) ||
+      xpath_bytes > std::numeric_limits<std::uint32_t>::max())
+    return {};
+  auto output = Message(Code::kRpc, session_id, request_id,
+                        static_cast<std::uint32_t>(xpath_bytes),
+                        8 + xpath_bytes + (xml.empty() ? 0 : xml.size() + 1));
+  if (output.empty()) return {};
+  output[32] = std::byte{1};  // LYD_XML / MGMT_MSG_FORMAT_XML.
+  output[33] = std::byte{0};  // Native YANG rather than RESTCONF wrapping.
+  AppendString(&output, 40, xpath);
+  if (!xml.empty()) AppendString(&output, 40 + xpath_bytes, xml);
+  return output;
+}
+
 std::optional<DecodedFrame> Decode(std::span<const std::byte> frame,
                                    std::string* error) {
   if (frame.size() < kFrameHeaderBytes + kFixedMessageBytes) {
@@ -245,6 +264,26 @@ std::optional<TreeDataResult> TreeData(const DecodedFrame& frame,
     return std::nullopt;
   }
   return TreeDataResult{std::string(data, size), frame.body[2] == std::byte{1}};
+}
+
+std::optional<std::string> RpcReply(const DecodedFrame& frame,
+                                    std::string* error) {
+  if (frame.header.code != Code::kRpcReply || frame.body.size() < 8) {
+    if (error) *error = "mgmtd RPC reply has an invalid fixed body";
+    return std::nullopt;
+  }
+  if (frame.body[0] != std::byte{1} || frame.body[1] != std::byte{0}) {
+    if (error) *error = "mgmtd RPC reply is not native YANG XML";
+    return std::nullopt;
+  }
+  const auto* data = reinterpret_cast<const char*>(frame.body.data() + 8);
+  std::size_t size = frame.body.size() - 8;
+  if (size > 0 && data[size - 1] == '\0') --size;
+  if (std::memchr(data, '\0', size) != nullptr) {
+    if (error) *error = "mgmtd RPC reply contains an embedded NUL";
+    return std::nullopt;
+  }
+  return std::string(data, size);
 }
 
 }  // namespace dang::plugins::frr::mgmtd

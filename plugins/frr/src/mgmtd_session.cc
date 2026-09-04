@@ -237,6 +237,22 @@ std::optional<std::string> Session::GetRunningConfiguration(
   return GetData(Datastore::kRunning, false, true, xpath, error);
 }
 
+std::optional<std::string> Session::InvokeRpc(std::string_view xpath,
+                                              std::string_view input_xml,
+                                              std::string* error) {
+  if (candidate_locked_) {
+    if (error) *error = "cannot invoke an mgmtd RPC while candidate is locked";
+    return std::nullopt;
+  }
+  auto request = NextRequest(error);
+  if (!request) return std::nullopt;
+  auto reply = transport_->Exchange(mgmtd::Rpc(session_id_, *request, xpath,
+                                                input_xml),
+                                    Code::kRpcReply, false, error);
+  if (!reply) return std::nullopt;
+  return RpcReply({reply->header, reply->body}, error);
+}
+
 std::optional<std::string> Session::GetData(Datastore datastore,
                                             bool include_state,
                                             bool include_config,

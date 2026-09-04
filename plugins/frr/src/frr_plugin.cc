@@ -188,6 +188,7 @@ thread_local std::string callback_error;
 thread_local std::string callback_path;
 thread_local std::string operational_xml;
 thread_local std::string reconciled_xml;
+thread_local std::string rpc_output_xml;
 thread_local std::vector<const char*> callback_features;
 
 const std::vector<dang::plugins::frr::RootDescriptor>& RootDescriptors() {
@@ -456,6 +457,29 @@ int Reconcile(void* raw, void* prepared_raw, const char* current_xml,
   return 1;
 }
 
+int Invoke(void* raw, const DangOperationV1* operation,
+           DangOperationResultV1* result, DangPluginErrorV1* error) {
+  auto* owner = static_cast<Context*>(raw);
+  if (!operation || !operation->module_name || !operation->operation_name ||
+      !result)
+    return Fail(error, "FRR RPC input is incomplete", "/");
+  if (std::string_view(operation->module_name) != "frr-zebra")
+    return Fail(error, "FRR RPC module is not implemented", "/");
+  const std::string xpath = "/frr-zebra:" +
+      std::string(operation->operation_name);
+  auto session = OpenConcreteSession(owner, &callback_error);
+  if (!session) return Fail(error, callback_error, xpath);
+  auto output = session->InvokeRpc(
+      xpath, operation->input_xml ? operation->input_xml : "", &callback_error);
+  std::string close_error;
+  const bool closed = session->Close(&close_error);
+  if (!output) return Fail(error, callback_error, xpath);
+  if (!closed) return Fail(error, close_error, xpath);
+  rpc_output_xml = std::move(*output);
+  result->output_xml = rpc_output_xml.c_str();
+  return 1;
+}
+
 std::size_t HardwareActionCount(void*, void*) { return 0; }
 int UnsupportedHardwareAction(void*, void*, std::size_t,
                               DangHardwareActionV1*, DangPluginErrorV1* error) {
@@ -507,7 +531,7 @@ const DangPluginV8 kPlugin{
                                             .rollback = Rollback,
                                             .release = Release,
                                             .destroy = nullptr},
-                                        .invoke = nullptr},
+                                        .invoke = Invoke},
                                 .get_operational_data = Operational},
                         .hardware_action_count = HardwareActionCount,
                         .hardware_action_at = UnsupportedHardwareAction,

@@ -9,6 +9,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added generic dispatch for all RPCs declared by the installed `frr-zebra`
+  schema through FRR's public native mgmtd RPC and RPC-reply messages. The wire
+  codec validates format, correlation, framing, and embedded NULs; the session
+  and plugin layers preserve dangd schema validation and NACM ownership.
 - Added ABI-v8 unsolicited FRR configuration-drift notification. The provider
   publishes an embedded monitoring model and, after reconciliation, a read-only
   background watcher compares managed running roots through mgmtd. Each changed

@@ -94,6 +94,17 @@ void SuccessfulServer(int socket, std::vector<Code>* requests) {
         frame.back() = std::byte{0};
         break;
       }
+      case Code::kRpc: {
+        reply_code = Code::kRpcReply;
+        const std::string xml = "<vrf-list><name>blue</name></vrf-list>";
+        frame.resize(40 + xml.size() + 1);
+        Store(&frame, 4, static_cast<std::uint32_t>(frame.size()));
+        frame[32] = std::byte{1};
+        frame[33] = std::byte{0};
+        std::memcpy(frame.data() + 40, xml.data(), xml.size());
+        frame.back() = std::byte{0};
+        break;
+      }
       default:
         close(socket);
         return;
@@ -174,6 +185,26 @@ TEST(FrrMgmtdSessionTest, RetrievesLiveOperationalXml) {
   EXPECT_EQ(requests,
             std::vector<Code>({Code::kSessionRequest, Code::kGetData,
                                Code::kGetData,
+                               Code::kSessionRequest}));
+}
+
+TEST(FrrMgmtdSessionTest, InvokesModeledRpcAndReturnsXml) {
+  int sockets[2]{-1, -1};
+  ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), 0);
+  std::vector<Code> requests;
+  std::thread server(SuccessfulServer, sockets[1], &requests);
+  std::string error;
+  auto transport = Transport::AdoptConnectedSocket(
+      sockets[0], std::chrono::seconds(1), &error);
+  auto session = Session::Open(std::move(transport), 80, "dangd-frr-test", &error);
+  ASSERT_TRUE(session) << error;
+  auto output = session->InvokeRpc("/frr-zebra:get-vrf-info", "", &error);
+  ASSERT_TRUE(output) << error;
+  EXPECT_EQ(*output, "<vrf-list><name>blue</name></vrf-list>");
+  EXPECT_TRUE(session->Close(&error)) << error;
+  server.join();
+  EXPECT_EQ(requests,
+            std::vector<Code>({Code::kSessionRequest, Code::kRpc,
                                Code::kSessionRequest}));
 }
 
