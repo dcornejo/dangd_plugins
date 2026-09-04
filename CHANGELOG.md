@@ -9,6 +9,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added installable operator guides for every provider and for `pam_dangd`,
+  covering dependencies, native and source installation, service wiring,
+  verification, troubleshooting, safe rollback, and removal on Linux and
+  FreeBSD. The RFC 8431 guide clearly identifies its package as schema-only.
+- Removed the obsolete system-plugin limitation claiming that initial and
+  restored running configuration was not hydrated at daemon startup.
 - Staged the unmodified RFC 8431 `ietf-i2rs-rib` revision 2018-09-13 model and
   RFC 8343 `ietf-interfaces` dependency, with pinned checksums, installation,
   and independent libyang schema validation. No runtime implementation is

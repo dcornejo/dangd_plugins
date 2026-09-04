@@ -9,6 +9,43 @@ through their local UNIX control sockets. It embeds the official Kea 3.2.0
 their pinned Kea type modules. The original model files retain ISC's MPL-2.0
 license notices; the adapter code is Apache-2.0.
 
+## Dependencies and installation
+
+The runtime requires dangd 0.1.0 or newer, Kea 3.2.x DHCPv4 and DHCPv6
+servers, and local UNIX control sockets accessible by the plugin worker. On
+Debian/Ubuntu install `kea-dhcp4-server` and `kea-dhcp6-server`; on FreeBSD
+install `kea`. A source build additionally needs CMake 3.24+, a C++20 compiler,
+libxml2 development files, nlohmann-json 3.11+, and GoogleTest.
+
+Debian/Ubuntu package installation:
+
+```sh
+sudo apt update
+sudo apt install kea-dhcp4-server kea-dhcp6-server
+sudo apt install ./dangd-plugin-kea_0.1.0_amd64.deb
+dpkg -L dangd-plugin-kea
+```
+
+FreeBSD package installation:
+
+```sh
+sudo pkg install kea
+sudo pkg add ./dangd-plugin-kea-0.1.0.pkg
+pkg info -l dangd-plugin-kea
+```
+
+To build and install only this component from the repository:
+
+```sh
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DDANGD_ROOT=/path/to/dang
+cmake --build build --target dangd_kea_plugin kea_adapter_test
+ctest --test-dir build -R 'kea_' --output-on-failure
+sudo cmake --install build --component kea
+```
+
+The plugin does not require Kea Control Agent or a database lease backend.
+
 ## Transaction behavior
 
 For every affected commit, the plugin:
@@ -49,6 +86,59 @@ exchange.
 On Ubuntu, install `kea-dhcp4-server` and `kea-dhcp6-server`. On FreeBSD,
 install the `kea` package. Package services must be stopped while running the
 isolated test because the tests start private instances.
+
+Add a UNIX control socket to each existing Kea configuration. This is the
+relevant DHCPv4 fragment, not a complete Kea configuration:
+
+```json
+{
+  "Dhcp4": {
+    "control-sockets": [
+      { "socket-type": "unix", "socket-name": "/run/kea/kea4-ctrl-socket" }
+    ]
+  }
+}
+```
+
+Use the equivalent `Dhcp6` object and `kea6-ctrl-socket` in the DHCPv6 file.
+On FreeBSD use `/var/run/kea/...` consistently. Validate both native files
+before restarting the servers:
+
+```sh
+kea-dhcp4 -t /etc/kea/kea-dhcp4.conf
+kea-dhcp6 -t /etc/kea/kea-dhcp6.conf
+```
+
+FreeBSD normally stores them under `/usr/local/etc/kea`; pass those paths to
+the same checks. Verify both socket files after restart. Put the two
+`DANG_KEA_*_SOCKET` variables in the dangd service environment so they survive
+reboot, then add the absolute installed `dangd_kea_plugin.so` pathname as a
+repeatable `--plugin` option. Find that path with the package listing command
+instead of guessing it. Validate the complete launch first:
+
+```sh
+dangd --model /path/to/root.yang --config /path/to/config.xml \
+  --plugin /absolute/path/dangd_kea_plugin.so --check
+```
+
+Start the service with the same environment and arguments. Confirm YANG
+Library advertises both Kea server modules. Make and commit a small candidate
+change while watching both Kea logs before attempting a production migration.
+
+## Troubleshooting and removal
+
+- An unavailable socket means the path is wrong, Kea is stopped, or worker
+  permissions do not allow access.
+- A successful `config-test` followed by failed `config-set` is a Kea runtime
+  rejection. The plugin reports the response and compensates an already
+  changed DHCPv4 server.
+- Never remove the control socket in the modeled replacement configuration;
+  that would cut off the next management operation.
+
+Remove the plugin from dangd and migrate or delete its datastore nodes before
+running `sudo apt remove dangd-plugin-kea` or
+`sudo pkg delete dangd-plugin-kea`. Package removal leaves Kea and its last
+accepted configuration in place.
 
 ## Network-safe platform tests
 

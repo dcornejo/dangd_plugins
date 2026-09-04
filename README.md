@@ -19,6 +19,10 @@ plugins/
   example/
     models/       YANG modules, imports, and deviations owned by the plugin
     src/          provider implementation
+  kea/            Kea DHCPv4/DHCPv6 provider and deployment guide
+  rib/            RFC 8431 schema and in-progress native backend
+  system/         RFC 7317 provider and platform implementations
+pam/              PAM adapter and recovery-first installation guide
 tests/            collection-wide loader and contract tests
 ```
 
@@ -82,13 +86,17 @@ only with one another. Packaging does not weaken dangd's duplicate-owner check.
 
 ## Included plugins
 
-- `example` is the minimal ABI-v1 development template.
+- `example` is the minimal ABI-v1 development template. Its setup guide is
+  `plugins/example/README.md`.
 - `kea` implements the pinned Kea DHCPv4 and DHCPv6 YANG models through native
   local control sockets and includes isolated Linux and FreeBSD interactions.
+  Its server and socket setup is in `plugins/kea/README.md`.
 - `system` implements RFC 7317 system identity, hostname, clock/timezone, NTP,
   DNS, local authentication, platform state, and control RPCs. It also supplies
   the root-only verifier used by `pam_dangd`; its explicit compliance gaps are
   maintained in `plugins/system/README.md`.
+- `pam_dangd` is packaged independently. Follow `pam/README.md`, including its
+  recovery-first SSH/PAM procedure.
 - `rib` currently stages the exact RFC 8431 schema family and independent
   conformance test. Runtime Linux/FreeBSD RIB ownership is not advertised until
   the transaction and operation backends are complete.

@@ -224,6 +224,9 @@ install(TARGETS dangd_kea_plugin
 install(FILES plugins/example/models/dang-plugins-example.yang
   DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules"
   COMPONENT example)
+install(FILES plugins/example/README.md
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/dangd-plugins"
+  RENAME EXAMPLE.md COMPONENT example)
 install(FILES
   plugins/kea/models/kea-types@2025-06-25.yang
   plugins/kea/models/kea-dhcp-types@2026-06-24.yang
@@ -260,6 +263,9 @@ if(TARGET dangd_system_plugin)
   install(TARGETS pam_dangd
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/security"
     COMPONENT pam)
+  install(FILES pam/README.md
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/dangd-plugins"
+    RENAME PAM.md COMPONENT pam)
 endif()
 
 include(packaging/Packaging.cmake)

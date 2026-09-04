@@ -13,6 +13,46 @@ advertised. It builds only on Linux and FreeBSD, and both native variants are
 required to pass the same parsing, transaction, operational-state, and PAM
 tests.
 
+## Dependencies, privileges, and installation
+
+The runtime requires dangd 0.1.0 or newer, libxml2, the platform `crypt(3)`
+library, and either chrony on Linux or base ntpd on FreeBSD. Production changes
+to hostname, clock, resolver, accounts, and services require the privileged
+dangd deployment identity. Protect NETCONF with authenticated transport and
+NACM; do not reuse this identity for ordinary shell or application access.
+
+Debian/Ubuntu:
+
+```sh
+sudo apt update
+sudo apt install chrony
+sudo apt install ./dangd-plugin-system_0.1.0_amd64.deb
+dpkg -L dangd-plugin-system
+```
+
+FreeBSD:
+
+```sh
+sudo pkg add ./dangd-plugin-system-0.1.0.pkg
+pkg info -l dangd-plugin-system
+```
+
+Source builds also need CMake 3.24+, a C++20 compiler, PAM/crypt/libxml2
+development headers, nlohmann-json 3.11+, and GoogleTest. Install only this
+component with:
+
+```sh
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DDANGD_ROOT=/path/to/dang
+cmake --build build --target dangd_system_plugin system_config_test
+ctest --test-dir build -R 'system_' --output-on-failure
+sudo cmake --install build --component system
+```
+
+Use the package listing to find `dangd_system_plugin.so`, add its absolute path
+to dangd with `--plugin`, and run the complete command with `--check` before
+restarting the service.
+
 ## Implemented behavior
 
 - `contact` and `location` are retained in the dangd datastore.
@@ -37,12 +77,18 @@ tests.
   restored on failure or dangd rollback. Symbolic links are restored as links.
 
 Set `DANG_SYSTEM_ROOT` to a disposable filesystem root for testing. Production
-deployments omit it. Set `DANG_SYSTEM_AUTH_SOCKET` to enable the root-only PAM
+deployments must omit it or configuration will be redirected away from the
+real host. Set `DANG_SYSTEM_AUTH_SOCKET` to enable the root-only PAM
 verification service, normally:
 
 ```sh
 export DANG_SYSTEM_AUTH_SOCKET=/run/dangd/auth.sock
 ```
+
+Use `/var/run/dangd/auth.sock` on FreeBSD. Create a private parent directory
+owned by the dangd service identity and place the variable in the service
+environment. After starting dangd, verify the socket owner and mode before
+adding a PAM policy.
 
 The socket is mode 0600, accepts only root peers using native peer
 credentials, bounds usernames and passwords, applies a five-second I/O
@@ -73,34 +119,29 @@ not a PAM operation and remains separate.
    also not advertised.
 3. Authorized-key records are validated and retained but are not yet consumed
    by dangd's embedded SSH server or an OpenSSH `AuthorizedKeysCommand` helper.
-4. The PAM verifier receives the applied user set after the first successful
-   transaction involving `ietf-system`. The plugin ABI does not currently
-   hydrate a plugin with the initial or restored running configuration at
-   daemon startup. This is tracked with configuration lifecycle work in the
-   main dang `TODO.md`.
-5. Linux systems whose `/etc/resolv.conf` is a resolver-manager symbolic link
+4. Linux systems whose `/etc/resolv.conf` is a resolver-manager symbolic link
    are rejected to avoid breaking systemd-resolved or resolvconf ownership.
    Native manager APIs are not implemented. Static resolver files work on both
    tested platforms.
    Removing an explicitly managed hostname or timezone is rejected because
    RFC 7317 does not define which platform default should replace it.
-6. Linux NTP integration targets chrony and FreeBSD targets base ntpd. Other
+5. Linux NTP integration targets chrony and FreeBSD targets base ntpd. Other
    daemons require a platform adapter. The `ntp-udp-port` feature is disabled.
-7. `set-current-datetime` currently accepts canonical UTC values ending in
+6. `set-current-datetime` currently accepts canonical UTC values ending in
    `Z`; fractional seconds and explicit numeric offsets allowed by
    `yang:date-and-time` are not translated. The plugin ABI cannot return RFC
    7317's exact `ntp-active` NETCONF error-app-tag, so it includes that token in
    the attributed error message.
-8. Restart and shutdown use guarded native service commands. dangd currently
+7. Restart and shutdown use guarded native service commands. dangd currently
    invokes plugin RPCs synchronously, so it cannot guarantee the RFC's
    recommended reply-before-power-transition sequencing.
-9. Operational data is published through ABI v3. Its contents are complete,
+8. Operational data is published through ABI v3. Its contents are complete,
    but ABI v5 completeness cannot be selected without also implementing the
    complete ABI v4 fine-grained hardware action contract.
-10. PAM account management returns success after authentication because RFC
+9. PAM account management returns success after authentication because RFC
     7317 defines no expiry, lockout, login-class, credential, or session data.
     Password aging and OS account provisioning are outside this model.
-11. The embedded module intentionally remains byte-for-byte compatible with
+10. The embedded module intentionally remains byte-for-byte compatible with
     the published 2014-08-06 source. RFC 7317 erratum 6245 is classified as
     "Held for Document Update" and is therefore documented but not patched
     into the advertised model revision.
@@ -124,6 +165,23 @@ Each script checks successful and failed password authentication through the
 host PAM framework, verifies generated DNS and NTP files, reads live platform
 state, rolls the transaction back, and removes its temporary PAM policy.
 
-Native packages install this plugin and `pam_dangd`, but deliberately do not
-enable a PAM policy or alter sshd. The administrator must opt into the local
-verification path described above.
+Native packages deliberately do not enable a PAM policy or alter sshd. The
+administrator must opt into the local verification path described above.
+
+The packages are now separate: `dangd-plugin-system` installs this provider;
+`dangd-pam` installs the adapter and depends on it. Follow the installed
+`PAM.md` guide before editing sshd.
+
+## Safe rollout and removal
+
+Start with non-disruptive `contact` and `location` data and retrieve the
+advertised `system-state`. Apply hostname, DNS, timezone, and NTP one category
+at a time with local console recovery available. Leave
+`DANG_SYSTEM_ALLOW_POWER` unset unless remote power RPCs are explicitly needed
+and restricted by NACM.
+
+Before uninstalling, remove the plugin option and migrate or delete all
+`ietf-system` datastore nodes. Remove `dangd-pam` and its PAM policy first.
+Then use `sudo apt remove dangd-plugin-system` or
+`sudo pkg delete dangd-plugin-system`. Package removal does not undo the last
+hostname, timezone, resolver, or NTP configuration applied to the host.

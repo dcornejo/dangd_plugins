@@ -16,6 +16,11 @@ in unrelated models, daemons, or authentication code:
   while that provider remains under development.
 - `dangd-plugins-doc` contains collection-wide documentation and the license.
 
+Each component package also installs its operator guide as `EXAMPLE.md`,
+`KEA.md`, `SYSTEM.md`, `PAM.md`, or `RIB.md`. Read it before connecting the
+component to a live dangd service. Package filenames below use version 0.1.0 as
+an example; substitute the version and architecture actually built.
+
 Provider packages depend on dangd for the plugin ABI. These boundaries also
 allow mutually exclusive implementations of the same YANG module to declare a
 package conflict without preventing installation of unrelated plugins. Package

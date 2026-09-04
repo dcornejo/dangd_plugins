@@ -20,6 +20,42 @@ RPC, notification, and Linux/FreeBSD backend semantics. In particular, simply
 accepting the writable tree without programming and observing the RIB would be
 a false implementation claim.
 
+## Installation status and dependencies
+
+There is no installable runtime plugin yet. The `dangd-rfc8431-models` package
+contains only the pinned YANG sources and this guide. Installing it does not
+modify routes and does not cause dangd to advertise RFC 8431.
+
+Install it for model development or interoperability testing. Debian/Ubuntu:
+
+```sh
+sudo apt install ./dangd-rfc8431-models_0.1.0_all.deb
+dpkg -L dangd-rfc8431-models
+```
+
+FreeBSD:
+
+```sh
+sudo pkg add ./dangd-rfc8431-models-0.1.0.pkg
+pkg info -l dangd-rfc8431-models
+```
+
+For a source-tree schema check, install `yanglint`/libyang, point the build at
+dangd's model directory, and install only the RIB component:
+
+```sh
+cmake -S . -B build -G Ninja -DDANGD_ROOT=/path/to/dang
+ctest --test-dir build -R rfc8431_schema_interoperability \
+  --output-on-failure
+sudo cmake --install build --component rib
+```
+
+Do not treat the installed schema as runtime support and do not add a
+nonexistent RIB shared object to dangd. The future provider will additionally
+require Linux `iproute2` or FreeBSD base `route(8)`, route-management privilege,
+an arbitrary-name-to-table/FIB mapping, and exclusive module ownership relative
+to the planned FRR plugin.
+
 The runtime foundation currently parses destination-prefix IPv4 and IPv6
 routes whose base nexthop is a gateway, an outgoing interface, or both. It
 requires the RFC 8431 route preference and local-only fields, rejects source,
@@ -53,3 +89,8 @@ enabled; gateway-plus-interface routes are natively validated now.
 Tests must use Linux network namespaces or FreeBSD VNET jails with only
 disposable loopback/epair interfaces. They must never add, remove, or replace a
 route on a host LAN interface or in the host's default routing table.
+
+Remove this schema-only package with
+`sudo apt remove dangd-rfc8431-models` or
+`sudo pkg delete dangd-rfc8431-models`. It requires no runtime rollback because
+it never programs a route.
