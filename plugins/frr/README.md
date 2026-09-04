@@ -31,7 +31,10 @@ development headers. This is a local ABI protocol: it uses host byte order and
 natural C layout and is permitted only over the local `mgmtd_fe.sock` UNIX
 socket. Frame length, protocol marker, reply correlation, message type, and
 NUL-terminated error data must be checked before a reply reaches transaction
-logic. The socket/session state machine remains the next implementation layer.
+logic. The transport now connects nonblockingly with close-on-exec protection,
+uses one monotonic deadline for the complete exchange, handles partial I/O, and
+requires the response type plus request/session identifiers to match. Session
+lifecycle orchestration remains the next implementation layer.
 
 ## Development dependencies
 

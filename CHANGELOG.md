@@ -16,6 +16,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 - Added a header-independent codec for FRR's public native `mgmtd` frontend
   session, datastore lock, XML edit, validate, apply, abort, and unlock wire
   messages, with strict frame and error-reply decoding tests.
+- Added a nonblocking, close-on-exec local `mgmtd` transport with bounded
+  monotonic deadlines, complete-write/read handling, request/session reply
+  correlation, and explicit timeout, disconnect, protocol, and daemon-error
+  failures.
 - Updated the external plugin discovery smoke test for dangd plugin ABI v7.
   The loader now exercises v7 entry-point precedence and accepts the exclusive
   resource-domain ABI used by the forthcoming FRR provider.

@@ -66,6 +66,8 @@ struct DecodedFrame {
 
 std::vector<std::byte> SessionCreate(std::uint64_t client_id,
                                      std::string_view client_name);
+std::vector<std::byte> SessionDestroy(std::uint64_t session_id,
+                                      std::uint64_t client_id);
 std::vector<std::byte> Lock(std::uint64_t session_id,
                             std::uint64_t request_id, Datastore datastore,
                             bool acquire);

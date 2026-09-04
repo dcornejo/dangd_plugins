@@ -75,6 +75,11 @@ std::vector<std::byte> SessionCreate(std::uint64_t client_id,
   return output;
 }
 
+std::vector<std::byte> SessionDestroy(std::uint64_t session_id,
+                                      std::uint64_t client_id) {
+  return Message(Code::kSessionRequest, session_id, client_id, 0, 8);
+}
+
 std::vector<std::byte> Lock(std::uint64_t session_id,
                             std::uint64_t request_id, Datastore datastore,
                             bool acquire) {

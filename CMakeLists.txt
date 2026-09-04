@@ -10,6 +10,7 @@ option(DANG_RIB_NATIVE_TESTS
 include(CTest)
 find_package(LibXml2 REQUIRED)
 find_package(nlohmann_json 3.11 REQUIRED)
+find_package(Threads REQUIRED)
 
 add_executable(frr-schema-inventory
   plugins/frr/src/schema_inventory.cc
@@ -185,6 +186,19 @@ if(BUILD_TESTING)
   target_compile_options(frr_mgmtd_wire_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME frr_mgmtd_native_wire_contract COMMAND frr_mgmtd_wire_test)
+
+  add_executable(frr_mgmtd_transport_test
+    tests/frr_mgmtd_transport_test.cc
+    plugins/frr/src/mgmtd_transport.cc
+    plugins/frr/src/mgmtd_wire.cc)
+  target_compile_features(frr_mgmtd_transport_test PRIVATE cxx_std_20)
+  target_include_directories(frr_mgmtd_transport_test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(frr_mgmtd_transport_test PRIVATE
+    GTest::gtest_main Threads::Threads)
+  target_compile_options(frr_mgmtd_transport_test PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME frr_mgmtd_transport_contract COMMAND frr_mgmtd_transport_test)
 
   add_executable(rib_native_test
     tests/rib_native_test.cc
