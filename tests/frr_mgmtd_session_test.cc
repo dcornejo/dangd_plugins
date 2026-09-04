@@ -78,6 +78,8 @@ void SuccessfulServer(int socket, std::vector<Code>* requests) {
         break;
       case Code::kCommit:
         reply_code = Code::kCommitReply;
+        // FRR currently maps abort completion to the non-validation action.
+        if (frame[34] == std::byte{1}) frame[34] = std::byte{0};
         break;
       case Code::kGetData: {
         reply_code = Code::kTreeData;
@@ -124,8 +126,10 @@ TEST(FrrMgmtdSessionTest, EnforcesCompleteValidationLifecycle) {
   EXPECT_TRUE(session->Close(&error)) << error;
   server.join();
   EXPECT_EQ(requests,
-            std::vector<Code>({Code::kSessionRequest, Code::kLock, Code::kEdit,
+            std::vector<Code>({Code::kSessionRequest, Code::kLock, Code::kLock,
+                               Code::kEdit,
                                Code::kCommit, Code::kCommit, Code::kLock,
+                               Code::kLock,
                                Code::kSessionRequest}));
 }
 

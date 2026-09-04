@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added opt-in, privileged FRR native mutation tests for Linux and FreeBSD. A
+  disposable `dangd-test` mgmtd pathspace receives an empty staticd protocol
+  instance, exposes the committed value, and is restored to its exact
+  before-image without attaching or changing LAN interfaces.
+
 - Added ABI-v6 applied-state reconciliation for FRR. After a successful commit,
   the provider reads both managed roots back from mgmtd's running datastore and
   replaces only those roots in dangd's complete applied snapshot; absent roots
@@ -103,6 +108,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   operational state, and rollback without using any network interface.
 
 ### Changed
+
+- Lock both FRR candidate and running datastores around validation, apply, and
+  abort, as required by mgmtd configuration transactions. Also accept FRR's
+  frontend behavior of reporting a successful abort as the generic
+  non-validation apply action while retaining correlation and field checks.
 
 - Audited every plugin and PAM source file for maintainability. Added Doxygen
   file summaries and public-contract documentation covering ownership,

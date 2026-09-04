@@ -84,17 +84,35 @@ bool Session::LockCandidate(std::string* error) {
     if (error) *error = "mgmtd candidate datastore is already locked";
     return false;
   }
+  if (!SetDatastoreLock(Datastore::kCandidate, true, "candidate-lock", error))
+    return false;
+  candidate_locked_ = true;
+  if (!SetDatastoreLock(Datastore::kRunning, true, "running-lock", error)) {
+    std::string ignored;
+    if (SetDatastoreLock(Datastore::kCandidate, false, "candidate-unlock",
+                         &ignored))
+      candidate_locked_ = false;
+    return false;
+  }
+  running_locked_ = true;
+  return true;
+}
+
+bool Session::SetDatastoreLock(Datastore datastore, bool lock,
+                               std::string_view operation,
+                               std::string* error) {
   auto request_id = NextRequest(error);
   if (!request_id) return false;
   auto reply = transport_->Exchange(
-      Lock(session_id_, *request_id, Datastore::kCandidate, true),
-      Code::kLockReply, false, error);
-  if (!reply || !ExactFixedReply(*reply, "candidate-lock", error)) return false;
-  if (reply->body[0] != std::byte{2} || reply->body[1] != std::byte{1}) {
-    if (error) *error = "mgmtd candidate-lock reply has invalid state";
+      Lock(session_id_, *request_id, datastore, lock), Code::kLockReply, false,
+      error);
+  if (!reply || !ExactFixedReply(*reply, operation, error)) return false;
+  if (reply->body[0] != std::byte{static_cast<std::uint8_t>(datastore)} ||
+      reply->body[1] != std::byte{static_cast<std::uint8_t>(lock ? 1 : 0)}) {
+    if (error)
+      *error = "mgmtd " + std::string(operation) + " reply has invalid state";
     return false;
   }
-  candidate_locked_ = true;
   return true;
 }
 
@@ -160,9 +178,19 @@ bool Session::CommitCandidate(CommitAction action, std::string* error) {
              Datastore::kRunning, action, false),
       Code::kCommitReply, false, error);
   if (!reply || !OptionalTextReply(*reply, "commit", error)) return false;
+  // FRR executes abort distinctly but its frontend reply maps every
+  // non-validation completion to APPLY. Accept that observed wire behavior
+  // while still requiring the exact action for validate and apply.
+  const CommitAction reply_action = action == CommitAction::kAbort
+      ? CommitAction::kApply
+      : action;
   if (reply->body[0] != std::byte{2} || reply->body[1] != std::byte{1} ||
-      reply->body[2] != static_cast<std::byte>(action)) {
-    if (error) *error = "mgmtd commit reply does not match the requested action";
+      reply->body[2] != static_cast<std::byte>(reply_action)) {
+    if (error)
+      *error = "mgmtd commit reply does not match the requested action: " +
+          std::to_string(std::to_integer<unsigned>(reply->body[0])) + "/" +
+          std::to_string(std::to_integer<unsigned>(reply->body[1])) + "/" +
+          std::to_string(std::to_integer<unsigned>(reply->body[2]));
     return false;
   }
   if (reply->body[3] != std::byte{0}) {
@@ -185,20 +213,16 @@ bool Session::AbortCandidate(std::string* error) {
 }
 
 bool Session::UnlockCandidate(std::string* error) {
-  if (!candidate_locked_) {
-    if (error) *error = "mgmtd candidate datastore is not locked";
+  if (!candidate_locked_ || !running_locked_) {
+    if (error) *error = "mgmtd transaction datastores are not locked";
     return false;
   }
-  auto request_id = NextRequest(error);
-  if (!request_id) return false;
-  auto reply = transport_->Exchange(
-      Lock(session_id_, *request_id, Datastore::kCandidate, false),
-      Code::kLockReply, false, error);
-  if (!reply || !ExactFixedReply(*reply, "candidate-unlock", error)) return false;
-  if (reply->body[0] != std::byte{2} || reply->body[1] != std::byte{0}) {
-    if (error) *error = "mgmtd candidate-unlock reply has invalid state";
+  if (!SetDatastoreLock(Datastore::kRunning, false, "running-unlock",
+                        error))
     return false;
-  }
+  running_locked_ = false;
+  if (!SetDatastoreLock(Datastore::kCandidate, false, "candidate-unlock", error))
+    return false;
   candidate_locked_ = false;
   return true;
 }
@@ -243,8 +267,8 @@ std::optional<std::string> Session::GetData(Datastore datastore,
 
 bool Session::Close(std::string* error) {
   if (!transport_ || session_id_ == 0) return true;
-  if (candidate_locked_) {
-    if (error) *error = "mgmtd session cannot close while candidate is locked";
+  if (candidate_locked_ || running_locked_) {
+    if (error) *error = "mgmtd session cannot close while a datastore is locked";
     return false;
   }
   auto reply = transport_->Exchange(SessionDestroy(session_id_, client_id_),

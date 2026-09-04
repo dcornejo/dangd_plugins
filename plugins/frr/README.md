@@ -129,6 +129,23 @@ cmake --build build
 ctest --test-dir build -R frr --output-on-failure
 ```
 
+The default suite never changes FRR. The opt-in native test creates its own
+`dangd-test-PID` mgmtd pathspace, commits an empty staticd control-plane
+protocol instance, reads it back, restores the exact before-image, and removes
+the daemon and its runtime/state directories. It requires root only to create
+the FRR-owned socket directories and change the disposable daemon's identity:
+
+```sh
+cmake -S . -B build -DDANGD_ROOT=../dang -DDANG_FRR_NATIVE_TESTS=ON
+cmake --build build
+sudo ctest --test-dir build -R frr_isolated_native_mutation \
+  --output-on-failure
+```
+
+The mutation diagnostic refuses sockets whose path does not contain
+`dangd-test`. The fixture starts only mgmtd and does not create, attach, or
+modify any network interface or route.
+
 Inspect the installed model closure that will back the first zebra/static
 routing milestone with:
 

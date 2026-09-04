@@ -68,6 +68,8 @@ class Session : public SessionOperations {
         session_id_(session_id) {}
 
   std::optional<std::uint64_t> NextRequest(std::string* error);
+  bool SetDatastoreLock(Datastore datastore, bool lock,
+                        std::string_view operation, std::string* error);
   std::optional<std::string> GetData(Datastore datastore, bool include_state,
                                      bool include_config,
                                      std::string_view xpath,
@@ -79,6 +81,7 @@ class Session : public SessionOperations {
   std::uint64_t session_id_ = 0;
   std::uint64_t next_request_ = 1;
   bool candidate_locked_ = false;
+  bool running_locked_ = false;
 };
 
 }  // namespace dang::plugins::frr::mgmtd

@@ -6,6 +6,8 @@ project(dang_plugins VERSION 0.1.0 LANGUAGES CXX)
 
 option(DANG_RIB_NATIVE_TESTS
   "Run privileged RFC 8431 tests in disposable network isolation" OFF)
+option(DANG_FRR_NATIVE_TESTS
+  "Run privileged FRR tests against a disposable mgmtd pathspace" OFF)
 
 include(CTest)
 find_package(LibXml2 REQUIRED)
@@ -29,6 +31,19 @@ add_executable(frr-mgmtd-session-check
 target_compile_features(frr-mgmtd-session-check PRIVATE cxx_std_20)
 target_include_directories(frr-mgmtd-session-check PRIVATE plugins/frr/src)
 target_compile_options(frr-mgmtd-session-check PRIVATE
+  -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+
+add_executable(frr-mgmtd-mutation-check
+  plugins/frr/src/mgmtd_mutation_probe.cc
+  plugins/frr/src/frr_config.cc
+  plugins/frr/src/frr_transaction.cc
+  plugins/frr/src/mgmtd_session.cc
+  plugins/frr/src/mgmtd_transport.cc
+  plugins/frr/src/mgmtd_wire.cc)
+target_compile_features(frr-mgmtd-mutation-check PRIVATE cxx_std_20)
+target_include_directories(frr-mgmtd-mutation-check PRIVATE plugins/frr/src)
+target_link_libraries(frr-mgmtd-mutation-check PRIVATE LibXml2::LibXml2)
+target_compile_options(frr-mgmtd-mutation-check PRIVATE
   -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 
 set(DANGD_ROOT "" CACHE PATH "Path to a dang source tree")
@@ -289,6 +304,18 @@ if(BUILD_TESTING)
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME frr_abi_v7_plugin_discovery
     COMMAND frr_plugin_discovery_test $<TARGET_FILE:dangd_frr_plugin>)
+
+  if(DANG_FRR_NATIVE_TESTS)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+      add_test(NAME frr_isolated_native_mutation
+        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_frr_linux_native.sh"
+          $<TARGET_FILE:frr-mgmtd-mutation-check>)
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+      add_test(NAME frr_isolated_native_mutation
+        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_frr_freebsd_native.sh"
+          $<TARGET_FILE:frr-mgmtd-mutation-check>)
+    endif()
+  endif()
 
   add_executable(rib_native_test
     tests/rib_native_test.cc
