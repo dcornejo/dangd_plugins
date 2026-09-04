@@ -14,7 +14,20 @@
 
 namespace dang::plugins::frr::mgmtd {
 
-class Session {
+class SessionOperations {
+ public:
+  virtual ~SessionOperations() = default;
+  virtual bool LockCandidate(std::string* error) = 0;
+  virtual bool ReplaceCandidate(std::string_view xpath, std::string_view xml,
+                                std::string* error) = 0;
+  virtual bool ValidateCandidate(std::string* error) = 0;
+  virtual bool ApplyCandidate(std::string* error) = 0;
+  virtual bool AbortCandidate(std::string* error) = 0;
+  virtual bool UnlockCandidate(std::string* error) = 0;
+  virtual bool Close(std::string* error) = 0;
+};
+
+class Session : public SessionOperations {
  public:
   Session(const Session&) = delete;
   Session& operator=(const Session&) = delete;
@@ -24,14 +37,14 @@ class Session {
                                        std::string_view client_name,
                                        std::string* error);
 
-  bool LockCandidate(std::string* error);
+  bool LockCandidate(std::string* error) override;
   bool ReplaceCandidate(std::string_view xpath, std::string_view xml,
-                        std::string* error);
-  bool ValidateCandidate(std::string* error);
-  bool ApplyCandidate(std::string* error);
-  bool AbortCandidate(std::string* error);
-  bool UnlockCandidate(std::string* error);
-  bool Close(std::string* error);
+                        std::string* error) override;
+  bool ValidateCandidate(std::string* error) override;
+  bool ApplyCandidate(std::string* error) override;
+  bool AbortCandidate(std::string* error) override;
+  bool UnlockCandidate(std::string* error) override;
+  bool Close(std::string* error) override;
 
   std::uint64_t id() const { return session_id_; }
   bool candidate_locked() const { return candidate_locked_; }

@@ -23,6 +23,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 - Added a stateful `mgmtd` session layer that requires ordered create, candidate
   lock, XML replacement, validation/apply or abort, unlock, and destruction,
   while validating every operation-specific reply body.
+- Added FRR transaction orchestration with a disposable validation session, a
+  separately repeated real apply, candidate cleanup on pre-commit failures,
+  and true applied-state rollback by validating and committing the retained
+  before-image.
 - Updated the external plugin discovery smoke test for dangd plugin ABI v7.
   The loader now exercises v7 entry-point precedence and accepts the exclusive
   resource-domain ABI used by the forthcoming FRR provider.

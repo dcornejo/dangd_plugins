@@ -224,6 +224,18 @@ if(BUILD_TESTING)
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME frr_mgmtd_session_lifecycle COMMAND frr_mgmtd_session_test)
 
+  add_executable(frr_transaction_test
+    tests/frr_transaction_test.cc
+    plugins/frr/src/frr_transaction.cc)
+  target_compile_features(frr_transaction_test PRIVATE cxx_std_20)
+  target_include_directories(frr_transaction_test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(frr_transaction_test PRIVATE GTest::gtest_main)
+  target_compile_options(frr_transaction_test PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME frr_disposable_validation_and_rollback
+    COMMAND frr_transaction_test)
+
   add_executable(rib_native_test
     tests/rib_native_test.cc
     plugins/rib/src/rib_config.cc

@@ -36,8 +36,11 @@ uses one monotonic deadline for the complete exchange, handles partial I/O, and
 requires the response type plus request/session identifiers to match. Session
 lifecycle orchestration enforces create, candidate lock, XML replacement,
 validation, apply or candidate abort, unlock, and destruction in protocol
-order. The dangd transaction adapter and applied-configuration rollback remain
-the next implementation layer.
+order. Transaction orchestration performs validation in a disposable session,
+then repeats the replacement for a real apply. Rollback is a new validated
+commit of the retained before-image; candidate abort is used only to discard
+uncommitted edits. Wiring this orchestration into ABI v7 and extracting the FRR
+subtrees from dangd snapshots remain the next implementation layer.
 
 ## Development dependencies
 
