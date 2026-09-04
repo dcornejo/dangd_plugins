@@ -34,7 +34,10 @@ NUL-terminated error data must be checked before a reply reaches transaction
 logic. The transport now connects nonblockingly with close-on-exec protection,
 uses one monotonic deadline for the complete exchange, handles partial I/O, and
 requires the response type plus request/session identifiers to match. Session
-lifecycle orchestration remains the next implementation layer.
+lifecycle orchestration enforces create, candidate lock, XML replacement,
+validation, apply or candidate abort, unlock, and destruction in protocol
+order. The dangd transaction adapter and applied-configuration rollback remain
+the next implementation layer.
 
 ## Development dependencies
 
@@ -61,6 +64,25 @@ routing milestone with:
 
 Use `/usr/local/share/yang` on FreeBSD. A missing imported module is a hard
 failure rather than a partially advertised YANG library.
+
+Verify local frontend protocol compatibility without locking or changing any
+FRR datastore:
+
+```sh
+sudo ./build/frr-mgmtd-session-check /var/run/frr/mgmtd_fe.sock
+```
+
+The command creates and immediately destroys one frontend session. Socket
+access normally requires the FRR service account or root.
+
+On FreeBSD, ensure the package's runtime state directory exists before starting
+`mgmtd`; a missing directory produces an FRR startup warning and can prevent
+later persistence work:
+
+```sh
+sudo install -d -o frr -g frr -m 0750 /var/lib/frr
+sudo service frr start mgmtd
+```
 
 Native validation must cover both Linux and FreeBSD and use only loopback or
 disposable network namespaces/VNET jails. Host LAN interfaces must never be

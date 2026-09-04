@@ -20,6 +20,16 @@ target_include_directories(frr-schema-inventory PRIVATE plugins/frr/src)
 target_compile_options(frr-schema-inventory PRIVATE
   -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 
+add_executable(frr-mgmtd-session-check
+  plugins/frr/src/mgmtd_session_probe.cc
+  plugins/frr/src/mgmtd_session.cc
+  plugins/frr/src/mgmtd_transport.cc
+  plugins/frr/src/mgmtd_wire.cc)
+target_compile_features(frr-mgmtd-session-check PRIVATE cxx_std_20)
+target_include_directories(frr-mgmtd-session-check PRIVATE plugins/frr/src)
+target_compile_options(frr-mgmtd-session-check PRIVATE
+  -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+
 set(DANGD_ROOT "" CACHE PATH "Path to a dang source tree")
 set(DANGD_INCLUDE_DIR "" CACHE PATH "Directory containing dangd/plugin_api.h")
 if(NOT DANGD_INCLUDE_DIR)
@@ -199,6 +209,20 @@ if(BUILD_TESTING)
   target_compile_options(frr_mgmtd_transport_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME frr_mgmtd_transport_contract COMMAND frr_mgmtd_transport_test)
+
+  add_executable(frr_mgmtd_session_test
+    tests/frr_mgmtd_session_test.cc
+    plugins/frr/src/mgmtd_session.cc
+    plugins/frr/src/mgmtd_transport.cc
+    plugins/frr/src/mgmtd_wire.cc)
+  target_compile_features(frr_mgmtd_session_test PRIVATE cxx_std_20)
+  target_include_directories(frr_mgmtd_session_test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(frr_mgmtd_session_test PRIVATE
+    GTest::gtest_main Threads::Threads)
+  target_compile_options(frr_mgmtd_session_test PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME frr_mgmtd_session_lifecycle COMMAND frr_mgmtd_session_test)
 
   add_executable(rib_native_test
     tests/rib_native_test.cc

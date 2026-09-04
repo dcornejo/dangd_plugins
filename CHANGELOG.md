@@ -20,6 +20,9 @@ All notable changes to the external dangd plugin collection are recorded here.
   monotonic deadlines, complete-write/read handling, request/session reply
   correlation, and explicit timeout, disconnect, protocol, and daemon-error
   failures.
+- Added a stateful `mgmtd` session layer that requires ordered create, candidate
+  lock, XML replacement, validation/apply or abort, unlock, and destruction,
+  while validating every operation-specific reply body.
 - Updated the external plugin discovery smoke test for dangd plugin ABI v7.
   The loader now exercises v7 entry-point precedence and accepts the exclusive
   resource-domain ABI used by the forthcoming FRR provider.
