@@ -9,6 +9,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Staged the unmodified RFC 8431 `ietf-i2rs-rib` revision 2018-09-13 model and
+  RFC 8343 `ietf-interfaces` dependency, with pinned checksums, installation,
+  and independent libyang schema validation. No runtime implementation is
+  advertised by this schema-only checkpoint.
+- Install the Kea, system, and RIB plugin guides under distinct names instead
+  of silently overwriting them as a shared `README.md`.
 - Added native Debian and FreeBSD package generation for the plugin collection,
   YANG models, and PAM module, with explicit dangd dependencies and deployment
   documentation that leaves PAM, SSH, Kea, and daemon activation under

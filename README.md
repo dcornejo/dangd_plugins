@@ -83,3 +83,6 @@ transaction, and worker-recovery contract.
   DNS, local authentication, platform state, and control RPCs. It also supplies
   the root-only verifier used by `pam_dangd`; its explicit compliance gaps are
   maintained in `plugins/system/README.md`.
+- `rib` currently stages the exact RFC 8431 schema family and independent
+  conformance test. Runtime Linux/FreeBSD RIB ownership is not advertised until
+  the transaction and operation backends are complete.

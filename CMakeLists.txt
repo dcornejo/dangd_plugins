@@ -130,6 +130,15 @@ if(BUILD_TESTING)
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME kea_xml_to_control_json COMMAND kea_adapter_test)
 
+  find_program(DANG_YANGLINT_EXECUTABLE yanglint)
+  if(DANG_YANGLINT_EXECUTABLE)
+    add_test(NAME rfc8431_schema_interoperability
+      COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_rfc8431_yanglint.sh"
+        "${DANG_YANGLINT_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/plugins/rib/models"
+        "${DANGD_ROOT}/dangd/models")
+  endif()
+
   if(TARGET dangd_system_plugin)
     add_test(NAME system_plugin_discovery
       COMMAND plugin_loader_smoke_test $<TARGET_FILE:dangd_system_plugin>
@@ -181,9 +190,21 @@ install(FILES
   plugins/system/models/ietf-system@2014-08-06.yang
   plugins/system/models/iana-crypt-hash@2014-08-06.yang
   DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules")
+install(FILES
+  plugins/rib/models/ietf-i2rs-rib@2018-09-13.yang
+  plugins/rib/models/ietf-interfaces@2018-02-20.yang
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules")
 install(FILES LICENSE README.md CHANGELOG.md PACKAGING.md
-  plugins/kea/README.md plugins/system/README.md
   DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/dangd-plugins")
+install(FILES plugins/kea/README.md
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/dangd-plugins"
+  RENAME KEA.md)
+install(FILES plugins/system/README.md
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/dangd-plugins"
+  RENAME SYSTEM.md)
+install(FILES plugins/rib/README.md
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/dangd-plugins"
+  RENAME RIB.md)
 if(TARGET dangd_system_plugin)
   install(TARGETS dangd_system_plugin
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/dangd/plugins")
