@@ -105,6 +105,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
 endif()
 
 if(BUILD_TESTING)
+  find_package(GTest REQUIRED)
   add_executable(plugin_loader_smoke_test tests/plugin_loader_smoke_test.cc)
   target_compile_features(plugin_loader_smoke_test PRIVATE cxx_std_20)
   target_include_directories(plugin_loader_smoke_test PRIVATE
@@ -138,6 +139,19 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/plugins/rib/models"
         "${DANGD_ROOT}/dangd/models")
   endif()
+
+  add_executable(rib_config_test
+    tests/rib_config_test.cc
+    plugins/rib/src/rib_config.cc
+    plugins/rib/src/linux/platform_linux.cc
+    plugins/rib/src/freebsd/platform_freebsd.cc)
+  target_compile_features(rib_config_test PRIVATE cxx_std_20)
+  target_include_directories(rib_config_test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(rib_config_test PRIVATE LibXml2::LibXml2 GTest::gtest_main)
+  target_compile_options(rib_config_test PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME rfc8431_configuration_planning COMMAND rib_config_test)
 
   if(TARGET dangd_system_plugin)
     add_test(NAME system_plugin_discovery

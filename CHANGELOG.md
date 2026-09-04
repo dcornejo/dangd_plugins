@@ -15,6 +15,10 @@ All notable changes to the external dangd plugin collection are recorded here.
   advertised by this schema-only checkpoint.
 - Install the Kea, system, and RIB plugin guides under distinct names instead
   of silently overwriting them as a shared `README.md`.
+- Added the RFC 8431 runtime foundation: strict parsing for the portable
+  destination-prefix/base-nexthop subset, deterministic delete-before-install
+  replacement planning, attributed rejection of unsupported forwarding
+  semantics, and shell-free Linux and FreeBSD command construction.
 - Added native Debian and FreeBSD package generation for the plugin collection,
   YANG models, and PAM module, with explicit dangd dependencies and deployment
   documentation that leaves PAM, SSH, Kea, and daemon activation under
