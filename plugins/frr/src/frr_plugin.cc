@@ -98,6 +98,16 @@ Context context;
 thread_local std::string callback_error;
 thread_local std::string callback_path;
 thread_local std::string operational_xml;
+thread_local std::string reconciled_xml;
+
+const std::vector<dang::plugins::frr::RootDescriptor>& RootDescriptors() {
+  static const std::vector<dang::plugins::frr::RootDescriptor> descriptors{
+      {"frr-routing", std::string(kRoutingNamespace), "routing",
+       "/frr-routing:routing"},
+      {"frr-zebra", std::string(kZebraNamespace), "zebra",
+       "/frr-zebra:zebra"}};
+  return descriptors;
+}
 
 int Fail(DangPluginErrorV1* error, std::string message,
          std::string path = "/frr-routing:routing") {
@@ -138,7 +148,7 @@ int SourceAt(void* raw, std::size_t index, DangYangSourceV1* output,
 std::size_t DependencyCount(void*) { return 0; }
 const char* DependencyAt(void*, std::size_t) { return nullptr; }
 
-std::unique_ptr<dang::plugins::frr::mgmtd::SessionOperations> OpenSession(
+std::unique_ptr<dang::plugins::frr::mgmtd::Session> OpenConcreteSession(
     Context* owner, std::string* error) {
   auto transport = dang::plugins::frr::mgmtd::Transport::Connect(
       owner->socket_path, owner->timeout, error);
@@ -147,6 +157,11 @@ std::unique_ptr<dang::plugins::frr::mgmtd::SessionOperations> OpenSession(
   if (client == 0) client = owner->next_client.fetch_add(1);
   return dang::plugins::frr::mgmtd::Session::Open(
       std::move(transport), client, "dangd-frr", error);
+}
+
+std::unique_ptr<dang::plugins::frr::mgmtd::SessionOperations> OpenSession(
+    Context* owner, std::string* error) {
+  return OpenConcreteSession(owner, error);
 }
 
 int Prepare(void* raw, const DangTransactionV1* transaction, void** output,
@@ -159,10 +174,7 @@ int Prepare(void* raw, const DangTransactionV1* transaction, void** output,
   std::string extraction_path;
   auto roots = dang::plugins::frr::ExtractConfigurationRoots(
       transaction->before_xml, transaction->proposed_xml,
-      {{"frr-routing", std::string(kRoutingNamespace), "routing",
-        "/frr-routing:routing"},
-       {"frr-zebra", std::string(kZebraNamespace), "zebra",
-        "/frr-zebra:zebra"}},
+      RootDescriptors(),
       &extraction_error, &extraction_path);
   if (!roots)
     return Fail(error, extraction_error,
@@ -253,6 +265,42 @@ int Operational(void* raw, DangOperationalDataV1* result,
   return 1;
 }
 
+int Reconcile(void* raw, void* prepared_raw, const char* current_xml,
+              DangAppliedConfigurationV1* result,
+              DangPluginErrorV1* error) {
+  auto* owner = static_cast<Context*>(raw);
+  auto* prepared = static_cast<Prepared*>(prepared_raw);
+  if (!prepared || !prepared->transaction->applied() || !current_xml || !result)
+    return Fail(error, "FRR reconciliation input is incomplete");
+  auto session = OpenConcreteSession(owner, &callback_error);
+  if (!session) return Fail(error, callback_error, "/");
+  std::vector<std::optional<std::string>> observed;
+  for (const auto& descriptor : RootDescriptors()) {
+    auto xml = session->GetRunningConfiguration(descriptor.xpath,
+                                                &callback_error);
+    if (!xml) break;
+    observed.push_back(xml->empty() ? std::nullopt
+                                   : std::optional<std::string>(std::move(*xml)));
+  }
+  std::string close_error;
+  const bool closed = session->Close(&close_error);
+  if (observed.size() != RootDescriptors().size())
+    return Fail(error, callback_error, "/");
+  if (!closed) return Fail(error, close_error, "/");
+  std::string reconciliation_path;
+  auto reconciled = dang::plugins::frr::ReconcileConfigurationRoots(
+      current_xml, RootDescriptors(), observed, &callback_error,
+      &reconciliation_path);
+  if (!reconciled)
+    return Fail(error, callback_error,
+                reconciliation_path.empty() ? "/" : reconciliation_path);
+  reconciled_xml = std::move(*reconciled);
+  result->applied_xml = reconciled_xml.c_str();
+  result->outcomes = nullptr;
+  result->outcome_count = 0;
+  return 1;
+}
+
 std::size_t HardwareActionCount(void*, void*) { return 0; }
 int UnsupportedHardwareAction(void*, void*, std::size_t,
                               DangHardwareActionV1*, DangPluginErrorV1* error) {
@@ -289,7 +337,7 @@ const DangPluginV7 kPlugin{
                         .apply_hardware_action = UnsupportedApplyAction,
                         .rollback_hardware_action = UnsupportedApplyAction},
                 .get_operational_data_v2 = nullptr},
-           .reconcile_applied_configuration = nullptr},
+           .reconcile_applied_configuration = Reconcile},
     .resource_domain_count = ResourceCount,
     .resource_domain_at = ResourceAt};
 

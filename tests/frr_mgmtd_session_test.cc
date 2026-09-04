@@ -161,10 +161,15 @@ TEST(FrrMgmtdSessionTest, RetrievesLiveOperationalXml) {
   auto xml = session->GetOperationalData("/*", &error);
   ASSERT_TRUE(xml) << error;
   EXPECT_NE(xml->find("<routing"), std::string::npos);
+  auto running = session->GetRunningConfiguration("/frr-routing:routing",
+                                                  &error);
+  ASSERT_TRUE(running) << error;
+  EXPECT_NE(running->find("<routing"), std::string::npos);
   EXPECT_TRUE(session->Close(&error)) << error;
   server.join();
   EXPECT_EQ(requests,
             std::vector<Code>({Code::kSessionRequest, Code::kGetData,
+                               Code::kGetData,
                                Code::kSessionRequest}));
 }
 

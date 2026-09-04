@@ -55,10 +55,17 @@ session correlation, XML format, partial-error status, and continuation state
 are checked before any bytes reach dangd. A partial result fails the retrieval
 rather than presenting an incomplete tree as authoritative.
 
-Applied-state reconciliation, drift detection, RPCs, notifications, FRR
-feature discovery, and protocols beyond zebra/staticd are not yet implemented.
+Drift detection, RPCs, notifications, FRR feature discovery, and protocols
+beyond zebra/staticd are not yet implemented.
 The operational callback publishes FRR's observed tree; it does not substitute
 requested configuration for observed state.
+
+After every successful apply, ABI-v6 reconciliation reads
+`/frr-routing:routing` and `/frr-zebra:zebra` back from FRR's running datastore.
+Those observed roots replace only the corresponding roots in dangd's complete
+applied snapshot. An absent FRR root removes the requested root, a wrong
+namespace or malformed reply fails closed, and configuration belonging to
+other plugins is preserved byte-for-tree rather than reconstructed from FRR.
 
 ## Installation and configuration
 
@@ -130,6 +137,13 @@ Retrieve the live operational XML without changing FRR configuration:
 
 ```sh
 sudo ./build/frr-mgmtd-session-check /var/run/frr/mgmtd_fe.sock --operational
+```
+
+Inspect one running configuration root through the same read-only path:
+
+```sh
+sudo ./build/frr-mgmtd-session-check /var/run/frr/mgmtd_fe.sock \
+  --running /frr-routing:routing
 ```
 
 On FreeBSD, ensure the package's runtime state directory exists before starting

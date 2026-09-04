@@ -52,6 +52,9 @@ class Session : public SessionOperations {
   /** Retrieves a complete live operational XML tree for xpath. */
   std::optional<std::string> GetOperationalData(std::string_view xpath,
                                                 std::string* error);
+  /** Retrieves config-true XML exactly as accepted in FRR's running store. */
+  std::optional<std::string> GetRunningConfiguration(std::string_view xpath,
+                                                     std::string* error);
   bool Close(std::string* error) override;
 
   std::uint64_t id() const { return session_id_; }
@@ -65,6 +68,10 @@ class Session : public SessionOperations {
         session_id_(session_id) {}
 
   std::optional<std::uint64_t> NextRequest(std::string* error);
+  std::optional<std::string> GetData(Datastore datastore, bool include_state,
+                                     bool include_config,
+                                     std::string_view xpath,
+                                     std::string* error);
   bool CommitCandidate(CommitAction action, std::string* error);
 
   std::unique_ptr<Transport> transport_;

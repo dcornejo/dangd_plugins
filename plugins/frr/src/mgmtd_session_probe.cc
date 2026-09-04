@@ -15,10 +15,13 @@
 #include <unistd.h>
 
 int main(int argc, char** argv) {
+  const std::string_view mode = argc >= 3 ? argv[2] : "";
   if (argc < 2 || argc > 4 ||
-      (argc >= 3 && std::string_view(argv[2]) != "--operational")) {
+      (argc >= 3 && mode != "--operational" && mode != "--running") ||
+      (mode == "--running" && argc != 4)) {
     std::cerr <<
-        "usage: frr-mgmtd-session-check SOCKET [--operational [XPATH]]\n";
+        "usage: frr-mgmtd-session-check SOCKET "
+        "[--operational [XPATH] | --running XPATH]\n";
     return 2;
   }
   std::string error;
@@ -41,8 +44,9 @@ int main(int argc, char** argv) {
   const std::uint64_t session_id = session->id();
   std::optional<std::string> operational;
   if (argc >= 3) {
-    operational = session->GetOperationalData(argc == 4 ? argv[3] : "/*",
-                                               &error);
+    operational = mode == "--running"
+        ? session->GetRunningConfiguration(argv[3], &error)
+        : session->GetOperationalData(argc == 4 ? argv[3] : "/*", &error);
     if (!operational) {
       std::cerr << error << '\n';
       (void)session->Close(&error);

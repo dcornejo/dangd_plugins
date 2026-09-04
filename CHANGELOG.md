@@ -9,6 +9,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added ABI-v6 applied-state reconciliation for FRR. After a successful commit,
+  the provider reads both managed roots back from mgmtd's running datastore and
+  replaces only those roots in dangd's complete applied snapshot; absent roots
+  are removed and unrelated module data is preserved.
 - Added live FRR operational-state publication through the native mgmtd
   `GET_DATA`/`TREE_DATA` API. The codec and session layer require correlated,
   complete XML results, reject partial or continued replies, and expose a

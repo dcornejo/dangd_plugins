@@ -102,4 +102,86 @@ std::optional<std::vector<ConfigurationRoot>> ExtractConfigurationRoots(
   return roots;
 }
 
+std::optional<std::string> ReconcileConfigurationRoots(
+    std::string_view current_xml,
+    const std::vector<RootDescriptor>& descriptors,
+    const std::vector<std::optional<std::string>>& observed,
+    std::string* error, std::string* error_path) {
+  if (descriptors.size() != observed.size()) {
+    if (error) *error = "FRR reconciliation root count is inconsistent";
+    return std::nullopt;
+  }
+  if (current_xml.size() >
+      static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    if (error) *error = "the applied configuration snapshot is too large";
+    return std::nullopt;
+  }
+  Document document(xmlReadMemory(
+                        current_xml.data(), static_cast<int>(current_xml.size()),
+                        "dangd-applied.xml", nullptr,
+                        XML_PARSE_NONET | XML_PARSE_NOBLANKS |
+                            XML_PARSE_NOERROR | XML_PARSE_NOWARNING),
+                    xmlFreeDoc);
+  if (!document) {
+    if (error) *error = "cannot parse the applied configuration snapshot";
+    return std::nullopt;
+  }
+  xmlNode* root = xmlDocGetRootElement(document.get());
+  if (!root) {
+    if (error) *error = "the applied configuration snapshot has no root";
+    return std::nullopt;
+  }
+  for (std::size_t index = 0; index < descriptors.size(); ++index) {
+    const RootDescriptor& descriptor = descriptors[index];
+    for (xmlNode* child = root->children; child;) {
+      xmlNode* next = child->next;
+      if (Matches(child, descriptor)) {
+        xmlUnlinkNode(child);
+        xmlFreeNode(child);
+      }
+      child = next;
+    }
+    if (!observed[index] || observed[index]->empty()) continue;
+    if (observed[index]->size() >
+        static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+      if (error) *error = "FRR running reply is too large for XML parsing";
+      if (error_path) *error_path = descriptor.xpath;
+      return std::nullopt;
+    }
+    Document fragment(xmlReadMemory(
+                          observed[index]->data(),
+                          static_cast<int>(observed[index]->size()),
+                          "frr-running.xml", nullptr,
+                          XML_PARSE_NONET | XML_PARSE_NOBLANKS |
+                              XML_PARSE_NOERROR | XML_PARSE_NOWARNING),
+                      xmlFreeDoc);
+    xmlNode* observed_root =
+        fragment ? xmlDocGetRootElement(fragment.get()) : nullptr;
+    if (!Matches(observed_root, descriptor)) {
+      if (error) *error = "FRR running reply has an unexpected root";
+      if (error_path) *error_path = descriptor.xpath;
+      return std::nullopt;
+    }
+    xmlNode* copy = xmlDocCopyNode(observed_root, document.get(), 1);
+    if (!copy || !xmlAddChild(root, copy)) {
+      if (copy) xmlFreeNode(copy);
+      if (error) *error = "cannot copy FRR running root into applied state";
+      if (error_path) *error_path = descriptor.xpath;
+      return std::nullopt;
+    }
+  }
+  xmlChar* bytes = nullptr;
+  int size = 0;
+  xmlDocDumpMemory(document.get(), &bytes, &size);
+  if (!bytes || size <= 0) {
+    if (bytes) xmlFree(bytes);
+    if (error) *error = "cannot serialize reconciled FRR configuration";
+    return std::nullopt;
+  }
+  std::string result(reinterpret_cast<const char*>(bytes),
+                     static_cast<std::size_t>(size));
+  xmlFree(bytes);
+  return result;
+}
+
 }  // namespace dang::plugins::frr

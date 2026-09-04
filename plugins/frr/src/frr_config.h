@@ -34,6 +34,17 @@ std::optional<std::vector<ConfigurationRoot>> ExtractConfigurationRoots(
     const std::vector<RootDescriptor>& descriptors, std::string* error,
     std::string* error_path);
 
+/**
+ * Replaces only described top-level roots in a complete datastore snapshot.
+ * Each observed entry corresponds by index to descriptors; std::nullopt means
+ * the root is absent from FRR running state.
+ */
+std::optional<std::string> ReconcileConfigurationRoots(
+    std::string_view current_xml,
+    const std::vector<RootDescriptor>& descriptors,
+    const std::vector<std::optional<std::string>>& observed,
+    std::string* error, std::string* error_path);
+
 }  // namespace dang::plugins::frr
 
 #endif  // DANG_PLUGINS_FRR_FRR_CONFIG_H_
