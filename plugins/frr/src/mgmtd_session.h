@@ -20,6 +20,7 @@ class SessionOperations {
   virtual bool LockCandidate(std::string* error) = 0;
   virtual bool ReplaceCandidate(std::string_view xpath, std::string_view xml,
                                 std::string* error) = 0;
+  virtual bool DeleteCandidate(std::string_view xpath, std::string* error) = 0;
   virtual bool ValidateCandidate(std::string* error) = 0;
   virtual bool ApplyCandidate(std::string* error) = 0;
   virtual bool AbortCandidate(std::string* error) = 0;
@@ -40,6 +41,7 @@ class Session : public SessionOperations {
   bool LockCandidate(std::string* error) override;
   bool ReplaceCandidate(std::string_view xpath, std::string_view xml,
                         std::string* error) override;
+  bool DeleteCandidate(std::string_view xpath, std::string* error) override;
   bool ValidateCandidate(std::string* error) override;
   bool ApplyCandidate(std::string* error) override;
   bool AbortCandidate(std::string* error) override;

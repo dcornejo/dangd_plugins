@@ -75,6 +75,9 @@ std::vector<std::byte> Edit(std::uint64_t session_id,
                             std::uint64_t request_id, Datastore datastore,
                             EditOperation operation, std::string_view xpath,
                             std::string_view xml);
+std::vector<std::byte> Delete(std::uint64_t session_id,
+                              std::uint64_t request_id, Datastore datastore,
+                              std::string_view xpath);
 std::vector<std::byte> Commit(std::uint64_t session_id,
                               std::uint64_t request_id, Datastore source,
                               Datastore target, CommitAction action,

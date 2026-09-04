@@ -109,6 +109,24 @@ std::vector<std::byte> Edit(std::uint64_t session_id,
   return output;
 }
 
+std::vector<std::byte> Delete(std::uint64_t session_id,
+                              std::uint64_t request_id, Datastore datastore,
+                              std::string_view xpath) {
+  const std::size_t xpath_bytes = xpath.size() + 1;
+  if (!ValidString(xpath) ||
+      xpath_bytes > std::numeric_limits<std::uint32_t>::max())
+    return {};
+  auto output = Message(Code::kEdit, session_id, request_id,
+                        static_cast<std::uint32_t>(xpath_bytes),
+                        8 + xpath_bytes);
+  if (output.empty()) return {};
+  output[32] = std::byte{1};
+  output[34] = static_cast<std::byte>(datastore);
+  output[35] = static_cast<std::byte>(EditOperation::kDelete);
+  AppendString(&output, 40, xpath);
+  return output;
+}
+
 std::vector<std::byte> Commit(std::uint64_t session_id,
                               std::uint64_t request_id, Datastore source,
                               Datastore target, CommitAction action,

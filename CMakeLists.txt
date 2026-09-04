@@ -88,6 +88,22 @@ target_compile_options(dangd_kea_plugin PRIVATE
   -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 set_target_properties(dangd_kea_plugin PROPERTIES PREFIX "")
 
+add_library(dangd_frr_plugin MODULE
+  plugins/frr/src/frr_config.cc
+  plugins/frr/src/frr_plugin.cc
+  plugins/frr/src/frr_transaction.cc
+  plugins/frr/src/mgmtd_session.cc
+  plugins/frr/src/mgmtd_transport.cc
+  plugins/frr/src/mgmtd_wire.cc
+  plugins/frr/src/schema_inventory.cc)
+target_compile_features(dangd_frr_plugin PRIVATE cxx_std_20)
+target_include_directories(dangd_frr_plugin PRIVATE
+  "${DANGD_INCLUDE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}" plugins/frr/src)
+target_link_libraries(dangd_frr_plugin PRIVATE LibXml2::LibXml2)
+target_compile_options(dangd_frr_plugin PRIVATE
+  -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+set_target_properties(dangd_frr_plugin PROPERTIES PREFIX "")
+
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(DANG_SYSTEM_PLATFORM_SOURCE
@@ -236,6 +252,29 @@ if(BUILD_TESTING)
   add_test(NAME frr_disposable_validation_and_rollback
     COMMAND frr_transaction_test)
 
+  add_executable(frr_config_test
+    tests/frr_config_test.cc
+    plugins/frr/src/frr_config.cc
+    plugins/frr/src/frr_transaction.cc)
+  target_compile_features(frr_config_test PRIVATE cxx_std_20)
+  target_include_directories(frr_config_test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(frr_config_test PRIVATE
+    LibXml2::LibXml2 GTest::gtest_main)
+  target_compile_options(frr_config_test PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME frr_snapshot_root_extraction COMMAND frr_config_test)
+
+  add_executable(frr_plugin_discovery_test tests/frr_plugin_discovery_test.cc)
+  target_compile_features(frr_plugin_discovery_test PRIVATE cxx_std_20)
+  target_include_directories(frr_plugin_discovery_test PRIVATE
+    "${DANGD_INCLUDE_DIR}")
+  target_link_libraries(frr_plugin_discovery_test PRIVATE "${CMAKE_DL_LIBS}")
+  target_compile_options(frr_plugin_discovery_test PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME frr_abi_v7_plugin_discovery
+    COMMAND frr_plugin_discovery_test $<TARGET_FILE:dangd_frr_plugin>)
+
   add_executable(rib_native_test
     tests/rib_native_test.cc
     plugins/rib/src/rib_config.cc
@@ -300,6 +339,9 @@ install(TARGETS dangd_example_external_plugin
 install(TARGETS dangd_kea_plugin
   LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/dangd/plugins"
   COMPONENT kea)
+install(TARGETS dangd_frr_plugin
+  LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/dangd/plugins"
+  COMPONENT frr)
 install(FILES plugins/example/models/dang-plugins-example.yang
   DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules"
   COMPONENT example)
@@ -335,6 +377,9 @@ install(FILES plugins/system/README.md
 install(FILES plugins/rib/README.md
   DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/dangd-plugins"
   RENAME RIB.md COMPONENT rib)
+install(FILES plugins/frr/README.md
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/dangd-plugins"
+  RENAME FRR.md COMPONENT frr)
 if(TARGET dangd_system_plugin)
   install(TARGETS dangd_system_plugin
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/dangd/plugins"

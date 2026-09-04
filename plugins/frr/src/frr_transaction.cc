@@ -17,7 +17,7 @@ void AppendFailure(std::string* destination, std::string_view phase,
 
 }  // namespace
 
-bool FrrTransaction::Execute(std::string_view xml, bool apply,
+bool FrrTransaction::Execute(bool before_image, bool apply,
                              std::string* error) {
   if (error) error->clear();
   if (!sessions_) {
@@ -42,10 +42,20 @@ bool FrrTransaction::Execute(std::string_view xml, bool apply,
     record_failure("lock");
   } else {
     locked = true;
-    if (!session->ReplaceCandidate(xpath_, xml, &failure)) {
-      record_failure("replace");
-    } else {
+    bool edits_ok = true;
+    for (const ConfigurationRoot& root : roots_) {
+      const auto& xml = before_image ? root.before_xml : root.proposed_xml;
+      const bool changed = xml
+          ? session->ReplaceCandidate(root.xpath, *xml, &failure)
+          : session->DeleteCandidate(root.xpath, &failure);
+      if (!changed) {
+        record_failure(xml ? "replace" : "delete");
+        edits_ok = false;
+        break;
+      }
       candidate_changed = true;
+    }
+    if (edits_ok) {
       if (!session->ValidateCandidate(&failure)) {
         record_failure("validate");
       } else if (apply) {
@@ -84,7 +94,7 @@ bool FrrTransaction::Validate(std::string* error) {
     if (error) *error = "FRR transaction is already applied";
     return false;
   }
-  if (!Execute(proposed_xml_, false, error)) return false;
+  if (!Execute(false, false, error)) return false;
   validated_ = true;
   return true;
 }
@@ -98,12 +108,12 @@ bool FrrTransaction::Apply(std::string* error) {
     if (error) *error = "FRR transaction is already applied";
     return false;
   }
-  return Execute(proposed_xml_, true, error);
+  return Execute(false, true, error);
 }
 
 bool FrrTransaction::Rollback(std::string* error) {
   if (!applied_) return true;
-  const bool restored = Execute(before_xml_, true, error);
+  const bool restored = Execute(true, true, error);
   if (restored) applied_ = false;
   return restored;
 }

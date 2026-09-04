@@ -10,6 +10,8 @@ in unrelated models, daemons, or authentication code:
 - `dangd-plugin-example` contains only the ABI example and its model.
 - `dangd-plugin-kea` contains the Kea provider, its models, and its guide.
 - `dangd-plugin-system` contains the RFC 7317 provider, models, and guide.
+- `dangd-plugin-frr` contains the version-matched native FRR routing provider
+  and depends on the platform FRR package.
 - `dangd-pam` contains only `pam_dangd` and depends on
   `dangd-plugin-system`, which owns its authentication service.
 - `dangd-rfc8431-models` contains the schema and guide for the RIB provider
@@ -17,7 +19,7 @@ in unrelated models, daemons, or authentication code:
 - `dangd-plugins-doc` contains collection-wide documentation and the license.
 
 Each component package also installs its operator guide as `EXAMPLE.md`,
-`KEA.md`, `SYSTEM.md`, `PAM.md`, or `RIB.md`. Read it before connecting the
+`KEA.md`, `SYSTEM.md`, `PAM.md`, `FRR.md`, or `RIB.md`. Read it before connecting the
 component to a live dangd service. Package filenames below use version 0.1.0 as
 an example; substitute the version and architecture actually built.
 
@@ -40,10 +42,10 @@ dpkg-deb --info dangd-plugin-kea_0.1.0_amd64.deb
 
 The CPack FreeBSD generator cannot emit component packages in one invocation.
 The configure step therefore writes one complete configuration per package.
-Build all six with:
+Build all seven with:
 
 ```sh
-for component in example kea system pam rib docs; do
+for component in example kea system pam frr rib docs; do
   cpack --config "build-package/CPackFreeBSD-${component}.cmake"
 done
 pkg info -F dangd-plugin-kea-0.1.0.pkg

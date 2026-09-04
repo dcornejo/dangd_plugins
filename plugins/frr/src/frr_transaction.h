@@ -8,7 +8,9 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace dang::plugins::frr {
 
@@ -18,14 +20,17 @@ using SessionFactory =
 // Retains both snapshots for the complete dangd transaction lifetime. Validate
 // uses a disposable candidate session; Apply repeats the checked replacement;
 // Rollback commits the retained before-image as a new real transaction.
+struct ConfigurationRoot {
+  std::string xpath;
+  std::optional<std::string> before_xml;
+  std::optional<std::string> proposed_xml;
+};
+
 class FrrTransaction {
  public:
-  FrrTransaction(SessionFactory sessions, std::string xpath,
-                 std::string before_xml, std::string proposed_xml)
+  FrrTransaction(SessionFactory sessions, std::vector<ConfigurationRoot> roots)
       : sessions_(std::move(sessions)),
-        xpath_(std::move(xpath)),
-        before_xml_(std::move(before_xml)),
-        proposed_xml_(std::move(proposed_xml)) {}
+        roots_(std::move(roots)) {}
 
   bool Validate(std::string* error);
   bool Apply(std::string* error);
@@ -33,12 +38,10 @@ class FrrTransaction {
   bool applied() const { return applied_; }
 
  private:
-  bool Execute(std::string_view xml, bool apply, std::string* error);
+  bool Execute(bool before_image, bool apply, std::string* error);
 
   SessionFactory sessions_;
-  std::string xpath_;
-  std::string before_xml_;
-  std::string proposed_xml_;
+  std::vector<ConfigurationRoot> roots_;
   bool validated_ = false;
   bool applied_ = false;
 };

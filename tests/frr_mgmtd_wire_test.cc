@@ -43,6 +43,14 @@ TEST(FrrMgmtdWireTest, EncodesSessionLockEditAndCommitLayouts) {
   EXPECT_STREQ(reinterpret_cast<const char*>(edit.data() + 40),
                "/frr-routing:routing");
 
+  const auto deletion =
+      Delete(82, 6, Datastore::kCandidate, "/frr-zebra:zebra");
+  EXPECT_EQ(deletion[35], std::byte{4});
+  EXPECT_EQ(deletion.size(),
+            40 + std::string_view("/frr-zebra:zebra").size() + 1);
+  EXPECT_STREQ(reinterpret_cast<const char*>(deletion.data() + 40),
+               "/frr-zebra:zebra");
+
   const auto commit = Commit(82, 5, Datastore::kCandidate,
                              Datastore::kRunning, CommitAction::kValidate,
                              false);

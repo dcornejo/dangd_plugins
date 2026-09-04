@@ -43,18 +43,27 @@ int main(int argc, char** argv) {
     plugin = initialize_v1();
   DangYangSourceV1 source{};
   DangPluginErrorV1 error{};
-  const bool valid = plugin && plugin->abi_version >= DANG_PLUGIN_ABI_V1 &&
+  bool valid = plugin && plugin->abi_version >= DANG_PLUGIN_ABI_V1 &&
       plugin->abi_version <= DANG_PLUGIN_ABI_V7 &&
       plugin->plugin_name &&
       std::string_view(plugin->plugin_name) == argv[2] &&
-      plugin->yang_source_count && plugin->yang_source_count(plugin->context) >= 1 &&
-      plugin->yang_source_at &&
-      plugin->yang_source_at(plugin->context, 0, &source, &error) &&
-      source.module_name &&
-      std::string_view(source.module_name) == argv[3] &&
-      source.source && source.source_size == std::strlen(source.source) &&
-      std::string_view(source.source, source.source_size).find(
-          std::string("module ") + argv[3]) != std::string_view::npos;
+      plugin->yang_source_count && plugin->yang_source_at;
+  bool found_source = false;
+  if (valid)
+    for (std::size_t index = 0;
+         index < plugin->yang_source_count(plugin->context); ++index) {
+      if (!plugin->yang_source_at(plugin->context, index, &source, &error) ||
+          !source.module_name || !source.source ||
+          source.source_size != std::strlen(source.source)) {
+        valid = false;
+        break;
+      }
+      if (std::string_view(source.module_name) == argv[3] &&
+          std::string_view(source.source, source.source_size).find(
+              std::string("module ") + argv[3]) != std::string_view::npos)
+        found_source = true;
+    }
+  valid = valid && found_source;
   if (plugin && plugin->destroy) plugin->destroy(plugin->context);
   dlclose(library);
   if (!valid) {

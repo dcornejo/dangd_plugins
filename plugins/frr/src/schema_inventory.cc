@@ -38,6 +38,7 @@ std::vector<std::string> Tokens(std::string_view source, std::string* error) {
     if (byte == '"' || byte == '\'') {
       const char quote = byte;
       ++offset;
+      const std::size_t content_begin = offset;
       bool closed = false;
       while (offset < source.size()) {
         if (source[offset] == quote) {
@@ -54,7 +55,8 @@ std::vector<std::string> Tokens(std::string_view source, std::string* error) {
         if (error) *error = "unterminated quoted string";
         return {};
       }
-      result.emplace_back("<string>");
+      result.emplace_back(1, '\1');
+      result.back().append(source.substr(content_begin, offset - content_begin - 1));
       continue;
     }
     if (byte == '{' || byte == '}' || byte == ';') {
@@ -112,9 +114,14 @@ std::optional<YangSchema> Parse(const std::filesystem::path& path,
       continue;
     }
     if (depth != 1 || index + 1 >= tokens.size()) continue;
+    const bool quoted = !tokens[index + 1].empty() && tokens[index + 1][0] == '\1';
+    const std::string value =
+        quoted ? tokens[index + 1].substr(1) : tokens[index + 1];
     if (tokens[index] == "revision" && schema.revision.empty())
-      schema.revision = tokens[index + 1] == "<string>" ? "" : tokens[index + 1];
-    if (tokens[index] == "import" && tokens[index + 1] != "<string>")
+      schema.revision = value;
+    if (tokens[index] == "namespace" && schema.namespace_uri.empty())
+      schema.namespace_uri = value;
+    if (tokens[index] == "import" && !quoted)
       schema.imports.push_back(tokens[index + 1]);
   }
   if (depth != 0) {

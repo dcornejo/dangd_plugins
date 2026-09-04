@@ -31,11 +31,13 @@ class TemporarySchemas {
 
 TEST(FrrSchemaInventoryTest, LoadsMetadataAndResolvesImportClosure) {
   TemporarySchemas files;
-  files.Add("common.yang", R"(module common { revision 2026-01-01; })");
+  files.Add("common.yang", R"(module common { namespace "urn:common";
+    revision 2026-01-01; })");
   files.Add("frr-staticd.yang", R"(
     module frr-staticd {
       // import ignored-comment;
       description "import ignored-string;";
+      namespace "urn:frr:staticd";
       import common { prefix common; }
       revision 2026-02-03;
     })");
@@ -47,6 +49,7 @@ TEST(FrrSchemaInventoryTest, LoadsMetadataAndResolvesImportClosure) {
   ASSERT_EQ(inventory->size(), 2);
   EXPECT_EQ((*inventory)[1].module_name, "frr-staticd");
   EXPECT_EQ((*inventory)[1].revision, "2026-02-03");
+  EXPECT_EQ((*inventory)[1].namespace_uri, "urn:frr:staticd");
   EXPECT_EQ((*inventory)[1].imports,
             std::vector<std::string>({"common"}));
   auto closure = dang::plugins::frr::ResolveImportClosure(

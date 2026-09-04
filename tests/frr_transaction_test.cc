@@ -12,6 +12,7 @@
 
 namespace {
 using dang::plugins::frr::FrrTransaction;
+using dang::plugins::frr::ConfigurationRoot;
 using dang::plugins::frr::mgmtd::SessionOperations;
 
 class FakeSession final : public SessionOperations {
@@ -26,6 +27,10 @@ class FakeSession final : public SessionOperations {
                         std::string* error) override {
     calls_->push_back("replace " + std::string(xpath) + " " + std::string(xml));
     return Result("replace", error);
+  }
+  bool DeleteCandidate(std::string_view xpath, std::string* error) override {
+    calls_->push_back("delete " + std::string(xpath));
+    return Result("delete", error);
   }
   bool ValidateCandidate(std::string* error) override {
     return Call("validate", error);
@@ -74,8 +79,9 @@ TEST(FrrTransactionTest, ValidatesDisposablyThenAppliesAndRestoresBeforeImage) {
   FakeSessions sessions;
   FrrTransaction transaction(
       [&](std::string* error) { return sessions.Create(error); },
-      "/frr-routing:routing", "<routing><before/></routing>",
-      "<routing><after/></routing>");
+      {ConfigurationRoot{"/frr-routing:routing",
+                         "<routing><before/></routing>",
+                         "<routing><after/></routing>"}});
   std::string error;
   EXPECT_TRUE(transaction.Validate(&error)) << error;
   EXPECT_FALSE(transaction.applied());
@@ -99,8 +105,8 @@ TEST(FrrTransactionTest, FailedValidationAbortsAndPreventsApply) {
   FakeSessions sessions;
   sessions.failures = {"validate"};
   FrrTransaction transaction(
-      [&](std::string* error) { return sessions.Create(error); }, "/root",
-      "<before/>", "<after/>");
+      [&](std::string* error) { return sessions.Create(error); },
+      {ConfigurationRoot{"/root", "<before/>", "<after/>"}});
   std::string error;
   EXPECT_FALSE(transaction.Validate(&error));
   EXPECT_NE(error.find("validate"), std::string::npos);
@@ -112,12 +118,24 @@ TEST(FrrTransactionTest, FailedValidationAbortsAndPreventsApply) {
                                       "abort", "unlock", "close"}));
 }
 
+TEST(FrrTransactionTest, MissingProposedRootProducesCandidateDelete) {
+  FakeSessions sessions;
+  FrrTransaction transaction(
+      [&](std::string* error) { return sessions.Create(error); },
+      {ConfigurationRoot{"/frr-zebra:zebra", "<zebra/>", std::nullopt}});
+  std::string error;
+  EXPECT_TRUE(transaction.Validate(&error)) << error;
+  EXPECT_NE(std::find(sessions.calls.begin(), sessions.calls.end(),
+                      "delete /frr-zebra:zebra"),
+            sessions.calls.end());
+}
+
 TEST(FrrTransactionTest, CommitCleanupFailureKeepsRollbackAvailable) {
   FakeSessions sessions;
   sessions.failures = {"", "unlock", ""};
   FrrTransaction transaction(
-      [&](std::string* error) { return sessions.Create(error); }, "/root",
-      "<before/>", "<after/>");
+      [&](std::string* error) { return sessions.Create(error); },
+      {ConfigurationRoot{"/root", "<before/>", "<after/>"}});
   std::string error;
   ASSERT_TRUE(transaction.Validate(&error)) << error;
   EXPECT_FALSE(transaction.Apply(&error));

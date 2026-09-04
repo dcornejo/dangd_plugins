@@ -27,6 +27,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   separately repeated real apply, candidate cleanup on pre-commit failures,
   and true applied-state rollback by validating and committing the retained
   before-image.
+- Added the loadable ABI-v7 `dang-frr` provider for the initial native
+  `frr-routing`, `frr-zebra`, and `frr-staticd` scope. It publishes the exact
+  installed import closure, claims exclusive `routing` ownership, extracts
+  atomic replace/delete roots from full dangd snapshots, and connects the
+  validated transaction and before-image rollback callbacks.
 - Updated the external plugin discovery smoke test for dangd plugin ABI v7.
   The loader now exercises v7 entry-point precedence and accepts the exclusive
   resource-domain ABI used by the forthcoming FRR provider.

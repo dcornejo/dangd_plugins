@@ -15,6 +15,7 @@ namespace dang::plugins::frr {
 struct YangSchema {
   std::string module_name;
   std::string revision;
+  std::string namespace_uri;
   std::vector<std::string> imports;
   std::string source;
   std::filesystem::path path;

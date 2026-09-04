@@ -3,7 +3,7 @@
 
 # FRR native-model provider
 
-This directory contains the in-progress provider that will manage FRRouting
+This directory contains the initial provider that manages FRRouting
 through FRR's own YANG model family and the programmatic `mgmtd` frontend API.
 It is intentionally separate from the RFC 8431 provider: deployments select
 one routing owner, and both packages claim dangd's exclusive `routing` resource
@@ -19,11 +19,12 @@ with standard IETF imports packaged by libyang. The loader resolves a transitive
 import closure and rejects missing imports, duplicate modules, malformed input,
 and size-limit violations.
 
-No loadable FRR plugin is installed by this checkpoint. Schema publication,
-configuration validation, apply, rollback, operational data, and drift
-reconciliation remain disabled until the `mgmtd` adapter can uphold dangd's
-transaction contract. This prevents a schema-only component from falsely
-advertising runtime support.
+The loadable `dangd_frr_plugin` currently implements the `frr-routing`,
+`frr-staticd`, and `frr-zebra` configuration modules. It publishes their exact
+installed import closure and claims ABI-v7 resource domain `routing`, so dangd
+will reject simultaneous use of another routing provider. Staticd augments the
+`frr-routing:routing` root; its nodes are retained inside that atomic edit. The
+separate `frr-zebra:zebra` root participates in the same candidate transaction.
 
 The transport foundation encodes FRR's public native frontend session, lock,
 XML edit, validate, apply, abort, and unlock messages without requiring FRR's
@@ -40,7 +41,44 @@ order. Transaction orchestration performs validation in a disposable session,
 then repeats the replacement for a real apply. Rollback is a new validated
 commit of the retained before-image; candidate abort is used only to discard
 uncommitted edits. Wiring this orchestration into ABI v7 and extracting the FRR
-subtrees from dangd snapshots remain the next implementation layer.
+subtrees from dangd snapshots are converted to atomic root replace/delete
+edits.
+
+Operational data, applied-state reconciliation, drift detection, RPCs,
+notifications, FRR feature discovery, and protocols beyond zebra/staticd are
+not yet implemented. The plugin deliberately leaves the reconciliation and
+operational callbacks unset; it does not represent requested configuration as
+observed state.
+
+## Installation and configuration
+
+Install FRR with `mgmtd`, zebra, and staticd enabled. Build and stage the plugin:
+
+```sh
+cmake -S . -B build -DDANGD_ROOT=/path/to/dang
+cmake --build build --target dangd_frr_plugin
+sudo cmake --install build --component frr
+```
+
+Linux normally needs no path overrides. A typical launch is:
+
+```sh
+sudo dangd --plugin /usr/lib/dangd/plugins/dangd_frr_plugin.so
+```
+
+FreeBSD normally installs the module below `/usr/local/lib/dangd/plugins` and
+schemas below `/usr/local/share/yang`. Use these environment variables only
+when the package uses nonstandard locations:
+
+```sh
+export DANG_FRR_YANG_DIR=/custom/share/yang
+export DANG_FRR_MGMTD_SOCKET=/custom/run/frr/mgmtd_fe.sock
+export DANG_FRR_TIMEOUT_MS=5000
+```
+
+The timeout must be 1 through 60000 milliseconds. Dangd must run as a user able
+to open FRR's mode-0600 frontend socket. Do not broaden the socket permissions;
+use a narrowly privileged service identity.
 
 ## Development dependencies
 

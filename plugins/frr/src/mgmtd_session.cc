@@ -118,6 +118,29 @@ bool Session::ReplaceCandidate(std::string_view xpath, std::string_view xml,
   return true;
 }
 
+bool Session::DeleteCandidate(std::string_view xpath, std::string* error) {
+  if (!candidate_locked_) {
+    if (error) *error = "mgmtd candidate datastore must be locked before edit";
+    return false;
+  }
+  auto request_id = NextRequest(error);
+  if (!request_id) return false;
+  auto request = Delete(session_id_, *request_id, Datastore::kCandidate, xpath);
+  if (request.empty()) {
+    if (error) *error = "mgmtd deletion XPath is invalid";
+    return false;
+  }
+  auto reply = transport_->Exchange(request, Code::kEditReply, false, error);
+  if (!reply || !FixedReply(*reply, "candidate-delete", error)) return false;
+  const std::size_t split = reply->header.split;
+  if (split == 0 || split > reply->body.size() - 8 ||
+      reply->body[8 + split - 1] != std::byte{0}) {
+    if (error) *error = "mgmtd candidate-delete reply has invalid XPath";
+    return false;
+  }
+  return true;
+}
+
 bool Session::CommitCandidate(CommitAction action, std::string* error) {
   if (!candidate_locked_) {
     if (error) *error = "mgmtd candidate datastore must be locked before commit";
