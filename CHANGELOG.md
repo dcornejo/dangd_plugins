@@ -19,6 +19,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   destination-prefix/base-nexthop subset, deterministic delete-before-install
   replacement planning, attributed rejection of unsupported forwarding
   semantics, and shell-free Linux and FreeBSD command construction.
+- Added direct `posix_spawnp` execution with stop-on-failure and reverse-order
+  compensation, deterministic rollback-failure coverage, and opt-in native
+  mutation tests confined to Linux network namespaces and FreeBSD VNET jails.
+  Native validation also corrected and narrowed FreeBSD interface-only route
+  handling instead of issuing an invalid `route -ifp` operation.
 - Added native Debian and FreeBSD package generation for the plugin collection,
   YANG models, and PAM module, with explicit dangd dependencies and deployment
   documentation that leaves PAM, SSH, Kea, and daemon activation under

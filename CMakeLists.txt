@@ -4,6 +4,9 @@
 cmake_minimum_required(VERSION 3.24)
 project(dang_plugins VERSION 0.1.0 LANGUAGES CXX)
 
+option(DANG_RIB_NATIVE_TESTS
+  "Run privileged RFC 8431 tests in disposable network isolation" OFF)
+
 include(CTest)
 find_package(LibXml2 REQUIRED)
 find_package(nlohmann_json 3.11 REQUIRED)
@@ -143,6 +146,7 @@ if(BUILD_TESTING)
   add_executable(rib_config_test
     tests/rib_config_test.cc
     plugins/rib/src/rib_config.cc
+    plugins/rib/src/platform_executor.cc
     plugins/rib/src/linux/platform_linux.cc
     plugins/rib/src/freebsd/platform_freebsd.cc)
   target_compile_features(rib_config_test PRIVATE cxx_std_20)
@@ -152,6 +156,28 @@ if(BUILD_TESTING)
   target_compile_options(rib_config_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME rfc8431_configuration_planning COMMAND rib_config_test)
+
+  add_executable(rib_native_test
+    tests/rib_native_test.cc
+    plugins/rib/src/rib_config.cc
+    plugins/rib/src/platform_executor.cc
+    plugins/rib/src/linux/platform_linux.cc
+    plugins/rib/src/freebsd/platform_freebsd.cc)
+  target_compile_features(rib_native_test PRIVATE cxx_std_20)
+  target_include_directories(rib_native_test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(rib_native_test PRIVATE LibXml2::LibXml2)
+  target_compile_options(rib_native_test PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  if(DANG_RIB_NATIVE_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_test(NAME rfc8431_linux_namespace_mutation
+      COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_rfc8431_linux_native.sh"
+        $<TARGET_FILE:rib_native_test>)
+  elseif(DANG_RIB_NATIVE_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+    add_test(NAME rfc8431_freebsd_vnet_mutation
+      COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_rfc8431_freebsd_native.sh"
+        $<TARGET_FILE:rib_native_test>)
+  endif()
 
   if(TARGET dangd_system_plugin)
     add_test(NAME system_plugin_discovery

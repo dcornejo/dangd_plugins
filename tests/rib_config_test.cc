@@ -3,8 +3,11 @@
 
 #include "plugins/rib/src/rib_config.h"
 #include "plugins/rib/src/platform_command.h"
+#include "plugins/rib/src/platform_executor.h"
 
 #include <gtest/gtest.h>
+
+#include <algorithm>
 
 namespace dang::rib {
 namespace {
@@ -89,6 +92,62 @@ TEST(RibConfigTest, ProducesShellFreeLinuxAndFreeBsdCommands) {
             (std::vector<std::string>{"route", "-n", "add", "-inet", "-fib",
                                       "100", "192.0.2.0/24", "198.51.100.1",
                                       "-ifp", "dummy0"}));
+
+  Route directly_connected = config.routes[0];
+  directly_connected.gateway.reset();
+  EXPECT_FALSE(BuildFreeBsdCommands(
+      {{ChangeKind::kInstall, directly_connected}}, &commands, &error, &path));
+  EXPECT_NE(error.find("address resolution"), std::string::npos);
+}
+
+TEST(RibConfigTest, CompensatesCompletedCommandsInReverseAfterFailure) {
+  Config before;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(ParseConfig(kBefore, &before, &error, &path));
+  Config proposed = before;
+  proposed.routes[0].gateway = "198.51.100.2";
+  const auto changes = PlanChanges(before, proposed);
+  std::vector<std::vector<std::string>> observed;
+  unsigned invocation = 0;
+  const auto result = ExecuteChanges(
+      NativePlatform::kLinux, changes,
+      [&](const NativeCommand& command, std::string* command_error) {
+        observed.push_back(command.arguments);
+        ++invocation;
+        if (invocation != 2) return true;
+        *command_error = "injected installation failure";
+        return false;
+      });
+  EXPECT_FALSE(result.ok);
+  EXPECT_TRUE(result.rollback_failures.empty());
+  ASSERT_EQ(observed.size(), 3U);
+  EXPECT_EQ(observed[0][3], "delete");
+  EXPECT_EQ(observed[1][3], "replace");
+  EXPECT_EQ(observed[2][3], "replace");
+  EXPECT_NE(std::ranges::find(observed[2], "198.51.100.1"), observed[2].end());
+}
+
+TEST(RibConfigTest, ReportsIncompleteCompensation) {
+  Config before;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(ParseConfig(kBefore, &before, &error, &path));
+  Config proposed = before;
+  proposed.routes[0].gateway = "198.51.100.2";
+  unsigned invocation = 0;
+  const auto result = ExecuteChanges(
+      NativePlatform::kFreeBsd, PlanChanges(before, proposed),
+      [&](const NativeCommand&, std::string* command_error) {
+        ++invocation;
+        if (invocation == 1) return true;
+        *command_error = invocation == 2 ? "apply failed" : "rollback failed";
+        return false;
+      });
+  EXPECT_FALSE(result.ok);
+  ASSERT_EQ(result.rollback_failures.size(), 1U);
+  EXPECT_NE(result.rollback_failures[0].find("rollback failed"),
+            std::string::npos);
 }
 
 }  // namespace
