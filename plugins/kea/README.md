@@ -75,13 +75,18 @@ states, lifetimes, prefix lengths, and binary identifiers to their modeled XML
 forms. Kea's empty-set result is exposed as an empty collection.
 
 The provider intentionally reports selected rather than complete operational
-data. Host reservations are not yet published, and lease enumeration currently
-uses Kea's bounded-response `lease4-get-all` and `lease6-get-all` commands
-rather than paging. The five-second deadline and 16 MiB reply ceiling protect
-dangd, but an all-leases query can still impose work on a large production Kea
-server. Completing the provider requires paged lease and host enumeration plus
-full-schema conformance and interoperability coverage. The pinned modules
-declare no notification surface.
+data. Lease enumeration uses Kea's `lease4-get-page` and `lease6-get-page`
+commands with a 256-entry page size and the last returned address as the opaque
+continuation cursor. It rejects malformed counts, oversized pages, repeated
+cursors, more than 512 pages or 65,536 leases, more than 8 MiB of accumulated
+native lease data, and enumeration lasting more than 30 seconds. Each individual
+control exchange retains its five-second and 16 MiB limits.
+
+Host reservations are not yet published, and the supplemental statistics
+command can still produce a large single reply when a server has many subnets.
+Completing the provider requires paged host enumeration, bounded statistics
+ranges, and full-schema conformance and interoperability coverage. The pinned
+modules declare no notification surface.
 
 The plugin deliberately uses ABI v1's transaction-wide action. This preserves
 atomic compensation across Kea's own complete-configuration `config-set`
@@ -190,7 +195,7 @@ sudo tests/platform/freebsd/run_kea_isolated.sh "$PWD"
 ```
 
 Each interaction proves DHCPv4 and DHCPv6 `config-test`, `config-set`, rollback,
-lease retrieval, and supplemental-statistics retrieval against the native
-packaged daemon. It verifies that no other interface entered the isolation
+paged-command lease retrieval, and supplemental-statistics retrieval against the
+native packaged daemon. It verifies that no other interface entered the isolation
 boundary and removes its unique sockets, PID storage, and namespace or jail
 afterward.

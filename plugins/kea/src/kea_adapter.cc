@@ -575,6 +575,96 @@ std::optional<nlohmann::json> SendControlQuery(
   }
 }
 
+std::optional<nlohmann::json> CollectLeasePages(
+    std::string_view socket_path, bool dhcp6, const ControlQuery& query,
+    std::string* error, const PageLimits& limits) {
+  if (!query || limits.page_size == 0 || limits.maximum_pages == 0 ||
+      limits.maximum_items == 0 || limits.maximum_bytes == 0 ||
+      limits.maximum_duration <= std::chrono::milliseconds::zero()) {
+    if (error) *error = "invalid Kea lease paging configuration";
+    return std::nullopt;
+  }
+  const std::string command = dhcp6 ? "lease6-get-page" : "lease4-get-page";
+  std::string cursor = "start";
+  nlohmann::json collected = nlohmann::json::array();
+  std::size_t collected_bytes = 0;
+  const auto deadline = std::chrono::steady_clock::now() +
+                        limits.maximum_duration;
+  for (std::size_t page = 0; page < limits.maximum_pages; ++page) {
+    if (std::chrono::steady_clock::now() >= deadline) {
+      if (error) *error = "Kea lease enumeration exceeded its deadline";
+      return std::nullopt;
+    }
+    const nlohmann::json arguments{{"from", cursor},
+                                   {"limit", limits.page_size}};
+    auto response = query(socket_path, command, arguments, error);
+    if (!response) return std::nullopt;
+    const nlohmann::json* answer = Answer(*response);
+    if (!answer || !answer->contains("result") ||
+        !answer->at("result").is_number_integer()) {
+      if (error) *error = "Kea lease page omits an integer result";
+      return std::nullopt;
+    }
+    const int status = answer->at("result").get<int>();
+    if (status == 3) {
+      return std::optional<nlohmann::json>(nlohmann::json{
+          {"result", collected.empty() ? 3 : 0},
+          {"arguments", {{"leases", collected}}}});
+    }
+    if (status != 0) {
+      if (error) *error = answer->value("text", "Kea rejected the lease page");
+      return std::nullopt;
+    }
+    const auto arguments_node = answer->find("arguments");
+    if (arguments_node == answer->end() || !arguments_node->is_object()) {
+      if (error) *error = "Kea lease page omits arguments";
+      return std::nullopt;
+    }
+    const auto leases = arguments_node->find("leases");
+    const auto count = arguments_node->find("count");
+    if (leases == arguments_node->end() || !leases->is_array() ||
+        count == arguments_node->end() || !count->is_number_integer() ||
+        count->get<std::int64_t>() < 0 ||
+        static_cast<std::uint64_t>(count->get<std::int64_t>()) !=
+            leases->size() || leases->size() > limits.page_size) {
+      if (error) *error = "Kea lease page has an invalid leases/count result";
+      return std::nullopt;
+    }
+    if (collected.size() + leases->size() > limits.maximum_items) {
+      if (error) *error = "Kea lease enumeration exceeds the item limit";
+      return std::nullopt;
+    }
+    for (const auto& lease : *leases) {
+      const std::string encoded = lease.dump();
+      if (encoded.size() > limits.maximum_bytes - collected_bytes) {
+        if (error) *error = "Kea lease enumeration exceeds the byte limit";
+        return std::nullopt;
+      }
+      collected_bytes += encoded.size();
+      collected.push_back(lease);
+    }
+    if (leases->size() < limits.page_size) {
+      return std::optional<nlohmann::json>(nlohmann::json{
+          {"result", collected.empty() ? 3 : 0},
+          {"arguments", {{"leases", collected}}}});
+    }
+    const auto& last = leases->back();
+    if (!last.is_object() || !last.contains("ip-address") ||
+        !last.at("ip-address").is_string()) {
+      if (error) *error = "Kea lease page omits its continuation address";
+      return std::nullopt;
+    }
+    const std::string next = last.at("ip-address").get<std::string>();
+    if (next.empty() || next == cursor) {
+      if (error) *error = "Kea lease paging cursor did not advance";
+      return std::nullopt;
+    }
+    cursor = next;
+  }
+  if (error) *error = "Kea lease enumeration exceeds the page limit";
+  return std::nullopt;
+}
+
 std::optional<std::string> TranslateOperationalState(
     std::string_view module_name, const nlohmann::json& leases,
     const nlohmann::json& statistics, std::string* error) {

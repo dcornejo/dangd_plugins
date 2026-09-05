@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Replaced Kea's unbounded all-lease operational queries with native paged
+  retrieval. Address cursors are carried across 256-entry pages, while page,
+  item, aggregate-byte, and total-duration limits fail closed on malformed,
+  stalled, or excessive enumerations. Tests cover page assembly and adversarial
+  count and continuation behavior, with live packaged-daemon validation.
 - Added ABI-v3 Kea operational state for DHCPv4 and DHCPv6 leases and
   supplemental per-subnet lease statistics. The adapter maps Kea lease types,
   states, lifetimes, prefixes, and binary identifiers into schema-shaped XML,

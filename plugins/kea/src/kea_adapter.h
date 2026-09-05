@@ -4,6 +4,9 @@
 #ifndef DANG_PLUGINS_KEA_ADAPTER_H_
 #define DANG_PLUGINS_KEA_ADAPTER_H_
 
+#include <chrono>
+#include <cstddef>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -19,6 +22,20 @@ struct ServerConfiguration {
   std::string socket_path;
   nlohmann::json arguments;
 };
+
+/** Resource bounds applied to a complete logical result assembled by pages. */
+struct PageLimits {
+  std::size_t page_size = 256;
+  std::size_t maximum_pages = 512;
+  std::size_t maximum_items = 65536;
+  std::size_t maximum_bytes = 8U * 1024U * 1024U;
+  std::chrono::milliseconds maximum_duration{30000};
+};
+
+/** Injectable control query used to test page boundaries and failures. */
+using ControlQuery = std::function<std::optional<nlohmann::json>(
+    std::string_view socket_path, std::string_view command,
+    const nlohmann::json& arguments, std::string* error)>;
 
 /**
  * Converts one official Kea configuration container into control JSON.
@@ -38,6 +55,14 @@ struct ServerConfiguration {
 [[nodiscard]] std::optional<nlohmann::json> SendControlQuery(
     std::string_view socket_path, std::string_view command,
     const nlohmann::json& arguments, std::string* error);
+
+/**
+ * Retrieves a complete lease result using Kea's stable address cursor.
+ * Repeated cursors, malformed pages, or configured resource limits fail closed.
+ */
+[[nodiscard]] std::optional<nlohmann::json> CollectLeasePages(
+    std::string_view socket_path, bool dhcp6, const ControlQuery& query,
+    std::string* error, const PageLimits& limits = {});
 
 /** Converts native lease and supplemental-statistic replies to modeled XML. */
 [[nodiscard]] std::optional<std::string> TranslateOperationalState(

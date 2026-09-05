@@ -25,6 +25,7 @@
 namespace {
 
 using dang::plugins::kea::CommandSucceeded;
+using dang::plugins::kea::CollectLeasePages;
 using dang::plugins::kea::SendControlCommand;
 using dang::plugins::kea::SendControlQuery;
 using dang::plugins::kea::ServerConfiguration;
@@ -231,13 +232,11 @@ int Operational(void*, DangOperationalDataV1* result,
   }
   operational_xml =
       "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">";
-  for (const auto& [module, socket, lease_command, statistic_command] : {
-           std::tuple{"kea-dhcp4-server", socket4, "lease4-get-all",
-                      "stat-lease4-get"},
-           std::tuple{"kea-dhcp6-server", socket6, "lease6-get-all",
-                      "stat-lease6-get"}}) {
+  for (const auto& [module, socket, dhcp6, statistic_command] : {
+           std::tuple{"kea-dhcp4-server", socket4, false, "stat-lease4-get"},
+           std::tuple{"kea-dhcp6-server", socket6, true, "stat-lease6-get"}}) {
     std::string reason;
-    auto leases = SendControlQuery(socket, lease_command, nullptr, &reason);
+    auto leases = CollectLeasePages(socket, dhcp6, SendControlQuery, &reason);
     if (!leases) {
       SetError(error, module + std::string(": ") + reason,
                "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +

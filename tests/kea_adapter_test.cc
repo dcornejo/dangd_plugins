@@ -3,8 +3,10 @@
 
 #include "kea_adapter.h"
 
+#include <chrono>
 #include <iostream>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -148,5 +150,93 @@ int main() {
   valid &= Check(state6 && state6->find("<assigned-pds>1</assigned-pds>") !=
                      std::string::npos,
                  "DHCPv6 lease statistics were not translated");
+
+  std::vector<nlohmann::json> requests;
+  std::size_t invocation = 0;
+  const dang::plugins::kea::ControlQuery pages = [&](std::string_view,
+      std::string_view command, const nlohmann::json& arguments,
+      std::string*) -> std::optional<nlohmann::json> {
+    requests.push_back({{"command", command}, {"arguments", arguments}});
+    ++invocation;
+    if (invocation == 1)
+      return std::optional<nlohmann::json>(nlohmann::json{
+          {"result", 0},
+          {"arguments", {{"count", 2},
+                         {"leases", {{{"ip-address", "192.0.2.1"}},
+                                      {{"ip-address", "192.0.2.2"}}}}}}});
+    return std::optional<nlohmann::json>(nlohmann::json{
+        {"result", 0},
+        {"arguments", {{"count", 1},
+                       {"leases", {{{"ip-address", "192.0.2.3"}}}}}}});
+  };
+  auto paged = dang::plugins::kea::CollectLeasePages(
+      "/tmp/kea4.sock", false, pages, &error,
+      {.page_size = 2, .maximum_pages = 3, .maximum_items = 4,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(paged && paged->at("arguments").at("leases").size() == 3,
+                 "lease pages were not combined");
+  valid &= Check(requests.size() == 2 &&
+                     requests[0].at("arguments").at("from") == "start" &&
+                     requests[1].at("arguments").at("from") == "192.0.2.2" &&
+                     requests[1].at("command") == "lease4-get-page",
+                 "lease paging did not carry the last address forward");
+
+  const dang::plugins::kea::ControlQuery repeated_cursor =
+      [](std::string_view, std::string_view, const nlohmann::json&,
+         std::string*) -> std::optional<nlohmann::json> {
+    return std::optional<nlohmann::json>(nlohmann::json{
+        {"result", 0},
+        {"arguments", {{"count", 1},
+                       {"leases", {{{"ip-address", "start"}}}}}}});
+  };
+  error.clear();
+  auto stalled = dang::plugins::kea::CollectLeasePages(
+      "/tmp/kea4.sock", false, repeated_cursor, &error,
+      {.page_size = 1, .maximum_pages = 2, .maximum_items = 2,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(!stalled && error.find("did not advance") != std::string::npos,
+                 "a repeated lease paging cursor was accepted");
+
+  const dang::plugins::kea::ControlQuery oversized_page =
+      [](std::string_view, std::string_view, const nlohmann::json&,
+         std::string*) -> std::optional<nlohmann::json> {
+    return std::optional<nlohmann::json>(nlohmann::json{
+        {"result", 0},
+        {"arguments", {{"count", 2},
+                       {"leases", {{{"ip-address", "192.0.2.1"}},
+                                    {{"ip-address", "192.0.2.2"}}}}}}});
+  };
+  error.clear();
+  auto oversized = dang::plugins::kea::CollectLeasePages(
+      "/tmp/kea4.sock", false, oversized_page, &error,
+      {.page_size = 1, .maximum_pages = 2, .maximum_items = 2,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(!oversized && error.find("leases/count") != std::string::npos,
+                 "a page larger than the requested limit was accepted");
+
+  error.clear();
+  auto too_many = dang::plugins::kea::CollectLeasePages(
+      "/tmp/kea4.sock", false, oversized_page, &error,
+      {.page_size = 2,
+       .maximum_pages = 2,
+       .maximum_items = 1,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(!too_many && error.find("item limit") != std::string::npos,
+                 "the aggregate lease item limit was not enforced");
+
+  error.clear();
+  auto too_large = dang::plugins::kea::CollectLeasePages(
+      "/tmp/kea4.sock", false, oversized_page, &error,
+      {.page_size = 2,
+       .maximum_pages = 2,
+       .maximum_items = 2,
+       .maximum_bytes = 1,
+       .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(!too_large && error.find("byte limit") != std::string::npos,
+                 "the aggregate lease byte limit was not enforced");
   return valid ? 0 : 1;
 }
