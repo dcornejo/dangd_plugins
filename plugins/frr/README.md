@@ -69,11 +69,14 @@ rather than presenting an incomplete tree as authoritative.
 All top-level RPCs declared by the installed `frr-zebra` module are dispatched
 through mgmtd's public native RPC request/reply API. Dangd validates input and
 output against the runtime-matched schema and applies NACM before invoking the
-provider. The provider does not translate RPCs into shell commands. Live RPC
-interoperability still requires a running zebra backend; the validation hosts
-currently expose either mgmtd without a zebra RPC backend or an inactive
-socket, so only the portable native-wire and correlated-session contract is
-confirmed here.
+provider. The provider does not translate RPCs into shell commands. On the
+Linux validation host, FRR 10.5.1 runs active mgmtd and zebra adapters but its
+live RPC registry contains no `/frr-zebra` subtree; invoking
+`/frr-zebra:get-vrf-info` reaches mgmtd and is rejected with `No backends
+implement xpath`. The codec and correlated session contract are verified, but
+successful live interoperability remains blocked until an FRR release or
+backend actually registers these modeled RPCs. The plugin preserves FRR's
+rejection instead of substituting CLI behavior.
 
 Native FRR notifications and protocols beyond zebra/staticd are not yet
 implemented. The provider additionally publishes its small implemented

@@ -13,6 +13,9 @@ All notable changes to the external dangd plugin collection are recorded here.
   candidate transaction as one normal action. Commits now schedule the existing
   atomic apply/rollback callbacks instead of treating a zero-action plan as
   already complete; discovery tests lock down the descriptor contract.
+- Documented live FRR 10.5.1 RPC probing: active mgmtd and zebra adapters do
+  not register `/frr-zebra` in the backend RPC registry, so successful native
+  RPC interoperability remains an upstream capability boundary.
 - Completed the pinned Kea DHCPv4/DHCPv6 state trees by translating host option
   data and promoting the provider to ABI v5 complete operational publication.
   The ABI-v4 action plan retains Kea's full transaction as one indivisible
