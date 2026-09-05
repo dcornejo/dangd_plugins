@@ -125,7 +125,10 @@ int main() {
     "result": 0, "arguments": {"hosts": [{
       "subnet-id": 4, "hw-address": "00:01:02:03:04:05",
       "ip-address": "192.0.2.50", "hostname": "printer.example",
-      "client-classes": ["office"]
+      "client-classes": ["office"],
+      "option-data": [{"code": 6, "space": "dhcp4", "data": "192.0.2.53",
+        "csv-format": true, "client-classes": ["office"],
+        "user-context": {"owner": "test"}}]
     }]}
   })json");
   auto state4 = dang::plugins::kea::TranslateOperationalState(
@@ -146,6 +149,14 @@ int main() {
                      state4->find("<identifier>00:01:02:03:04:05</identifier>") !=
                          std::string::npos,
                  "DHCPv4 host identifier was not translated");
+  valid &= Check(state4 &&
+                     state4->find("<option-data><code>6</code><space>dhcp4</space>") !=
+                         std::string::npos &&
+                     state4->find("<client-classes>office</client-classes>") !=
+                         std::string::npos &&
+                     state4->find("&quot;owner&quot;:&quot;test&quot;") !=
+                         std::string::npos,
+                 "DHCPv4 host option data was not translated");
   const nlohmann::json leases6 = nlohmann::json::parse(R"json({
     "result": 0, "arguments": {"leases": [{
       "ip-address": "2001:db8::44", "duid": "00:01:02:03",

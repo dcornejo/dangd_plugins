@@ -469,6 +469,52 @@ std::optional<std::string> BuildStatistics(const nlohmann::json& response,
   }
 }
 
+bool AppendOptionData(std::string* xml, const nlohmann::json& host,
+                      std::string* error) {
+  const auto options = host.find("option-data");
+  if (options == host.end()) return true;
+  if (!options->is_array()) {
+    if (error) *error = "Kea host reply has non-array option-data";
+    return false;
+  }
+  for (const auto& option : *options) {
+    if (!option.is_object()) {
+      if (error) *error = "Kea host reply has a non-object option-data entry";
+      return false;
+    }
+    *xml += "<option-data>";
+    for (const auto& [name, required] : {
+             std::pair<std::string_view, bool>{"code", true},
+             {"space", true}, {"name", false}, {"data", true},
+             {"csv-format", false}, {"always-send", false},
+             {"never-send", false}})
+      if (!AppendLeaf(xml, name, option, name, required, error)) return false;
+    const auto classes = option.find("client-classes");
+    if (classes != option.end()) {
+      if (!classes->is_array()) {
+        if (error)
+          *error = "Kea host option-data has non-array client-classes";
+        return false;
+      }
+      for (const auto& value : *classes) {
+        if (!value.is_string()) {
+          if (error)
+            *error = "Kea host option-data has non-string client-classes";
+          return false;
+        }
+        *xml += "<client-classes>" + XmlEscape(value.get<std::string>()) +
+                "</client-classes>";
+      }
+    }
+    if (const auto context = option.find("user-context");
+        context != option.end())
+      *xml += "<user-context>" + XmlEscape(context->dump()) +
+              "</user-context>";
+    *xml += "</option-data>";
+  }
+  return true;
+}
+
 std::optional<std::string> BuildHosts(const nlohmann::json& response,
                                       bool dhcp6, std::string* error) {
   const nlohmann::json* answer = Answer(response);
@@ -548,6 +594,7 @@ std::optional<std::string> BuildHosts(const nlohmann::json& response,
          {"hostname", "next-server", "server-hostname", "boot-file-name",
           "auth-key"})
       if (!AppendLeaf(&xml, name, host, name, false, error)) return std::nullopt;
+    if (!AppendOptionData(&xml, host, error)) return std::nullopt;
     const auto classes = host.find("client-classes");
     if (classes != host.end()) {
       if (!classes->is_array()) {

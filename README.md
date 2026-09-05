@@ -96,8 +96,9 @@ only with one another. Packaging does not weaken dangd's duplicate-owner check.
 - `example` is the minimal ABI-v1 development template. Its setup guide is
   `plugins/example/README.md`.
 - `kea` implements the pinned Kea DHCPv4 and DHCPv6 YANG models through native
-  local control sockets and includes isolated Linux and FreeBSD interactions.
-  Its server and socket setup is in `plugins/kea/README.md`.
+  local control sockets, publishes complete ABI-v5 operational state, and
+  includes isolated Linux and FreeBSD interactions. Its server and socket setup
+  is in `plugins/kea/README.md`.
 - `system` implements RFC 7317 system identity, hostname, clock/timezone, NTP,
   DNS, local authentication, platform state, and control RPCs. It also supplies
   the root-only verifier used by `pam_dangd`; its explicit compliance gaps are

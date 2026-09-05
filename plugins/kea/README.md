@@ -67,16 +67,16 @@ Kea remains the final implementation-specific validator; a newly introduced
 model structure must gain a focused translation test before it is treated as
 production-supported.
 
-This is not yet a complete implementation of the two modules. Through ABI v3,
-the provider owns configuration and publishes each server's lease inventory,
-host reservations, and supplemental per-subnet lease statistics in its `state`
-container. Operational
+The provider implements the complete configuration and state trees of the two
+pinned modules. Through ABI v5 it owns configuration and publishes each
+server's complete lease inventory, host reservations (including option data),
+and supplemental per-subnet lease statistics in its `state` container. Operational
 queries use the local control sockets and convert Kea identifiers, lease types,
 states, lifetimes, prefix lengths, and binary identifiers to their modeled XML
 forms. Kea's empty-set result is exposed as an empty collection.
 
-The provider intentionally reports selected rather than complete operational
-data. Lease enumeration uses Kea's `lease4-get-page` and `lease6-get-page`
+The provider marks this operational result complete. Lease enumeration uses
+Kea's `lease4-get-page` and `lease6-get-page`
 commands with a 256-entry page size and the last returned address as the opaque
 continuation cursor. It rejects malformed counts, oversized pages, repeated
 cursors, more than 512 pages or 65,536 leases, more than 8 MiB of accumulated
@@ -89,14 +89,14 @@ per exact subnet ID in the last successfully applied configuration, so Kea
 cannot return an unbounded all-subnet result. The provider combines those
 results under the same 512-query, 65,536-row, 8 MiB, and 30-second aggregate
 limits. Candidate validation does not change that inventory; successful apply
-and rollback callbacks update it atomically. Completing the provider still
-requires full-schema conformance and interoperability coverage. The pinned
-modules declare no notification surface.
+and rollback callbacks update it atomically. The pinned modules declare no
+RPC or notification surface.
 
-The plugin deliberately uses ABI v1's transaction-wide action. This preserves
-atomic compensation across Kea's own complete-configuration `config-set`
-operation. A future ABI-v4 implementation must not pretend that individual YANG
-leaves can be independently committed when Kea accepts configuration as a unit.
+The plugin deliberately exposes one ABI-v4 hardware action for the entire Kea
+transaction. This preserves atomic compensation across Kea's own
+complete-configuration `config-set` operation and does not pretend that
+individual YANG leaves can be independently committed when Kea accepts
+configuration as a unit.
 
 ## Configuration
 

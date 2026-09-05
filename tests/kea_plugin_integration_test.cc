@@ -37,11 +37,11 @@ int main(int argc, char** argv) {
   const std::string before = Read(argv[2]);
   const std::string proposed = Read(argv[3]);
   void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
-  auto initialize = library ? reinterpret_cast<DangPluginInitV3>(
-      dlsym(library, "dang_plugin_init_v3")) : nullptr;
-  const DangPluginV3* plugin3 = initialize ? initialize() : nullptr;
-  const DangPluginV1* plugin = plugin3 ? &plugin3->v2.v1 : nullptr;
-  if (!plugin3) {
+  auto initialize = library ? reinterpret_cast<DangPluginInitV5>(
+      dlsym(library, "dang_plugin_init_v5")) : nullptr;
+  const DangPluginV5* plugin5 = initialize ? initialize() : nullptr;
+  const DangPluginV1* plugin = plugin5 ? &plugin5->v4.v3.v2.v1 : nullptr;
+  if (!plugin5) {
     std::cerr << (library ? "missing plugin initializer" : dlerror()) << '\n';
     return 1;
   }
@@ -54,14 +54,23 @@ int main(int argc, char** argv) {
     valid = plugin->validate(plugin->context, prepared, &error)
         || Report("validate", error);
   if (valid)
-    valid = plugin->apply(plugin->context, prepared, &error)
+    valid = plugin5->v4.hardware_action_count(plugin->context, prepared) == 1;
+  DangHardwareActionV1 action{};
+  if (valid)
+    valid = plugin5->v4.hardware_action_at(plugin->context, prepared, 0,
+                                           &action, &error)
+        || Report("hardware action", error);
+  if (valid)
+    valid = (action.action_id &&
+        plugin5->v4.apply_hardware_action(plugin->context, prepared,
+                                          action.action_id, &error))
         || Report("apply", error);
   if (valid) {
-    DangOperationalDataV1 state{};
-    valid = plugin3->get_operational_data(plugin->context, &state, &error)
+    DangOperationalDataV2 state{};
+    valid = plugin5->get_operational_data_v2(plugin->context, &state, &error)
         || Report("operational", error);
     const std::string xml = valid && state.data_xml ? state.data_xml : "";
-    valid = valid &&
+    valid = valid && state.complete == 1 &&
         xml.find("urn:ietf:params:xml:ns:yang:kea-dhcp4-server") !=
             std::string::npos &&
         xml.find("urn:ietf:params:xml:ns:yang:kea-dhcp6-server") !=
@@ -73,11 +82,18 @@ int main(int argc, char** argv) {
         xml.find("<subnet-id>601</subnet-id>") != std::string::npos &&
         xml.find("<identifier>00:01:02:03:04:05</identifier>") !=
             std::string::npos &&
-        xml.find("<identifier>00:01:02:03</identifier>") != std::string::npos;
+        xml.find("<identifier>00:01:02:03</identifier>") != std::string::npos &&
+        xml.find("<space>dhcp4</space>") != std::string::npos &&
+        xml.find("<data>printer.example</data>") !=
+            std::string::npos &&
+        xml.find("<space>dhcp6</space>") != std::string::npos &&
+        xml.find("<data>2001:db8:6::53</data>") !=
+            std::string::npos;
     if (!valid) std::cerr << "operational XML is incomplete: " << xml << '\n';
   }
   if (valid)
-    valid = plugin->rollback(plugin->context, prepared, &error)
+    valid = plugin5->v4.rollback_hardware_action(plugin->context, prepared,
+                                                 action.action_id, &error)
         || Report("rollback", error);
   if (prepared) plugin->release(plugin->context, prepared);
   if (plugin->destroy) plugin->destroy(plugin->context);

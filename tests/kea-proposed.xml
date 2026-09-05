@@ -8,7 +8,9 @@
     <hook-library><library>@KEA_HOOK_DIR@/libdhcp_stat_cmds.so</library></hook-library>
     <hook-library><library>@KEA_HOOK_DIR@/libdhcp_host_cmds.so</library></hook-library>
     <subnet4><id>401</id><pool><prefix>192.0.2.64/27</prefix></pool><subnet>192.0.2.0/24</subnet>
-      <host><identifier-type>hw-address</identifier-type><identifier>00:01:02:03:04:05</identifier><ip-address>192.0.2.70</ip-address></host>
+      <host><identifier-type>hw-address</identifier-type><identifier>00:01:02:03:04:05</identifier><ip-address>192.0.2.70</ip-address>
+        <option-data><code>15</code><space>dhcp4</space><data>printer.example</data><csv-format>true</csv-format></option-data>
+      </host>
     </subnet4>
   </config>
   <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp6-server">
@@ -19,7 +21,9 @@
     <hook-library><library>@KEA_HOOK_DIR@/libdhcp_stat_cmds.so</library></hook-library>
     <hook-library><library>@KEA_HOOK_DIR@/libdhcp_host_cmds.so</library></hook-library>
     <subnet6><id>601</id><pool><prefix>2001:db8:6::100/120</prefix></pool><subnet>2001:db8:6::/64</subnet>
-      <host><identifier-type>duid</identifier-type><identifier>00:01:02:03</identifier><ip-addresses>2001:db8:6::70</ip-addresses></host>
+      <host><identifier-type>duid</identifier-type><identifier>00:01:02:03</identifier><ip-addresses>2001:db8:6::70</ip-addresses>
+        <option-data><code>23</code><space>dhcp6</space><data>2001:db8:6::53</data><csv-format>true</csv-format></option-data>
+      </host>
     </subnet6>
   </config>
 </config>

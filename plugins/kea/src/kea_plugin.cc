@@ -248,6 +248,42 @@ int RollbackConfiguration(void*, void* opaque, DangPluginErrorV1* error) {
 
 void Release(void*, void* opaque) { delete static_cast<Prepared*>(opaque); }
 
+size_t HardwareActionCount(void*, void* opaque) {
+  return opaque ? 1 : 0;
+}
+
+int HardwareActionAt(void*, void* opaque, size_t index,
+                     DangHardwareActionV1* action,
+                     DangPluginErrorV1* error) {
+  if (!opaque || !action || index != 0) {
+    SetError(error, "the Kea transaction action is unavailable");
+    return 0;
+  }
+  // Kea accepts each daemon's complete configuration as one config-set.
+  // Advertising one normal action preserves that indivisible unit instead of
+  // pretending individual YANG leaves can be safely reordered by dangd.
+  *action = {"configuration", "/", DANG_HARDWARE_NORMAL_V1, nullptr, 0};
+  return 1;
+}
+
+int ApplyHardwareAction(void* context, void* opaque, const char* action_id,
+                        DangPluginErrorV1* error) {
+  if (!action_id || std::string_view(action_id) != "configuration") {
+    SetError(error, "the Kea hardware action ID is unknown");
+    return 0;
+  }
+  return ApplyConfiguration(context, opaque, error);
+}
+
+int RollbackHardwareAction(void* context, void* opaque, const char* action_id,
+                           DangPluginErrorV1* error) {
+  if (!action_id || std::string_view(action_id) != "configuration") {
+    SetError(error, "the Kea hardware action ID is unknown");
+    return 0;
+  }
+  return RollbackConfiguration(context, opaque, error);
+}
+
 int Operational(void*, DangOperationalDataV1* result,
                 DangPluginErrorV1* error) {
   if (!result) {
@@ -307,8 +343,20 @@ int Operational(void*, DangOperationalDataV1* result,
   return 1;
 }
 
-const DangPluginV3 kPlugin{
-    .v2 = {.v1 = {.abi_version = DANG_PLUGIN_ABI_V3,
+int OperationalV2(void* context, DangOperationalDataV2* result,
+                  DangPluginErrorV1* error) {
+  if (!result) {
+    SetError(error, "the operational data output is missing");
+    return 0;
+  }
+  DangOperationalDataV1 legacy{};
+  if (!Operational(context, &legacy, error)) return 0;
+  *result = {legacy.data_xml, 1};
+  return 1;
+}
+
+const DangPluginV5 kPlugin{
+    .v4 = {.v3 = {.v2 = {.v1 = {.abi_version = DANG_PLUGIN_ABI_V5,
                   .plugin_name = "dang-kea",
                   .context = nullptr,
                   .yang_source_count = SourceCount,
@@ -322,9 +370,19 @@ const DangPluginV3 kPlugin{
                   .release = Release,
                   .destroy = nullptr},
            .invoke = nullptr},
-    .get_operational_data = Operational};
+           .get_operational_data = Operational},
+           .hardware_action_count = HardwareActionCount,
+           .hardware_action_at = HardwareActionAt,
+           .apply_hardware_action = ApplyHardwareAction,
+           .rollback_hardware_action = RollbackHardwareAction},
+    .get_operational_data_v2 = OperationalV2};
 
 }  // namespace
 
-extern "C" const DangPluginV3* dang_plugin_init_v3() { return &kPlugin; }
-extern "C" const DangPluginV1* dang_plugin_init_v1() { return &kPlugin.v2.v1; }
+extern "C" const DangPluginV5* dang_plugin_init_v5() { return &kPlugin; }
+extern "C" const DangPluginV3* dang_plugin_init_v3() {
+  return &kPlugin.v4.v3;
+}
+extern "C" const DangPluginV1* dang_plugin_init_v1() {
+  return &kPlugin.v4.v3.v2.v1;
+}

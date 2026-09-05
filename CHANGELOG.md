@@ -9,6 +9,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Completed the pinned Kea DHCPv4/DHCPv6 state trees by translating host option
+  data and promoting the provider to ABI v5 complete operational publication.
+  The ABI-v4 action plan retains Kea's full transaction as one indivisible
+  action, and native Linux/FreeBSD tests verify option-data round trips.
 - Bounded Kea supplemental statistics by querying each exact subnet ID from
   the last successfully applied configuration and enforcing aggregate query,
   row, byte, and duration limits. Candidate validation cannot leak uncommitted
