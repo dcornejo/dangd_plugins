@@ -7,6 +7,9 @@ set -eu
 root=${1:-/tmp/dang_plugins_validation}
 jail_name=dang_kea_test
 host_interface=
+runtime_dir=/tmp/dang-kea-runtime-$$
+socket4=/var/run/kea/dang-kea4-$$.sock
+socket6=/var/run/kea/dang-kea6-$$.sock
 pid4=
 pid6=
 
@@ -17,10 +20,14 @@ cleanup() {
   if [ -n "$host_interface" ]; then
     ifconfig "$host_interface" destroy 2>/dev/null || true
   fi
-  rm -f /var/run/kea/kea4-ctrl-socket /var/run/kea/kea6-ctrl-socket
+  rm -rf "$runtime_dir"
+  rm -f "$socket4" "$socket6"
+  rm -f /tmp/kea-dhcp4-freebsd.json /tmp/kea-dhcp6-freebsd.json \
+    /tmp/kea-before-freebsd.xml /tmp/kea-proposed-freebsd.xml
 }
 trap cleanup EXIT INT TERM
 cleanup
+mkdir -p "$runtime_dir"
 
 host_interface=$(ifconfig epair create)
 peer_interface=${host_interface%a}b
@@ -33,16 +40,32 @@ jexec "$jail_name" ifconfig dangkea0 inet 192.0.2.1/24 up
 jexec "$jail_name" ifconfig dangkea0 inet6 2001:db8:6::1/64 up
 ifconfig "$host_interface" up
 
-jexec "$jail_name" /usr/local/sbin/kea-dhcp4 -d \
-  -c "$root/tests/kea4-boot.json" > /tmp/dang-kea4.log 2>&1 &
+sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
+  -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
+  "$root/tests/kea4-boot.json" > /tmp/kea-dhcp4-freebsd.json
+sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
+  -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
+  "$root/tests/kea6-boot.json" > /tmp/kea-dhcp6-freebsd.json
+sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
+  -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
+  -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
+  "$root/tests/kea-before.xml" > /tmp/kea-before-freebsd.xml
+sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
+  -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
+  -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
+  "$root/tests/kea-proposed.xml" > /tmp/kea-proposed-freebsd.xml
+
+jexec "$jail_name" env KEA_PIDFILE_DIR="$runtime_dir" \
+  /usr/local/sbin/kea-dhcp4 -d \
+  -c /tmp/kea-dhcp4-freebsd.json > /tmp/dang-kea4.log 2>&1 &
 pid4=$!
-jexec "$jail_name" /usr/local/sbin/kea-dhcp6 -d \
-  -c "$root/tests/kea6-boot.json" > /tmp/dang-kea6.log 2>&1 &
+jexec "$jail_name" env KEA_PIDFILE_DIR="$runtime_dir" \
+  /usr/local/sbin/kea-dhcp6 -d \
+  -c /tmp/kea-dhcp6-freebsd.json > /tmp/dang-kea6.log 2>&1 &
 pid6=$!
 
 attempt=0
-while [ ! -S /var/run/kea/kea4-ctrl-socket ] || \
-      [ ! -S /var/run/kea/kea6-ctrl-socket ]; do
+while [ ! -S "$socket4" ] || [ ! -S "$socket6" ]; do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 100 ]; then
     cat /tmp/dang-kea4.log /tmp/dang-kea6.log
@@ -52,11 +75,11 @@ while [ ! -S /var/run/kea/kea4-ctrl-socket ] || \
 done
 
 jexec -l -U root "$jail_name" env \
-  DANG_KEA_DHCP4_SOCKET=/var/run/kea/kea4-ctrl-socket \
-  DANG_KEA_DHCP6_SOCKET=/var/run/kea/kea6-ctrl-socket \
+  DANG_KEA_DHCP4_SOCKET="$socket4" \
+  DANG_KEA_DHCP6_SOCKET="$socket6" \
   "$root/build/kea_plugin_integration_test" \
-  "$root/build/dangd_kea_plugin.so" "$root/tests/kea-before.xml" \
-  "$root/tests/kea-proposed.xml"
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before-freebsd.xml \
+  /tmp/kea-proposed-freebsd.xml
 
 if jexec "$jail_name" ifconfig -l | tr ' ' '\n' | grep -Ev '^(lo0|dangkea0)$' \
   | grep -q .; then

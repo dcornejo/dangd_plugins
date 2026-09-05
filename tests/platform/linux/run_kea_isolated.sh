@@ -7,6 +7,9 @@ set -eu
 root=${1:-/tmp/dang_plugins_validation}
 namespace=dang-kea-test
 host_interface=dangkea-host
+runtime_dir=/tmp/dang-kea-runtime-$$
+socket4=/run/kea/dang-kea4-$$.sock
+socket6=/run/kea/dang-kea6-$$.sock
 pid4=
 pid6=
 
@@ -14,13 +17,15 @@ cleanup() {
   [ -z "$pid4" ] || kill "$pid4" 2>/dev/null || true
   [ -z "$pid6" ] || kill "$pid6" 2>/dev/null || true
   ip netns del "$namespace" 2>/dev/null || true
-  rm -f /var/run/kea/kea4-ctrl-socket /var/run/kea/kea6-ctrl-socket \
-    /tmp/kea-dhcp4.conf /tmp/kea-dhcp6.conf \
+  rm -rf "$runtime_dir"
+  rm -f "$socket4" "$socket6"
+  rm -f /tmp/kea-dhcp4.conf /tmp/kea-dhcp6.conf \
     /tmp/kea-before-linux.xml /tmp/kea-proposed-linux.xml \
     /tmp/dang-kea-dhcp4 /tmp/dang-kea-dhcp6
 }
 trap cleanup EXIT INT TERM
 cleanup
+mkdir -p "$runtime_dir"
 
 ip netns add "$namespace"
 ip link add "$host_interface" type veth peer name dangkea0
@@ -37,26 +42,37 @@ cp "$dhcp4" /tmp/dang-kea-dhcp4
 cp "$dhcp6" /tmp/dang-kea-dhcp6
 dhcp4=/tmp/dang-kea-dhcp4
 dhcp6=/tmp/dang-kea-dhcp6
-sed 's#/var/run/kea#/run/kea#g' "$root/tests/kea4-boot.json" \
+sed -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
+  -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
+  "$root/tests/kea4-boot.json" \
   > /tmp/kea-dhcp4.conf
-sed 's#/var/run/kea#/run/kea#g' "$root/tests/kea6-boot.json" \
+sed -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
+  -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
+  "$root/tests/kea6-boot.json" \
   > /tmp/kea-dhcp6.conf
-sed 's#/var/run/kea#/run/kea#g' "$root/tests/kea-before.xml" \
+sed -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
+  -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
+  -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
+  "$root/tests/kea-before.xml" \
   > /tmp/kea-before-linux.xml
-sed 's#/var/run/kea#/run/kea#g' "$root/tests/kea-proposed.xml" \
+sed -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
+  -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
+  -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
+  "$root/tests/kea-proposed.xml" \
   > /tmp/kea-proposed-linux.xml
-ip netns exec "$namespace" "$dhcp4" -d -p 1067 \
+ip netns exec "$namespace" env KEA_PIDFILE_DIR="$runtime_dir" \
+  "$dhcp4" -d -p 1067 \
   -c /tmp/kea-dhcp4.conf \
   > /tmp/dang-kea4.log 2>&1 &
 pid4=$!
-ip netns exec "$namespace" "$dhcp6" -d -p 1547 \
+ip netns exec "$namespace" env KEA_PIDFILE_DIR="$runtime_dir" \
+  "$dhcp6" -d -p 1547 \
   -c /tmp/kea-dhcp6.conf \
   > /tmp/dang-kea6.log 2>&1 &
 pid6=$!
 
 attempt=0
-while [ ! -S /run/kea/kea4-ctrl-socket ] || \
-      [ ! -S /run/kea/kea6-ctrl-socket ]; do
+while [ ! -S "$socket4" ] || [ ! -S "$socket6" ]; do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 100 ]; then
     cat /tmp/dang-kea4.log /tmp/dang-kea6.log
@@ -65,8 +81,8 @@ while [ ! -S /run/kea/kea4-ctrl-socket ] || \
   sleep 0.1
 done
 
-DANG_KEA_DHCP4_SOCKET=/run/kea/kea4-ctrl-socket \
-DANG_KEA_DHCP6_SOCKET=/run/kea/kea6-ctrl-socket \
+DANG_KEA_DHCP4_SOCKET="$socket4" \
+DANG_KEA_DHCP6_SOCKET="$socket6" \
   ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-before-linux.xml \
   /tmp/kea-proposed-linux.xml

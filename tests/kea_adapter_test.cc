@@ -94,5 +94,59 @@ int main() {
                  "singleton excluded-prefix leaf-list is not an array");
   valid &= Check(six.at("relay-supplied-options").is_array(),
                  "singleton relay option leaf-list is not an array");
+  const nlohmann::json leases4 = nlohmann::json::parse(R"json({
+    "result": 0, "arguments": {"leases": [{
+      "ip-address": "192.0.2.44", "hw-address": "00:01:02:03:04:05",
+      "client-id": "01:ff", "valid-lft": 600, "cltt": 1234,
+      "subnet-id": 4, "fqdn-fwd": true, "state": 1
+    }]}
+  })json");
+  const nlohmann::json stats4 = nlohmann::json::parse(R"json({
+    "result": 0, "arguments": {"result-set": {
+      "columns": ["subnet-id", "total-addresses",
+        "cumulative-assigned-addresses", "assigned-addresses",
+        "declined-addresses"],
+      "rows": [[4, 32, 10, 1, 1]]
+    }}
+  })json");
+  auto state4 = dang::plugins::kea::TranslateOperationalState(
+      "kea-dhcp4-server", leases4, stats4, &error);
+  valid &= Check(state4.has_value(), error.c_str());
+  valid &= Check(state4 && state4->find("<hw-address>AAECAwQF</hw-address>") !=
+                     std::string::npos,
+                 "DHCPv4 hardware address was not encoded as YANG binary");
+  valid &= Check(state4 && state4->find("<state>declined</state>") !=
+                     std::string::npos,
+                 "DHCPv4 lease state was not translated");
+  valid &= Check(state4 && state4->find("<total-addresses>32</total-addresses>") !=
+                     std::string::npos,
+                 "DHCPv4 lease statistics were not translated");
+  const nlohmann::json leases6 = nlohmann::json::parse(R"json({
+    "result": 0, "arguments": {"leases": [{
+      "ip-address": "2001:db8::44", "duid": "00:01:02:03",
+      "valid-lft": 600, "cltt": 1234, "subnet-id": 6,
+      "preferred-lft": 300, "type": 0, "iaid": 7, "prefix-len": 128
+    }]}
+  })json");
+  const nlohmann::json stats6 = nlohmann::json::parse(R"json({
+    "result": 0, "arguments": {"result-set": {
+      "columns": ["subnet-id", "total-nas", "cumulative-assigned-nas",
+        "assigned-nas", "declined-addresses", "total-pds",
+        "cumulative-assigned-pds", "assigned-pds"],
+      "rows": [[6, 256, 3, 1, 0, 16, 2, 1]]
+    }}
+  })json");
+  auto state6 = dang::plugins::kea::TranslateOperationalState(
+      "kea-dhcp6-server", leases6, stats6, &error);
+  valid &= Check(state6.has_value(), error.c_str());
+  valid &= Check(state6 && state6->find("<duid>AAECAw==</duid>") !=
+                     std::string::npos,
+                 "DHCPv6 DUID was not encoded as YANG binary");
+  valid &= Check(state6 && state6->find("<lease-type>IA_NA</lease-type>") !=
+                     std::string::npos,
+                 "DHCPv6 lease type was not translated");
+  valid &= Check(state6 && state6->find("<assigned-pds>1</assigned-pds>") !=
+                     std::string::npos,
+                 "DHCPv6 lease statistics were not translated");
   return valid ? 0 : 1;
 }

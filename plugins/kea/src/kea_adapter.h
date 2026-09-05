@@ -34,6 +34,16 @@ struct ServerConfiguration {
     const ServerConfiguration& server, std::string_view command,
     std::string* error);
 
+/** Sends a read-only command whose optional arguments are already Kea JSON. */
+[[nodiscard]] std::optional<nlohmann::json> SendControlQuery(
+    std::string_view socket_path, std::string_view command,
+    const nlohmann::json& arguments, std::string* error);
+
+/** Converts native lease and supplemental-statistic replies to modeled XML. */
+[[nodiscard]] std::optional<std::string> TranslateOperationalState(
+    std::string_view module_name, const nlohmann::json& leases,
+    const nlohmann::json& statistics, std::string* error);
+
 /** Extracts Kea's result/text fields and accepts only result code zero. */
 [[nodiscard]] bool CommandSucceeded(const nlohmann::json& response,
                                     std::string* reason);

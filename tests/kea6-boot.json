@@ -6,6 +6,10 @@
       "socket-name": "/var/run/kea/kea6-ctrl-socket"
     }],
     "lease-database": {"type": "memfile", "persist": false},
+    "hooks-libraries": [
+      {"library": "@KEA_HOOK_DIR@/libdhcp_lease_cmds.so"},
+      {"library": "@KEA_HOOK_DIR@/libdhcp_stat_cmds.so"}
+    ],
     "preferred-lifetime": 300,
     "valid-lifetime": 600,
     "loggers": [{

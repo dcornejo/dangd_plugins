@@ -18,6 +18,7 @@
 #include <new>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -25,8 +26,10 @@ namespace {
 
 using dang::plugins::kea::CommandSucceeded;
 using dang::plugins::kea::SendControlCommand;
+using dang::plugins::kea::SendControlQuery;
 using dang::plugins::kea::ServerConfiguration;
 using dang::plugins::kea::TranslateConfiguration;
+using dang::plugins::kea::TranslateOperationalState;
 
 struct Prepared {
   // Vector order is fixed as DHCPv4 then DHCPv6 and is shared by both images;
@@ -37,6 +40,7 @@ struct Prepared {
 
 thread_local std::string callback_error;
 thread_local std::string callback_path;
+thread_local std::string operational_xml;
 
 void SetError(DangPluginErrorV1* error, std::string message,
               std::string path = {}) {
@@ -213,21 +217,73 @@ int RollbackConfiguration(void*, void* opaque, DangPluginErrorV1* error) {
 
 void Release(void*, void* opaque) { delete static_cast<Prepared*>(opaque); }
 
-const DangPluginV1 kPlugin{
-    DANG_PLUGIN_ABI_V1,
-    "dang-kea",
-    nullptr,
-    SourceCount,
-    SourceAt,
-    DependencyCount,
-    DependencyAt,
-    PrepareConfiguration,
-    ValidateConfiguration,
-    ApplyConfiguration,
-    RollbackConfiguration,
-    Release,
-    nullptr};
+int Operational(void*, DangOperationalDataV1* result,
+                DangPluginErrorV1* error) {
+  if (!result) {
+    SetError(error, "the operational data output is missing");
+    return 0;
+  }
+  const char* socket4 = std::getenv("DANG_KEA_DHCP4_SOCKET");
+  const char* socket6 = std::getenv("DANG_KEA_DHCP6_SOCKET");
+  if (!socket4 || !*socket4 || !socket6 || !*socket6) {
+    SetError(error, "Kea operational sockets are not configured", "/");
+    return 0;
+  }
+  operational_xml =
+      "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">";
+  for (const auto& [module, socket, lease_command, statistic_command] : {
+           std::tuple{"kea-dhcp4-server", socket4, "lease4-get-all",
+                      "stat-lease4-get"},
+           std::tuple{"kea-dhcp6-server", socket6, "lease6-get-all",
+                      "stat-lease6-get"}}) {
+    std::string reason;
+    auto leases = SendControlQuery(socket, lease_command, nullptr, &reason);
+    if (!leases) {
+      SetError(error, module + std::string(": ") + reason,
+               "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +
+                   "}state/leases");
+      return 0;
+    }
+    auto statistics =
+        SendControlQuery(socket, statistic_command, nullptr, &reason);
+    if (!statistics) {
+      SetError(error, module + std::string(": ") + reason,
+               "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +
+                   "}state/lease-stats");
+      return 0;
+    }
+    auto state = TranslateOperationalState(module, *leases, *statistics, &reason);
+    if (!state) {
+      SetError(error, module + std::string(": ") + reason,
+               "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +
+                   "}state");
+      return 0;
+    }
+    operational_xml += *state;
+  }
+  operational_xml += "</data>";
+  result->data_xml = operational_xml.c_str();
+  return 1;
+}
+
+const DangPluginV3 kPlugin{
+    .v2 = {.v1 = {.abi_version = DANG_PLUGIN_ABI_V3,
+                  .plugin_name = "dang-kea",
+                  .context = nullptr,
+                  .yang_source_count = SourceCount,
+                  .yang_source_at = SourceAt,
+                  .dependency_count = DependencyCount,
+                  .dependency_at = DependencyAt,
+                  .prepare = PrepareConfiguration,
+                  .validate = ValidateConfiguration,
+                  .apply = ApplyConfiguration,
+                  .rollback = RollbackConfiguration,
+                  .release = Release,
+                  .destroy = nullptr},
+           .invoke = nullptr},
+    .get_operational_data = Operational};
 
 }  // namespace
 
-extern "C" const DangPluginV1* dang_plugin_init_v1() { return &kPlugin; }
+extern "C" const DangPluginV3* dang_plugin_init_v3() { return &kPlugin; }
+extern "C" const DangPluginV1* dang_plugin_init_v1() { return &kPlugin.v2.v1; }

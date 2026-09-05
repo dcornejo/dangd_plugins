@@ -12,7 +12,8 @@ license notices; the adapter code is Apache-2.0.
 ## Dependencies and installation
 
 The runtime requires dangd 0.1.0 or newer, Kea 3.2.x DHCPv4 and DHCPv6
-servers, and local UNIX control sockets accessible by the plugin worker. On
+servers, the Kea lease-command and supplemental-statistics hook libraries, and
+local UNIX control sockets accessible by the plugin worker. On
 Debian/Ubuntu install `kea-dhcp4-server` and `kea-dhcp6-server`; on FreeBSD
 install `kea`. A source build additionally needs CMake 3.24+, a C++20 compiler,
 libxml2 development files, nlohmann-json 3.11+, and GoogleTest.
@@ -66,15 +67,21 @@ Kea remains the final implementation-specific validator; a newly introduced
 model structure must gain a focused translation test before it is treated as
 production-supported.
 
-This is not yet a complete implementation of the two modules. The provider
-publishes them as configuration owners through ABI v1, but it does not publish
-their `state` containers, lease and host inventories, or lease statistics.
-It also has no notification surface because the pinned modules declare none.
-Completing the provider requires bounded operational commands against both
-daemons, conversion of their replies to schema-valid state XML, ABI operational
-publication with explicit completeness, and Linux/FreeBSD interoperability
-tests. Until then, use it as a transaction-safe configuration provider rather
-than a complete Kea management plane.
+This is not yet a complete implementation of the two modules. Through ABI v3,
+the provider owns configuration and publishes each server's lease inventory and
+supplemental per-subnet lease statistics in its `state` container. Operational
+queries use the local control sockets and convert Kea identifiers, lease types,
+states, lifetimes, prefix lengths, and binary identifiers to their modeled XML
+forms. Kea's empty-set result is exposed as an empty collection.
+
+The provider intentionally reports selected rather than complete operational
+data. Host reservations are not yet published, and lease enumeration currently
+uses Kea's bounded-response `lease4-get-all` and `lease6-get-all` commands
+rather than paging. The five-second deadline and 16 MiB reply ceiling protect
+dangd, but an all-leases query can still impose work on a large production Kea
+server. Completing the provider requires paged lease and host enumeration plus
+full-schema conformance and interoperability coverage. The pinned modules
+declare no notification surface.
 
 The plugin deliberately uses ABI v1's transaction-wide action. This preserves
 atomic compensation across Kea's own complete-configuration `config-set`
@@ -97,8 +104,8 @@ uses a single five-second deadline plus a 16 MiB response ceiling for each local
 exchange.
 
 On Ubuntu, install `kea-dhcp4-server` and `kea-dhcp6-server`. On FreeBSD,
-install the `kea` package. Package services must be stopped while running the
-isolated test because the tests start private instances.
+install the `kea` package. The isolated tests use unique socket and PID paths,
+so the packaged services may remain running.
 
 Add a UNIX control socket to each existing Kea configuration. This is the
 relevant DHCPv4 fragment, not a complete Kea configuration:
@@ -108,14 +115,21 @@ relevant DHCPv4 fragment, not a complete Kea configuration:
   "Dhcp4": {
     "control-sockets": [
       { "socket-type": "unix", "socket-name": "/run/kea/kea4-ctrl-socket" }
+    ],
+    "hooks-libraries": [
+      { "library": "/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_lease_cmds.so" },
+      { "library": "/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_stat_cmds.so" }
     ]
   }
 }
 ```
 
 Use the equivalent `Dhcp6` object and `kea6-ctrl-socket` in the DHCPv6 file.
-On FreeBSD use `/var/run/kea/...` consistently. Validate both native files
-before restarting the servers:
+On FreeBSD use `/var/run/kea/...` consistently and find the hooks under
+`/usr/local/lib/kea/hooks`. Distribution paths can differ; verify the installed
+locations rather than copying these examples blindly. Both hook entries must
+also be represented in the modeled configuration so `config-set` retains the
+operational commands. Validate both native files before restarting the servers:
 
 ```sh
 kea-dhcp4 -t /etc/kea/kea-dhcp4.conf
@@ -175,6 +189,8 @@ sudo tests/platform/linux/run_kea_isolated.sh "$PWD"
 sudo tests/platform/freebsd/run_kea_isolated.sh "$PWD"
 ```
 
-Each interaction proves DHCPv4 and DHCPv6 `config-test`, `config-set`, and
-rollback against the native packaged daemon, verifies that no other interface
-entered the isolation boundary, and removes the namespace or jail afterward.
+Each interaction proves DHCPv4 and DHCPv6 `config-test`, `config-set`, rollback,
+lease retrieval, and supplemental-statistics retrieval against the native
+packaged daemon. It verifies that no other interface entered the isolation
+boundary and removes its unique sockets, PID storage, and namespace or jail
+afterward.

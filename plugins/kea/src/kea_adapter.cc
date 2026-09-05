@@ -21,11 +21,14 @@
 #include <cerrno>
 #include <charconv>
 #include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <map>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 namespace dang::plugins::kea {
@@ -214,6 +217,242 @@ bool WaitFor(int descriptor, short events,
   }
 }
 
+const nlohmann::json* Answer(const nlohmann::json& response) {
+  if (response.is_array() && response.size() == 1) return &response.front();
+  return response.is_object() ? &response : nullptr;
+}
+
+std::string XmlEscape(std::string_view value) {
+  std::string escaped;
+  escaped.reserve(value.size());
+  for (const char character : value) {
+    switch (character) {
+      case '&': escaped += "&amp;"; break;
+      case '<': escaped += "&lt;"; break;
+      case '>': escaped += "&gt;"; break;
+      case '\"': escaped += "&quot;"; break;
+      case '\'': escaped += "&apos;"; break;
+      default: escaped += character;
+    }
+  }
+  return escaped;
+}
+
+std::optional<std::string> BinaryBase64(std::string_view hexadecimal) {
+  std::vector<std::uint8_t> bytes;
+  for (std::size_t offset = 0; offset < hexadecimal.size();) {
+    if (hexadecimal[offset] == ':') {
+      ++offset;
+      continue;
+    }
+    if (offset + 2 > hexadecimal.size()) return std::nullopt;
+    unsigned int byte = 0;
+    const auto [end, error] = std::from_chars(
+        hexadecimal.data() + offset, hexadecimal.data() + offset + 2, byte, 16);
+    if (error != std::errc{} || end != hexadecimal.data() + offset + 2 ||
+        byte > 255)
+      return std::nullopt;
+    bytes.push_back(static_cast<std::uint8_t>(byte));
+    offset += 2;
+  }
+  static constexpr char alphabet[] =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string encoded;
+  for (std::size_t offset = 0; offset < bytes.size(); offset += 3) {
+    const std::uint32_t first = bytes[offset];
+    const std::uint32_t second =
+        offset + 1 < bytes.size() ? bytes[offset + 1] : 0;
+    const std::uint32_t third =
+        offset + 2 < bytes.size() ? bytes[offset + 2] : 0;
+    const std::uint32_t block = (first << 16) | (second << 8) | third;
+    encoded += alphabet[(block >> 18) & 63];
+    encoded += alphabet[(block >> 12) & 63];
+    encoded += offset + 1 < bytes.size() ? alphabet[(block >> 6) & 63] : '=';
+    encoded += offset + 2 < bytes.size() ? alphabet[block & 63] : '=';
+  }
+  return encoded;
+}
+
+bool AppendLeaf(std::string* xml, std::string_view name,
+                const nlohmann::json& object, std::string_view key,
+                bool mandatory, std::string* error) {
+  const auto found = object.find(key);
+  if (found == object.end() || found->is_null()) {
+    if (!mandatory) return true;
+    if (error) *error = "Kea response omits mandatory field " + std::string(key);
+    return false;
+  }
+  std::string value;
+  if (found->is_string()) value = found->get<std::string>();
+  else if (found->is_boolean()) value = *found ? "true" : "false";
+  else if (found->is_number()) value = found->dump();
+  else value = found->dump();
+  *xml += "<" + std::string(name) + ">" + XmlEscape(value) + "</" +
+      std::string(name) + ">";
+  return true;
+}
+
+std::optional<std::string> BuildLeases(const nlohmann::json& response,
+                                       bool dhcp6, std::string* error) {
+  const nlohmann::json* answer = Answer(response);
+  if (!answer || !answer->contains("result") ||
+      !answer->at("result").is_number_integer()) {
+    if (error) *error = "Kea lease reply omits an integer result";
+    return std::nullopt;
+  }
+  const int result = answer->at("result").get<int>();
+  if (result == 3) return "<leases/>";
+  if (result != 0) {
+    if (error) *error = answer->value("text", "Kea rejected the lease query");
+    return std::nullopt;
+  }
+  const auto arguments = answer->find("arguments");
+  if (arguments == answer->end() || !arguments->is_object()) {
+    if (error) *error = "Kea lease reply omits arguments";
+    return std::nullopt;
+  }
+  const auto leases = arguments->find("leases");
+  if (leases == arguments->end() || !leases->is_array()) {
+    if (error) *error = "Kea lease reply omits the leases array";
+    return std::nullopt;
+  }
+  std::string xml = "<leases>";
+  for (const auto& lease : *leases) {
+    if (!lease.is_object()) {
+      if (error) *error = "Kea lease reply contains a non-object entry";
+      return std::nullopt;
+    }
+    xml += "<lease>";
+    if (!AppendLeaf(&xml, "ip-address", lease, "ip-address", true, error))
+      return std::nullopt;
+    const std::string binary_key = dhcp6 ? "duid" : "hw-address";
+    const auto binary = lease.find(binary_key);
+    if (binary == lease.end() || !binary->is_string()) {
+      if (error) *error = "Kea lease reply omits mandatory field " + binary_key;
+      return std::nullopt;
+    }
+    auto encoded = BinaryBase64(binary->get<std::string>());
+    if (!encoded) {
+      if (error) *error = "Kea lease reply contains malformed " + binary_key;
+      return std::nullopt;
+    }
+    xml += "<" + binary_key + ">" + *encoded + "</" + binary_key + ">";
+    if (!dhcp6) {
+      const auto client = lease.find("client-id");
+      if (client != lease.end() && client->is_string()) {
+        auto client_id = BinaryBase64(client->get<std::string>());
+        if (!client_id) {
+          if (error) *error = "Kea lease reply contains malformed client-id";
+          return std::nullopt;
+        }
+        xml += "<client-id>" + *client_id + "</client-id>";
+      }
+    }
+    if (!AppendLeaf(&xml, "valid-lifetime", lease, "valid-lft", true, error) ||
+        !AppendLeaf(&xml, "cltt", lease, "cltt", true, error) ||
+        !AppendLeaf(&xml, "subnet-id", lease, "subnet-id", true, error))
+      return std::nullopt;
+    if (dhcp6) {
+      if (!AppendLeaf(&xml, "preferred-lifetime", lease, "preferred-lft", true,
+                      error))
+        return std::nullopt;
+      const auto type = lease.find("type");
+      if (type == lease.end()) {
+        if (error) *error = "Kea lease reply omits mandatory field type";
+        return std::nullopt;
+      }
+      std::string lease_type;
+      if (type->is_string()) lease_type = type->get<std::string>();
+      else if (type->is_number_unsigned() && type->get<unsigned int>() == 0)
+        lease_type = "IA_NA";
+      else if (type->is_number_unsigned() && type->get<unsigned int>() == 2)
+        lease_type = "IA_PD";
+      else {
+        if (error) *error = "Kea lease reply contains an unknown lease type";
+        return std::nullopt;
+      }
+      xml += "<lease-type>" + lease_type + "</lease-type>";
+      if (!AppendLeaf(&xml, "iaid", lease, "iaid", true, error) ||
+          !AppendLeaf(&xml, "prefix-length", lease, "prefix-len", false, error))
+        return std::nullopt;
+    }
+    for (const auto& [name, key] :
+         {std::pair{"fqdn-fwd", "fqdn-fwd"}, {"fqdn-rev", "fqdn-rev"},
+          {"hostname", "hostname"}})
+      if (!AppendLeaf(&xml, name, lease, key, false, error)) return std::nullopt;
+    const auto state = lease.find("state");
+    if (state != lease.end()) {
+      static constexpr const char* states[]{"default", "declined",
+                                             "expired-reclaimed"};
+      if (!state->is_number_unsigned() || state->get<unsigned int>() > 2) {
+        if (error) *error = "Kea lease reply contains an unknown state";
+        return std::nullopt;
+      }
+      xml += "<state>" + std::string(states[state->get<unsigned int>()]) +
+          "</state>";
+    }
+    if (const auto context = lease.find("user-context");
+        context != lease.end())
+      xml += "<user-context>" + XmlEscape(context->dump()) +
+          "</user-context>";
+    if (dhcp6)
+      if (!AppendLeaf(&xml, "hw-address", lease, "hw-address", false, error))
+        return std::nullopt;
+    xml += "</lease>";
+  }
+  return xml + "</leases>";
+}
+
+std::optional<std::string> BuildStatistics(const nlohmann::json& response,
+                                           bool dhcp6, std::string* error) {
+  const nlohmann::json* answer = Answer(response);
+  if (!answer || !answer->contains("result") ||
+      !answer->at("result").is_number_integer()) {
+    if (error) *error = "Kea statistics reply omits an integer result";
+    return std::nullopt;
+  }
+  const int result = answer->at("result").get<int>();
+  if (result == 3) return "<lease-stats/>";
+  if (result != 0) {
+    if (error)
+      *error = answer->value("text", "Kea rejected the statistics query");
+    return std::nullopt;
+  }
+  try {
+    const auto& result_set = answer->at("arguments").at("result-set");
+    const auto& columns = result_set.at("columns");
+    const auto& rows = result_set.at("rows");
+    if (!columns.is_array() || !rows.is_array()) throw std::runtime_error("not arrays");
+    std::map<std::string, std::size_t, std::less<>> indexes;
+    for (std::size_t index = 0; index < columns.size(); ++index)
+      if (columns[index].is_string()) indexes.emplace(columns[index], index);
+    const std::vector<std::string_view> required = dhcp6
+        ? std::vector<std::string_view>{"subnet-id", "total-nas", "assigned-nas",
+                                        "declined-addresses", "total-pds",
+                                        "assigned-pds"}
+        : std::vector<std::string_view>{"subnet-id", "total-addresses",
+                                        "assigned-addresses", "declined-addresses"};
+    std::string xml = "<lease-stats>";
+    for (const auto& row : rows) {
+      if (!row.is_array()) throw std::runtime_error("row is not an array");
+      xml += "<subnet>";
+      for (const auto name : required) {
+        const auto position = indexes.find(name);
+        if (position == indexes.end() || position->second >= row.size() ||
+            !row[position->second].is_number_unsigned())
+          throw std::runtime_error("missing unsigned column " + std::string(name));
+        xml += "<" + std::string(name) + ">" +
+            row[position->second].dump() + "</" + std::string(name) + ">";
+      }
+      xml += "</subnet>";
+    }
+    return xml + "</lease-stats>";
+  } catch (const std::exception& exception) {
+    if (error) *error = std::string("invalid Kea statistics reply: ") + exception.what();
+    return std::nullopt;
+  }
+}
+
 }  // namespace
 
 std::optional<ServerConfiguration> TranslateConfiguration(
@@ -252,6 +491,12 @@ std::optional<ServerConfiguration> TranslateConfiguration(
 std::optional<nlohmann::json> SendControlCommand(
     const ServerConfiguration& server, std::string_view command,
     std::string* error) {
+  return SendControlQuery(server.socket_path, command, server.arguments, error);
+}
+
+std::optional<nlohmann::json> SendControlQuery(
+    std::string_view socket_path, std::string_view command,
+    const nlohmann::json& arguments, std::string* error) {
   const int descriptor = socket(AF_UNIX, SOCK_STREAM, 0);
   if (descriptor < 0) {
     if (error) *error = std::string("cannot create Kea control socket: ") +
@@ -260,17 +505,23 @@ std::optional<nlohmann::json> SendControlCommand(
   }
   sockaddr_un address{};
   address.sun_family = AF_UNIX;
-  std::memcpy(address.sun_path, server.socket_path.c_str(),
-              server.socket_path.size() + 1);
+  if (socket_path.empty() || socket_path.size() >= sizeof(address.sun_path)) {
+    if (error) *error = "Kea control socket path is empty or too long";
+    close(descriptor);
+    return std::nullopt;
+  }
+  std::memcpy(address.sun_path, socket_path.data(), socket_path.size());
+  address.sun_path[socket_path.size()] = '\0';
   if (connect(descriptor, reinterpret_cast<const sockaddr*>(&address),
               sizeof(address)) != 0) {
-    if (error) *error = "cannot connect to " + server.socket_path + ": " +
+    if (error) *error = "cannot connect to " + std::string(socket_path) + ": " +
         std::strerror(errno);
     close(descriptor);
     return std::nullopt;
   }
-  const std::string request =
-      nlohmann::json{{"command", command}, {"arguments", server.arguments}}.dump();
+  nlohmann::json request_object{{"command", command}};
+  if (!arguments.is_null()) request_object["arguments"] = arguments;
+  const std::string request = request_object.dump();
   const auto deadline = std::chrono::steady_clock::now() + kSocketTimeout;
   std::size_t sent = 0;
   while (sent < request.size()) {
@@ -322,6 +573,24 @@ std::optional<nlohmann::json> SendControlCommand(
     if (error) *error = std::string("invalid Kea response: ") + exception.what();
     return std::nullopt;
   }
+}
+
+std::optional<std::string> TranslateOperationalState(
+    std::string_view module_name, const nlohmann::json& leases,
+    const nlohmann::json& statistics, std::string* error) {
+  const bool dhcp6 = module_name == "kea-dhcp6-server";
+  if (!dhcp6 && module_name != "kea-dhcp4-server") {
+    if (error) *error = "unsupported Kea module";
+    return std::nullopt;
+  }
+  auto lease_xml = BuildLeases(leases, dhcp6, error);
+  if (!lease_xml) return std::nullopt;
+  auto statistic_xml = BuildStatistics(statistics, dhcp6, error);
+  if (!statistic_xml) return std::nullopt;
+  const std::string ns = "urn:ietf:params:xml:ns:yang:" +
+      std::string(module_name);
+  return "<state xmlns=\"" + ns + "\">" + *lease_xml + *statistic_xml +
+      "</state>";
 }
 
 bool CommandSucceeded(const nlohmann::json& response, std::string* reason) {

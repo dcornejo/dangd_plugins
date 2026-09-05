@@ -9,6 +9,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added ABI-v3 Kea operational state for DHCPv4 and DHCPv6 leases and
+  supplemental per-subnet lease statistics. The adapter maps Kea lease types,
+  states, lifetimes, prefixes, and binary identifiers into schema-shaped XML,
+  bounds control replies and deadlines, and handles empty result sets. Native
+  Linux and FreeBSD tests load the required hook libraries and use unique PID
+  and socket paths without stopping the host's packaged Kea services.
 - Completed configuration-shape translation for the pinned Kea DHCPv4 and
   DHCPv6 models. Singleton list and leaf-list nodes now retain JSON array
   shape; reservations, host/config databases, and hook libraries use Kea's
