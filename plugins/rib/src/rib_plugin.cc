@@ -1,0 +1,113 @@
+// Copyright 2026 David Cornejo
+// SPDX-License-Identifier: Apache-2.0
+
+/** @file Transactional dangd adapter for the supported RFC 8431 route slice. */
+
+#include "dangd/plugin_api.h"
+#include "plugins/rib/src/platform_command.h"
+#include "plugins/rib/src/platform_executor.h"
+#include "plugins/rib/src/rib_config.h"
+#include "rib_model_sources.h"
+
+#include <algorithm>
+#include <cstring>
+#include <new>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace {
+using namespace dang::rib;
+
+#if defined(__linux__)
+constexpr NativePlatform kPlatform = NativePlatform::kLinux;
+#elif defined(__FreeBSD__)
+constexpr NativePlatform kPlatform = NativePlatform::kFreeBsd;
+#else
+#error "The RFC 8431 plugin supports only Linux and FreeBSD"
+#endif
+
+struct Prepared { std::vector<Change> changes; bool applied = false; };
+thread_local std::string message;
+thread_local std::string path;
+thread_local std::string operational_xml;
+
+int Fail(DangPluginErrorV1* error, std::string text, std::string where = {}) {
+  message = std::move(text); path = std::move(where);
+  if (error) { error->message = message.c_str(); error->instance_path = path.empty() ? nullptr : path.c_str(); }
+  return 0;
+}
+size_t SourceCount(void*) { return 2; }
+int SourceAt(void*, size_t index, DangYangSourceV1* out, DangPluginErrorV1* error) {
+  static const DangYangSourceV1 sources[]{
+    {"ietf-i2rs-rib", "2018-09-13", kIetfI2rsRibYang, std::strlen(kIetfI2rsRibYang), "RFC 8431", DANG_YANG_IMPLEMENTED_V1, nullptr, 0},
+    {"ietf-interfaces", "2018-02-20", kIetfInterfacesYang, std::strlen(kIetfInterfacesYang), "RFC 8343", DANG_YANG_IMPORT_ONLY_V1, nullptr, 0}};
+  if (!out || index >= 2) return Fail(error, "RIB YANG source index is invalid");
+  *out = sources[index]; return 1;
+}
+size_t DependencyCount(void*) { return 0; }
+const char* DependencyAt(void*, size_t) { return nullptr; }
+
+int Prepare(void*, const DangTransactionV1* tx, void** out, DangPluginErrorV1* error) {
+  if (!tx || !tx->before_xml || !tx->proposed_xml || !out) return Fail(error, "RIB transaction input is incomplete");
+  Config before, proposed; std::string why, where;
+  if (!ParseConfig(tx->before_xml, &before, &why, &where)) return Fail(error, why, where);
+  if (!ParseConfig(tx->proposed_xml, &proposed, &why, &where)) return Fail(error, why, where);
+  auto* prepared = new (std::nothrow) Prepared{PlanChanges(before, proposed)};
+  if (!prepared) return Fail(error, "cannot retain RIB transaction plan");
+  *out = prepared; return 1;
+}
+int Validate(void*, void* raw, DangPluginErrorV1* error) {
+  auto* prepared = static_cast<Prepared*>(raw); if (!prepared) return Fail(error, "RIB transaction plan is missing");
+  std::vector<NativeCommand> commands; std::string why, where;
+  const bool ok = kPlatform == NativePlatform::kLinux ? BuildLinuxCommands(prepared->changes, &commands, &why, &where) : BuildFreeBsdCommands(prepared->changes, &commands, &why, &where);
+  return ok ? 1 : Fail(error, why, where);
+}
+int Apply(void*, void* raw, DangPluginErrorV1* error) {
+  auto* prepared = static_cast<Prepared*>(raw); if (!prepared) return Fail(error, "RIB transaction plan is missing");
+  if (prepared->applied) return 1;
+  auto result = ExecuteChanges(kPlatform, prepared->changes);
+  if (!result.ok) return Fail(error, result.error, result.error_path);
+  prepared->applied = true; return 1;
+}
+int Rollback(void*, void* raw, DangPluginErrorV1* error) {
+  auto* prepared = static_cast<Prepared*>(raw); if (!prepared) return Fail(error, "RIB transaction plan is missing");
+  if (!prepared->applied) return 1;
+  std::vector<Change> inverse;
+  for (auto i = prepared->changes.rbegin(); i != prepared->changes.rend(); ++i)
+    inverse.push_back({i->kind == ChangeKind::kDelete ? ChangeKind::kInstall : ChangeKind::kDelete, i->route});
+  auto result = ExecuteChanges(kPlatform, inverse);
+  if (!result.ok) return Fail(error, result.error, result.error_path);
+  prepared->applied = false; return 1;
+}
+void Release(void*, void* raw) { delete static_cast<Prepared*>(raw); }
+size_t ActionCount(void*, void* raw) { return raw ? 1 : 0; }
+int ActionAt(void*, void* raw, size_t index, DangHardwareActionV1* action, DangPluginErrorV1* error) {
+  if (!raw || !action || index) return Fail(error, "RIB transaction action is unavailable");
+  *action = {"routes", "/ietf-i2rs-rib:routing-instance", DANG_HARDWARE_NORMAL_V1, nullptr, 0}; return 1;
+}
+int ApplyAction(void* context, void* raw, const char* id, DangPluginErrorV1* error) {
+  return id && std::string_view(id) == "routes" ? Apply(context, raw, error) : Fail(error, "RIB action ID is unknown");
+}
+int RollbackAction(void* context, void* raw, const char* id, DangPluginErrorV1* error) {
+  return id && std::string_view(id) == "routes" ? Rollback(context, raw, error) : Fail(error, "RIB action ID is unknown");
+}
+int Operational(void*, DangOperationalDataV2* out, DangPluginErrorV1* error) {
+  if (!out) return Fail(error, "RIB operational output is missing");
+  operational_xml = "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\"/>";
+  *out = {operational_xml.c_str(), 0}; return 1;
+}
+size_t ResourceCount(void*) { return 1; }
+const char* ResourceAt(void*, size_t index) { return index == 0 ? "routing" : nullptr; }
+
+const DangPluginV7 kPlugin{.v6 = {.v5 = {.v4 = {.v3 = {.v2 = {.v1 = {
+  DANG_PLUGIN_ABI_V7, "dang-rib", nullptr, SourceCount, SourceAt,
+  DependencyCount, DependencyAt, Prepare, Validate, Apply, Rollback, Release,
+  nullptr}, .invoke = nullptr}, .get_operational_data = nullptr},
+  .hardware_action_count = ActionCount, .hardware_action_at = ActionAt,
+  .apply_hardware_action = ApplyAction, .rollback_hardware_action = RollbackAction},
+  .get_operational_data_v2 = Operational}, .reconcile_applied_configuration = nullptr},
+  .resource_domain_count = ResourceCount, .resource_domain_at = ResourceAt};
+}
+
+extern "C" const DangPluginV7* dang_plugin_init_v7() { return &kPlugin; }

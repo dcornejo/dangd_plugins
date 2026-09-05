@@ -85,6 +85,11 @@ file(READ plugins/kea/models/kea-dhcp6-server@2026-06-24.yang KEA_DHCP6_YANG)
 configure_file(plugins/kea/src/kea_model_sources.h.in
   generated/kea_model_sources.h @ONLY)
 
+file(READ plugins/rib/models/ietf-i2rs-rib@2018-09-13.yang IETF_I2RS_RIB_YANG)
+file(READ plugins/rib/models/ietf-interfaces@2018-02-20.yang IETF_INTERFACES_YANG)
+configure_file(plugins/rib/src/rib_model_sources.h.in
+  generated/rib_model_sources.h @ONLY)
+
 file(READ plugins/system/models/ietf-system@2014-08-06.yang IETF_SYSTEM_YANG)
 file(READ plugins/system/models/iana-crypt-hash@2014-08-06.yang
   IANA_CRYPT_HASH_YANG)
@@ -122,6 +127,16 @@ target_compile_options(dangd_frr_plugin PRIVATE
 set_target_properties(dangd_frr_plugin PROPERTIES PREFIX "")
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+  add_library(dangd_rib_plugin MODULE plugins/rib/src/rib_plugin.cc
+    plugins/rib/src/rib_config.cc plugins/rib/src/platform_executor.cc
+    plugins/rib/src/linux/platform_linux.cc
+    plugins/rib/src/freebsd/platform_freebsd.cc)
+  target_compile_features(dangd_rib_plugin PRIVATE cxx_std_20)
+  target_include_directories(dangd_rib_plugin PRIVATE "${DANGD_INCLUDE_DIR}"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated" "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(dangd_rib_plugin PRIVATE LibXml2::LibXml2)
+  target_compile_options(dangd_rib_plugin PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  set_target_properties(dangd_rib_plugin PROPERTIES PREFIX "")
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(DANG_SYSTEM_PLATFORM_SOURCE
       plugins/system/src/linux/platform_linux.cc)
@@ -175,6 +190,23 @@ if(BUILD_TESTING)
   add_test(NAME kea_plugin_discovery
     COMMAND plugin_loader_smoke_test $<TARGET_FILE:dangd_kea_plugin>
       dang-kea kea-types)
+
+  if(TARGET dangd_rib_plugin)
+    add_executable(rib_plugin_contract_test tests/rib_plugin_contract_test.cc)
+    target_compile_features(rib_plugin_contract_test PRIVATE cxx_std_20)
+    target_include_directories(rib_plugin_contract_test PRIVATE "${DANGD_INCLUDE_DIR}")
+    target_link_libraries(rib_plugin_contract_test PRIVATE "${CMAKE_DL_LIBS}")
+    target_compile_options(rib_plugin_contract_test PRIVATE
+      -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    add_test(NAME rfc8431_plugin_contract COMMAND rib_plugin_contract_test
+      $<TARGET_FILE:dangd_rib_plugin>)
+    add_executable(rib_plugin_native_test tests/rib_plugin_native_test.cc)
+    target_compile_features(rib_plugin_native_test PRIVATE cxx_std_20)
+    target_include_directories(rib_plugin_native_test PRIVATE "${DANGD_INCLUDE_DIR}")
+    target_link_libraries(rib_plugin_native_test PRIVATE "${CMAKE_DL_LIBS}")
+    target_compile_options(rib_plugin_native_test PRIVATE
+      -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  endif()
 
   add_executable(kea_adapter_test
     tests/kea_adapter_test.cc plugins/kea/src/kea_adapter.cc)
@@ -330,13 +362,15 @@ if(BUILD_TESTING)
   target_compile_options(rib_native_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   if(DANG_RIB_NATIVE_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    add_test(NAME rfc8431_linux_namespace_mutation
-      COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_rfc8431_linux_native.sh"
-        $<TARGET_FILE:rib_native_test>)
+      add_test(NAME rfc8431_linux_namespace_mutation
+        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_rfc8431_linux_native.sh"
+        $<TARGET_FILE:rib_native_test> $<TARGET_FILE:rib_plugin_native_test>
+        $<TARGET_FILE:dangd_rib_plugin>)
   elseif(DANG_RIB_NATIVE_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
-    add_test(NAME rfc8431_freebsd_vnet_mutation
-      COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_rfc8431_freebsd_native.sh"
-        $<TARGET_FILE:rib_native_test>)
+      add_test(NAME rfc8431_freebsd_vnet_mutation
+        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_rfc8431_freebsd_native.sh"
+        $<TARGET_FILE:rib_native_test> $<TARGET_FILE:rib_plugin_native_test>
+        $<TARGET_FILE:dangd_rib_plugin>)
   endif()
 
   if(TARGET dangd_system_plugin)
@@ -407,6 +441,11 @@ install(FILES
   plugins/rib/models/ietf-interfaces@2018-02-20.yang
   DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules"
   COMPONENT rib)
+if(TARGET dangd_rib_plugin)
+  install(TARGETS dangd_rib_plugin
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/dangd/plugins"
+    COMPONENT rib)
+endif()
 install(FILES LICENSE README.md CHANGELOG.md PACKAGING.md
   DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/dangd-plugins"
   COMPONENT docs)

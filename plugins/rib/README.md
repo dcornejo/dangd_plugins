@@ -14,30 +14,29 @@ The source files are unmodified copies from the IETF YangModels RFC registry:
 - `ietf-interfaces@2018-02-20.yang` SHA-256
   `f6faea9938f0341ed48fda93dba9a69aa32ee7142c463342efec3d38f4eb3621`.
 
-At this checkpoint the files are installed and independently compiled, but no
-plugin advertises `ietf-i2rs-rib` yet. Runtime ownership waits for transaction,
-RPC, notification, and Linux/FreeBSD backend semantics. In particular, simply
-accepting the writable tree without programming and observing the RIB would be
-a false implementation claim.
+The `dangd_rib_plugin` advertises the pinned model and implements the documented
+destination-prefix configuration slice. It claims ABI-v7 exclusive ownership
+of `routing`, so dangd rejects loading it together with the FRR provider. RPCs,
+notifications, and observed operational state remain incomplete.
 
 ## Installation status and dependencies
 
-There is no installable runtime plugin yet. The `dangd-rfc8431-models` package
-contains only the pinned YANG sources and this guide. Installing it does not
-modify routes and does not cause dangd to advertise RFC 8431.
+The `dangd-plugin-rib` package contains the provider, pinned sources, and guide.
+Loading it authorizes supported route changes and therefore requires routing
+privilege.
 
 Install it for model development or interoperability testing. Debian/Ubuntu:
 
 ```sh
-sudo apt install ./dangd-rfc8431-models_0.1.0_all.deb
-dpkg -L dangd-rfc8431-models
+sudo apt install ./dangd-plugin-rib_0.1.0_amd64.deb
+dpkg -L dangd-plugin-rib
 ```
 
 FreeBSD:
 
 ```sh
-sudo pkg add ./dangd-rfc8431-models-0.1.0.pkg
-pkg info -l dangd-rfc8431-models
+sudo pkg add ./dangd-plugin-rib-0.1.0.pkg
+pkg info -l dangd-plugin-rib
 ```
 
 For a source-tree schema check, install `yanglint`/libyang, point the build at
@@ -50,11 +49,9 @@ ctest --test-dir build -R rfc8431_schema_interoperability \
 sudo cmake --install build --component rib
 ```
 
-Do not treat the installed schema as runtime support and do not add a
-nonexistent RIB shared object to dangd. The future provider will additionally
-require Linux `iproute2` or FreeBSD base `route(8)`, route-management privilege,
-an arbitrary-name-to-table/FIB mapping, and exclusive module ownership relative
-to the planned FRR plugin.
+Load `dangd_rib_plugin.so` from dangd's plugin directory. The backend requires
+Linux `iproute2` or FreeBSD base `route(8)`, route-management privilege, and
+numeric RIB/FIB names. It must not be loaded together with the FRR plugin.
 
 The runtime foundation currently parses destination-prefix IPv4 and IPv6
 routes whose base nexthop is a gateway, an outgoing interface, or both. It
@@ -67,6 +64,9 @@ a shell. The shared executor uses `posix_spawnp(3)`, stops on the first failed
 operation, and compensates completed changes in reverse order. Unit tests cover
 successful execution, apply failure, complete rollback, and incomplete
 rollback reporting.
+
+The complete delta is one ABI-v4 hardware action. Apply compensates partial
+failure, and coordinator rollback applies inverse changes in reverse order.
 
 Privileged native tests are opt-in with `-DDANG_RIB_NATIVE_TESTS=ON`. Linux
 creates a disposable network namespace and dummy interface. FreeBSD creates a
@@ -90,7 +90,6 @@ Tests must use Linux network namespaces or FreeBSD VNET jails with only
 disposable loopback/epair interfaces. They must never add, remove, or replace a
 route on a host LAN interface or in the host's default routing table.
 
-Remove this schema-only package with
-`sudo apt remove dangd-rfc8431-models` or
-`sudo pkg delete dangd-rfc8431-models`. It requires no runtime rollback because
-it never programs a route.
+Remove managed routes through dangd before unloading the provider, then use
+`sudo apt remove dangd-plugin-rib` or `sudo pkg delete dangd-plugin-rib`.
+Package removal does not clean up routes left in the kernel.

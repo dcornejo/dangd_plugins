@@ -1,0 +1,4 @@
+// Generated from the pinned RFC 8431 model sources.
+#pragma once
+inline constexpr char kIetfI2rsRibYang[] = R"DANG(@IETF_I2RS_RIB_YANG@)DANG";
+inline constexpr char kIetfInterfacesYang[] = R"DANG(@IETF_INTERFACES_YANG@)DANG";

@@ -58,7 +58,7 @@ For an installed development package, omit `DANGD_ROOT` when
 `DANGD_INCLUDE_DIR` directly.
 
 Native Debian and FreeBSD package generation is documented in `PACKAGING.md`.
-Each provider, the PAM module, the unfinished RIB model set, and shared
+Each provider, the PAM module, and shared
 documentation have separate packages. Packages install their own plugin and
 models but do not enable PAM, modify sshd, configure Kea, or start dangd.
 
@@ -109,6 +109,6 @@ only with one another. Packaging does not weaken dangd's duplicate-owner check.
   routing, zebra, and staticd configuration scope through `mgmtd`, with
   disposable validation, before-image rollback, operational state, and
   deduplicated unsolicited drift notification. See `plugins/frr/README.md`.
-- `rib` currently stages the exact RFC 8431 schema family and independent
-  conformance test. Runtime Linux/FreeBSD RIB ownership is not advertised until
-  the transaction and operation backends are complete.
+- `rib` provides the initial ABI-v7 RFC 8431 configuration provider, claims the
+  `routing` resource against FRR, and applies its supported route slice on Linux
+  and FreeBSD. RPC, notification, and operational work remains in progress.

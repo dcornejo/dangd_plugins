@@ -14,8 +14,9 @@ in unrelated models, daemons, or authentication code:
   and depends on the platform FRR package.
 - `dangd-pam` contains only `pam_dangd` and depends on
   `dangd-plugin-system`, which owns its authentication service.
-- `dangd-rfc8431-models` contains the schema and guide for the RIB provider
-  while that provider remains under development.
+- `dangd-plugin-rib` contains the partial RFC 8431 runtime provider, schema, and
+  guide. It conflicts at runtime with `dangd-plugin-frr` through the shared
+  `routing` resource domain.
 - `dangd-plugins-doc` contains collection-wide documentation and the license.
 
 Each component package also installs its operator guide as `EXAMPLE.md`,
