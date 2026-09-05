@@ -6,6 +6,7 @@
     <valid-lifetime>600</valid-lifetime>
     <hook-library><library>@KEA_HOOK_DIR@/libdhcp_lease_cmds.so</library></hook-library>
     <hook-library><library>@KEA_HOOK_DIR@/libdhcp_stat_cmds.so</library></hook-library>
+    <hook-library><library>@KEA_HOOK_DIR@/libdhcp_host_cmds.so</library></hook-library>
   </config>
   <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp6-server">
     <interfaces-config><interfaces>dangkea0</interfaces></interfaces-config>
@@ -13,5 +14,6 @@
     <preferred-lifetime>300</preferred-lifetime><valid-lifetime>600</valid-lifetime>
     <hook-library><library>@KEA_HOOK_DIR@/libdhcp_lease_cmds.so</library></hook-library>
     <hook-library><library>@KEA_HOOK_DIR@/libdhcp_stat_cmds.so</library></hook-library>
+    <hook-library><library>@KEA_HOOK_DIR@/libdhcp_host_cmds.so</library></hook-library>
   </config>
 </config>

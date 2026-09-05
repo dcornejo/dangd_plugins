@@ -68,8 +68,12 @@ int main(int argc, char** argv) {
             std::string::npos &&
         xml.find("<leases") != std::string::npos &&
         xml.find("<lease-stats") != std::string::npos &&
+        xml.find("<hosts") != std::string::npos &&
         xml.find("<subnet-id>401</subnet-id>") != std::string::npos &&
-        xml.find("<subnet-id>601</subnet-id>") != std::string::npos;
+        xml.find("<subnet-id>601</subnet-id>") != std::string::npos &&
+        xml.find("<identifier>00:01:02:03:04:05</identifier>") !=
+            std::string::npos &&
+        xml.find("<identifier>00:01:02:03</identifier>") != std::string::npos;
     if (!valid) std::cerr << "operational XML is incomplete: " << xml << '\n';
   }
   if (valid)

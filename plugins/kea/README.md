@@ -12,8 +12,8 @@ license notices; the adapter code is Apache-2.0.
 ## Dependencies and installation
 
 The runtime requires dangd 0.1.0 or newer, Kea 3.2.x DHCPv4 and DHCPv6
-servers, the Kea lease-command and supplemental-statistics hook libraries, and
-local UNIX control sockets accessible by the plugin worker. On
+servers, the Kea lease-command, host-command, and supplemental-statistics hook
+libraries, and local UNIX control sockets accessible by the plugin worker. On
 Debian/Ubuntu install `kea-dhcp4-server` and `kea-dhcp6-server`; on FreeBSD
 install `kea`. A source build additionally needs CMake 3.24+, a C++20 compiler,
 libxml2 development files, nlohmann-json 3.11+, and GoogleTest.
@@ -68,8 +68,9 @@ model structure must gain a focused translation test before it is treated as
 production-supported.
 
 This is not yet a complete implementation of the two modules. Through ABI v3,
-the provider owns configuration and publishes each server's lease inventory and
-supplemental per-subnet lease statistics in its `state` container. Operational
+the provider owns configuration and publishes each server's lease inventory,
+host reservations, and supplemental per-subnet lease statistics in its `state`
+container. Operational
 queries use the local control sockets and convert Kea identifiers, lease types,
 states, lifetimes, prefix lengths, and binary identifiers to their modeled XML
 forms. Kea's empty-set result is exposed as an empty collection.
@@ -82,11 +83,11 @@ cursors, more than 512 pages or 65,536 leases, more than 8 MiB of accumulated
 native lease data, and enumeration lasting more than 30 seconds. Each individual
 control exchange retains its five-second and 16 MiB limits.
 
-Host reservations are not yet published, and the supplemental statistics
-command can still produce a large single reply when a server has many subnets.
-Completing the provider requires paged host enumeration, bounded statistics
-ranges, and full-schema conformance and interoperability coverage. The pinned
-modules declare no notification surface.
+Host reservations use Kea's `reservation-get-page` continuation map and the
+same aggregate safeguards as leases. The supplemental statistics command can
+still produce a large single reply when a server has many subnets. Completing
+the provider requires bounded statistics ranges and full-schema conformance and
+interoperability coverage. The pinned modules declare no notification surface.
 
 The plugin deliberately uses ABI v1's transaction-wide action. This preserves
 atomic compensation across Kea's own complete-configuration `config-set`
@@ -123,7 +124,8 @@ relevant DHCPv4 fragment, not a complete Kea configuration:
     ],
     "hooks-libraries": [
       { "library": "/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_lease_cmds.so" },
-      { "library": "/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_stat_cmds.so" }
+      { "library": "/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_stat_cmds.so" },
+      { "library": "/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_host_cmds.so" }
     ]
   }
 }
@@ -132,7 +134,7 @@ relevant DHCPv4 fragment, not a complete Kea configuration:
 Use the equivalent `Dhcp6` object and `kea6-ctrl-socket` in the DHCPv6 file.
 On FreeBSD use `/var/run/kea/...` consistently and find the hooks under
 `/usr/local/lib/kea/hooks`. Distribution paths can differ; verify the installed
-locations rather than copying these examples blindly. Both hook entries must
+locations rather than copying these examples blindly. All hook entries must
 also be represented in the modeled configuration so `config-set` retains the
 operational commands. Validate both native files before restarting the servers:
 
@@ -195,7 +197,7 @@ sudo tests/platform/freebsd/run_kea_isolated.sh "$PWD"
 ```
 
 Each interaction proves DHCPv4 and DHCPv6 `config-test`, `config-set`, rollback,
-paged-command lease retrieval, and supplemental-statistics retrieval against the
-native packaged daemon. It verifies that no other interface entered the isolation
+paged-command lease and host retrieval, and supplemental-statistics retrieval
+against the native packaged daemon. It verifies that no other interface entered the isolation
 boundary and removes its unique sockets, PID storage, and namespace or jail
 afterward.

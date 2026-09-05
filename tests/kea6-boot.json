@@ -8,7 +8,8 @@
     "lease-database": {"type": "memfile", "persist": false},
     "hooks-libraries": [
       {"library": "@KEA_HOOK_DIR@/libdhcp_lease_cmds.so"},
-      {"library": "@KEA_HOOK_DIR@/libdhcp_stat_cmds.so"}
+      {"library": "@KEA_HOOK_DIR@/libdhcp_stat_cmds.so"},
+      {"library": "@KEA_HOOK_DIR@/libdhcp_host_cmds.so"}
     ],
     "preferred-lifetime": 300,
     "valid-lifetime": 600,

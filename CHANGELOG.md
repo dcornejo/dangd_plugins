@@ -9,6 +9,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added paged DHCPv4/DHCPv6 host-reservation state through Kea's native
+  `reservation-get-page` continuation map. Host identifiers and modeled address,
+  prefix, class, and context fields are translated under the same page, item,
+  byte, and deadline safeguards as leases. Native tests exercise populated
+  reservations, and configuration translation now emits Kea's concrete
+  identifier keys instead of the YANG key pair.
 - Replaced Kea's unbounded all-lease operational queries with native paged
   retrieval. Address cursors are carried across 256-entry pages, while page,
   item, aggregate-byte, and total-duration limits fail closed on malformed,

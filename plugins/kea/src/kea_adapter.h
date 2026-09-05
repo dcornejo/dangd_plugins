@@ -64,10 +64,16 @@ using ControlQuery = std::function<std::optional<nlohmann::json>(
     std::string_view socket_path, bool dhcp6, const ControlQuery& query,
     std::string* error, const PageLimits& limits = {});
 
+/** Retrieves all host reservations using Kea's source-index/host-id cursor. */
+[[nodiscard]] std::optional<nlohmann::json> CollectHostPages(
+    std::string_view socket_path, const ControlQuery& query,
+    std::string* error, const PageLimits& limits = {});
+
 /** Converts native lease and supplemental-statistic replies to modeled XML. */
 [[nodiscard]] std::optional<std::string> TranslateOperationalState(
     std::string_view module_name, const nlohmann::json& leases,
-    const nlohmann::json& statistics, std::string* error);
+    const nlohmann::json& statistics, const nlohmann::json& hosts,
+    std::string* error);
 
 /** Extracts Kea's result/text fields and accepts only result code zero. */
 [[nodiscard]] bool CommandSucceeded(const nlohmann::json& response,

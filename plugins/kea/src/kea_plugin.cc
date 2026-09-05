@@ -25,6 +25,7 @@
 namespace {
 
 using dang::plugins::kea::CommandSucceeded;
+using dang::plugins::kea::CollectHostPages;
 using dang::plugins::kea::CollectLeasePages;
 using dang::plugins::kea::SendControlCommand;
 using dang::plugins::kea::SendControlQuery;
@@ -251,7 +252,15 @@ int Operational(void*, DangOperationalDataV1* result,
                    "}state/lease-stats");
       return 0;
     }
-    auto state = TranslateOperationalState(module, *leases, *statistics, &reason);
+    auto hosts = CollectHostPages(socket, SendControlQuery, &reason);
+    if (!hosts) {
+      SetError(error, module + std::string(": ") + reason,
+               "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +
+                   "}state/hosts");
+      return 0;
+    }
+    auto state = TranslateOperationalState(module, *leases, *statistics,
+                                           *hosts, &reason);
     if (!state) {
       SetError(error, module + std::string(": ") + reason,
                "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +

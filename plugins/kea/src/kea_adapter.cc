@@ -133,6 +133,19 @@ nlohmann::json Scalar(const xmlNode* node, const std::string& value) {
 
 nlohmann::json ConvertNode(const xmlNode* node);
 
+nlohmann::json ConvertHost(const xmlNode* node) {
+  nlohmann::json result = ConvertNode(node);
+  const auto type = result.find("identifier-type");
+  const auto identifier = result.find("identifier");
+  if (type != result.end() && type->is_string() &&
+      identifier != result.end() && identifier->is_string()) {
+    result[type->get<std::string>()] = *identifier;
+    result.erase("identifier-type");
+    result.erase("identifier");
+  }
+  return result;
+}
+
 nlohmann::json ConvertPool(const xmlNode* node) {
   nlohmann::json result = ConvertNode(node);
   if (result.contains("prefix")) {
@@ -170,7 +183,8 @@ nlohmann::json ConvertNode(const xmlNode* node) {
       nlohmann::json array = nlohmann::json::array();
       for (const xmlNode* value : values)
         array.push_back(name == "pool" ? ConvertPool(value)
-                                        : ConvertNode(value));
+                        : name == "host" ? ConvertHost(value)
+                                         : ConvertNode(value));
       result[json_name] = std::move(array);
     } else {
       result[json_name] = ConvertNode(values.front());
@@ -453,6 +467,107 @@ std::optional<std::string> BuildStatistics(const nlohmann::json& response,
   }
 }
 
+std::optional<std::string> BuildHosts(const nlohmann::json& response,
+                                      bool dhcp6, std::string* error) {
+  const nlohmann::json* answer = Answer(response);
+  if (!answer || !answer->contains("result") ||
+      !answer->at("result").is_number_integer()) {
+    if (error) *error = "Kea host reply omits an integer result";
+    return std::nullopt;
+  }
+  if (answer->at("result").get<int>() == 3) return "<hosts/>";
+  if (answer->at("result").get<int>() != 0) {
+    if (error) *error = answer->value("text", "Kea rejected the host query");
+    return std::nullopt;
+  }
+  const auto arguments = answer->find("arguments");
+  if (arguments == answer->end() || !arguments->is_object()) {
+    if (error) *error = "Kea host reply omits arguments";
+    return std::nullopt;
+  }
+  const auto hosts = arguments->find("hosts");
+  if (hosts == arguments->end() || !hosts->is_array()) {
+    if (error) *error = "Kea host reply omits the hosts array";
+    return std::nullopt;
+  }
+  std::string xml = "<hosts>";
+  for (const auto& host : *hosts) {
+    if (!host.is_object()) {
+      if (error) *error = "Kea host reply contains a non-object entry";
+      return std::nullopt;
+    }
+    std::string identifier_type;
+    std::string identifier;
+    for (const std::string_view candidate :
+         {"duid", "hw-address", "circuit-id", "client-id", "flex-id"}) {
+      const auto found = host.find(candidate);
+      if (found != host.end() && found->is_string() && !found->empty()) {
+        if (!identifier_type.empty()) {
+          if (error) *error = "Kea host reply contains multiple identifiers";
+          return std::nullopt;
+        }
+        identifier_type = candidate;
+        identifier = found->get<std::string>();
+      }
+    }
+    if (identifier_type.empty()) {
+      if (error) *error = "Kea host reply omits its identifier";
+      return std::nullopt;
+    }
+    xml += "<host>";
+    if (!AppendLeaf(&xml, "subnet-id", host, "subnet-id", true, error))
+      return std::nullopt;
+    xml += "<identifier-type>" + identifier_type + "</identifier-type>";
+    xml += "<identifier>" + XmlEscape(identifier) + "</identifier>";
+    if (dhcp6) {
+      for (const std::string_view name :
+           {"ip-addresses", "prefixes", "excluded-prefixes"}) {
+        const auto values = host.find(name);
+        if (values == host.end()) continue;
+        if (!values->is_array()) {
+          if (error) *error = "Kea host reply has a non-array " + std::string(name);
+          return std::nullopt;
+        }
+        for (const auto& value : *values) {
+          if (!value.is_string()) {
+            if (error) *error = "Kea host reply has a non-string " + std::string(name);
+            return std::nullopt;
+          }
+          xml += "<" + std::string(name) + ">" +
+                 XmlEscape(value.get<std::string>()) + "</" +
+                 std::string(name) + ">";
+        }
+      }
+    } else if (!AppendLeaf(&xml, "ip-address", host, "ip-address", false,
+                            error)) {
+      return std::nullopt;
+    }
+    for (const std::string_view name :
+         {"hostname", "next-server", "server-hostname", "boot-file-name",
+          "auth-key"})
+      if (!AppendLeaf(&xml, name, host, name, false, error)) return std::nullopt;
+    const auto classes = host.find("client-classes");
+    if (classes != host.end()) {
+      if (!classes->is_array()) {
+        if (error) *error = "Kea host reply has non-array client-classes";
+        return std::nullopt;
+      }
+      for (const auto& value : *classes) {
+        if (!value.is_string()) {
+          if (error) *error = "Kea host reply has non-string client-classes";
+          return std::nullopt;
+        }
+        xml += "<client-classes>" + XmlEscape(value.get<std::string>()) +
+               "</client-classes>";
+      }
+    }
+    if (const auto context = host.find("user-context"); context != host.end())
+      xml += "<user-context>" + XmlEscape(context->dump()) + "</user-context>";
+    xml += "</host>";
+  }
+  return xml + "</hosts>";
+}
+
 }  // namespace
 
 std::optional<ServerConfiguration> TranslateConfiguration(
@@ -665,9 +780,92 @@ std::optional<nlohmann::json> CollectLeasePages(
   return std::nullopt;
 }
 
+std::optional<nlohmann::json> CollectHostPages(
+    std::string_view socket_path, const ControlQuery& query,
+    std::string* error, const PageLimits& limits) {
+  if (!query || limits.page_size == 0 || limits.maximum_pages == 0 ||
+      limits.maximum_items == 0 || limits.maximum_bytes == 0 ||
+      limits.maximum_duration <= std::chrono::milliseconds::zero()) {
+    if (error) *error = "invalid Kea host paging configuration";
+    return std::nullopt;
+  }
+  nlohmann::json collected = nlohmann::json::array();
+  nlohmann::json cursor = nlohmann::json::object();
+  std::size_t collected_bytes = 0;
+  const auto deadline = std::chrono::steady_clock::now() + limits.maximum_duration;
+  for (std::size_t page = 0; page < limits.maximum_pages; ++page) {
+    if (std::chrono::steady_clock::now() >= deadline) {
+      if (error) *error = "Kea host enumeration exceeded its deadline";
+      return std::nullopt;
+    }
+    nlohmann::json arguments{{"limit", limits.page_size}};
+    arguments.update(cursor);
+    auto response = query(socket_path, "reservation-get-page", arguments, error);
+    if (!response) return std::nullopt;
+    const nlohmann::json* answer = Answer(*response);
+    if (!answer || !answer->contains("result") ||
+        !answer->at("result").is_number_integer()) {
+      if (error) *error = "Kea host page omits an integer result";
+      return std::nullopt;
+    }
+    const int status = answer->at("result").get<int>();
+    if (status == 3)
+      return std::optional<nlohmann::json>(nlohmann::json{
+          {"result", collected.empty() ? 3 : 0},
+          {"arguments", {{"hosts", collected}}}});
+    if (status != 0) {
+      if (error) *error = answer->value("text", "Kea rejected the host page");
+      return std::nullopt;
+    }
+    const auto arguments_node = answer->find("arguments");
+    if (arguments_node == answer->end() || !arguments_node->is_object() ||
+        !arguments_node->contains("hosts") ||
+        !arguments_node->at("hosts").is_array() ||
+        !arguments_node->contains("count") ||
+        !arguments_node->at("count").is_number_integer() ||
+        arguments_node->at("count").get<std::int64_t>() < 0 ||
+        static_cast<std::uint64_t>(
+            arguments_node->at("count").get<std::int64_t>()) !=
+            arguments_node->at("hosts").size() ||
+        arguments_node->at("hosts").size() > limits.page_size) {
+      if (error) *error = "Kea host page has an invalid hosts result";
+      return std::nullopt;
+    }
+    const auto& hosts = arguments_node->at("hosts");
+    if (collected.size() + hosts.size() > limits.maximum_items) {
+      if (error) *error = "Kea host enumeration exceeds the item limit";
+      return std::nullopt;
+    }
+    for (const auto& host : hosts) {
+      const std::string encoded = host.dump();
+      if (encoded.size() > limits.maximum_bytes - collected_bytes) {
+        if (error) *error = "Kea host enumeration exceeds the byte limit";
+        return std::nullopt;
+      }
+      collected_bytes += encoded.size();
+      collected.push_back(host);
+    }
+    const auto next = arguments_node->find("next");
+    if (next == arguments_node->end() || !next->is_object() ||
+        !next->contains("from") || !next->at("from").is_number_integer() ||
+        next->at("from").get<std::int64_t>() < 0 ||
+        !next->contains("source-index") ||
+        !next->at("source-index").is_number_integer() ||
+        next->at("source-index").get<std::int64_t>() < 0 || *next == cursor) {
+      if (error) *error = "Kea host paging cursor is missing or did not advance";
+      return std::nullopt;
+    }
+    cursor = {{"from", next->at("from")},
+              {"source-index", next->at("source-index")}};
+  }
+  if (error) *error = "Kea host enumeration exceeds the page limit";
+  return std::nullopt;
+}
+
 std::optional<std::string> TranslateOperationalState(
     std::string_view module_name, const nlohmann::json& leases,
-    const nlohmann::json& statistics, std::string* error) {
+    const nlohmann::json& statistics, const nlohmann::json& hosts,
+    std::string* error) {
   const bool dhcp6 = module_name == "kea-dhcp6-server";
   if (!dhcp6 && module_name != "kea-dhcp4-server") {
     if (error) *error = "unsupported Kea module";
@@ -677,10 +875,12 @@ std::optional<std::string> TranslateOperationalState(
   if (!lease_xml) return std::nullopt;
   auto statistic_xml = BuildStatistics(statistics, dhcp6, error);
   if (!statistic_xml) return std::nullopt;
+  auto host_xml = BuildHosts(hosts, dhcp6, error);
+  if (!host_xml) return std::nullopt;
   const std::string ns = "urn:ietf:params:xml:ns:yang:" +
       std::string(module_name);
   return "<state xmlns=\"" + ns + "\">" + *lease_xml + *statistic_xml +
-      "</state>";
+      *host_xml + "</state>";
 }
 
 bool CommandSucceeded(const nlohmann::json& response, std::string* reason) {

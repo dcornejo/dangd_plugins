@@ -78,6 +78,10 @@ int main() {
                  "hook library JSON parameters were not translated");
   valid &= Check(four.at("reservations").is_array(),
                  "host reservations were not renamed");
+  valid &= Check(four.at("reservations").at(0).at("hw-address") ==
+                     "00:01:02:03:04:05" &&
+                     !four.at("reservations").at(0).contains("identifier"),
+                 "host reservation identifier was not converted to Kea form");
   valid &= Check(four.at("t1-percent").is_number_float(),
                  "decimal64 value is not numeric");
   valid &= Check(four.at("dhcp-queue-control").at("enable-queue") == true,
@@ -111,8 +115,15 @@ int main() {
       "rows": [[4, 32, 10, 1, 1]]
     }}
   })json");
+  const nlohmann::json hosts4 = nlohmann::json::parse(R"json({
+    "result": 0, "arguments": {"hosts": [{
+      "subnet-id": 4, "hw-address": "00:01:02:03:04:05",
+      "ip-address": "192.0.2.50", "hostname": "printer.example",
+      "client-classes": ["office"]
+    }]}
+  })json");
   auto state4 = dang::plugins::kea::TranslateOperationalState(
-      "kea-dhcp4-server", leases4, stats4, &error);
+      "kea-dhcp4-server", leases4, stats4, hosts4, &error);
   valid &= Check(state4.has_value(), error.c_str());
   valid &= Check(state4 && state4->find("<hw-address>AAECAwQF</hw-address>") !=
                      std::string::npos,
@@ -123,6 +134,12 @@ int main() {
   valid &= Check(state4 && state4->find("<total-addresses>32</total-addresses>") !=
                      std::string::npos,
                  "DHCPv4 lease statistics were not translated");
+  valid &= Check(state4 &&
+                     state4->find("<identifier-type>hw-address</identifier-type>") !=
+                         std::string::npos &&
+                     state4->find("<identifier>00:01:02:03:04:05</identifier>") !=
+                         std::string::npos,
+                 "DHCPv4 host identifier was not translated");
   const nlohmann::json leases6 = nlohmann::json::parse(R"json({
     "result": 0, "arguments": {"leases": [{
       "ip-address": "2001:db8::44", "duid": "00:01:02:03",
@@ -138,8 +155,15 @@ int main() {
       "rows": [[6, 256, 3, 1, 0, 16, 2, 1]]
     }}
   })json");
+  const nlohmann::json hosts6 = nlohmann::json::parse(R"json({
+    "result": 0, "arguments": {"hosts": [{
+      "subnet-id": 6, "duid": "00:01:02:03",
+      "ip-addresses": ["2001:db8::50"],
+      "prefixes": ["2001:db8:50::/56"]
+    }]}
+  })json");
   auto state6 = dang::plugins::kea::TranslateOperationalState(
-      "kea-dhcp6-server", leases6, stats6, &error);
+      "kea-dhcp6-server", leases6, stats6, hosts6, &error);
   valid &= Check(state6.has_value(), error.c_str());
   valid &= Check(state6 && state6->find("<duid>AAECAw==</duid>") !=
                      std::string::npos,
@@ -150,6 +174,10 @@ int main() {
   valid &= Check(state6 && state6->find("<assigned-pds>1</assigned-pds>") !=
                      std::string::npos,
                  "DHCPv6 lease statistics were not translated");
+  valid &= Check(state6 &&
+                     state6->find("<ip-addresses>2001:db8::50</ip-addresses>") !=
+                         std::string::npos,
+                 "DHCPv6 host addresses were not translated");
 
   std::vector<nlohmann::json> requests;
   std::size_t invocation = 0;
@@ -238,5 +266,38 @@ int main() {
        .maximum_duration = std::chrono::milliseconds(100)});
   valid &= Check(!too_large && error.find("byte limit") != std::string::npos,
                  "the aggregate lease byte limit was not enforced");
+
+  std::size_t host_invocation = 0;
+  std::vector<nlohmann::json> host_requests;
+  const dang::plugins::kea::ControlQuery host_pages =
+      [&](std::string_view, std::string_view command,
+          const nlohmann::json& arguments,
+          std::string*) -> std::optional<nlohmann::json> {
+    host_requests.push_back({{"command", command}, {"arguments", arguments}});
+    if (host_invocation++ == 0)
+      return std::optional<nlohmann::json>(nlohmann::json{
+          {"result", 0},
+          {"arguments",
+           {{"count", 1},
+            {"hosts", {{{"subnet-id", 4}, {"hw-address", "00:01"}}}},
+            {"next", {{"from", 42}, {"source-index", 1}}}}}});
+    return std::optional<nlohmann::json>(nlohmann::json{
+        {"result", 3}, {"arguments", {{"count", 0}, {"hosts", {}}}}});
+  };
+  error.clear();
+  auto paged_hosts = dang::plugins::kea::CollectHostPages(
+      "/tmp/kea4.sock", host_pages, &error,
+      {.page_size = 1,
+       .maximum_pages = 3,
+       .maximum_items = 2,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(paged_hosts &&
+                     paged_hosts->at("arguments").at("hosts").size() == 1,
+                 "host reservation pages were not combined");
+  valid &= Check(host_requests.size() == 2 &&
+                     host_requests[1].at("arguments").at("from") == 42 &&
+                     host_requests[1].at("arguments").at("source-index") == 1,
+                 "host paging did not carry Kea's continuation map forward");
   return valid ? 0 : 1;
 }
