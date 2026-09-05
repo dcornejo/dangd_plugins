@@ -9,6 +9,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Fixed FRR hardware-coordinator integration by advertising its complete mgmtd
+  candidate transaction as one normal action. Commits now schedule the existing
+  atomic apply/rollback callbacks instead of treating a zero-action plan as
+  already complete; discovery tests lock down the descriptor contract.
 - Completed the pinned Kea DHCPv4/DHCPv6 state trees by translating host option
   data and promoting the provider to ABI v5 complete operational publication.
   The ABI-v4 action plan retains Kea's full transaction as one indivisible

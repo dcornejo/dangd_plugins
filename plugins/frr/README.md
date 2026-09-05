@@ -48,9 +48,12 @@ validation, apply or candidate abort, unlock, and destruction in protocol
 order. Transaction orchestration performs validation in a disposable session,
 then repeats the replacement for a real apply. Rollback is a new validated
 commit of the retained before-image; candidate abort is used only to discard
-uncommitted edits. Wiring this orchestration into the plugin ABI and extracting the FRR
-subtrees from dangd snapshots are converted to atomic root replace/delete
-edits.
+uncommitted edits. FRR subtrees extracted from dangd snapshots become atomic
+root replace/delete edits. The hardware coordinator sees the complete mgmtd
+candidate as one normal `configuration` action. It is intentionally not split
+by root or leaf: mgmtd's validated candidate commit is the native atomicity and
+rollback boundary, and the single descriptor ensures dangd schedules the
+provider apply.
 
 The provider retrieves the implemented top-level `/frr-zebra:zebra` state and
 zebra augments below `/frr-interface:lib` and `/frr-vrf:lib` from FRR's

@@ -480,13 +480,35 @@ int Invoke(void* raw, const DangOperationV1* operation,
   return 1;
 }
 
-std::size_t HardwareActionCount(void*, void*) { return 0; }
-int UnsupportedHardwareAction(void*, void*, std::size_t,
-                              DangHardwareActionV1*, DangPluginErrorV1* error) {
-  return Fail(error, "FRR exposes no fine-grained hardware actions");
+std::size_t HardwareActionCount(void*, void* prepared) {
+  return prepared ? 1 : 0;
 }
-int UnsupportedApplyAction(void*, void*, const char*, DangPluginErrorV1* error) {
-  return Fail(error, "FRR exposes no fine-grained hardware actions");
+
+int HardwareActionAt(void*, void* prepared, std::size_t index,
+                     DangHardwareActionV1* action,
+                     DangPluginErrorV1* error) {
+  if (!prepared || !action || index != 0)
+    return Fail(error, "FRR transaction action is unavailable");
+  // mgmtd validates and atomically applies the complete candidate session.
+  // Keep that transaction as one coordinator action: splitting roots or YANG
+  // nodes here would misrepresent FRR's native rollback boundary.
+  *action = {"configuration", "/", DANG_HARDWARE_NORMAL_V1, nullptr, 0};
+  return 1;
+}
+
+int ApplyHardwareAction(void* owner, void* prepared, const char* action_id,
+                        DangPluginErrorV1* error) {
+  if (!action_id || std::string_view(action_id) != "configuration")
+    return Fail(error, "FRR hardware action ID is unknown");
+  return Apply(owner, prepared, error);
+}
+
+int RollbackHardwareAction(void* owner, void* prepared,
+                           const char* action_id,
+                           DangPluginErrorV1* error) {
+  if (!action_id || std::string_view(action_id) != "configuration")
+    return Fail(error, "FRR hardware action ID is unknown");
+  return Rollback(owner, prepared, error);
 }
 
 std::size_t ResourceCount(void*) { return 1; }
@@ -534,9 +556,9 @@ const DangPluginV8 kPlugin{
                                         .invoke = Invoke},
                                 .get_operational_data = Operational},
                         .hardware_action_count = HardwareActionCount,
-                        .hardware_action_at = UnsupportedHardwareAction,
-                        .apply_hardware_action = UnsupportedApplyAction,
-                        .rollback_hardware_action = UnsupportedApplyAction},
+                        .hardware_action_at = HardwareActionAt,
+                        .apply_hardware_action = ApplyHardwareAction,
+                        .rollback_hardware_action = RollbackHardwareAction},
                 .get_operational_data_v2 = nullptr},
            .reconcile_applied_configuration = Reconcile},
            .resource_domain_count = ResourceCount,

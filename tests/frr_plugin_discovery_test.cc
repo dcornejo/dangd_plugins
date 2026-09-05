@@ -101,6 +101,14 @@ int main(int argc, char** argv) {
     DangPluginErrorV1 error{};
     void* prepared = nullptr;
     valid = valid && base.prepare(base.context, &transaction, &prepared, &error);
+    DangHardwareActionV1 action{};
+    valid = valid && prepared &&
+        plugin->v7.v6.v5.v4.hardware_action_count(base.context, prepared) == 1 &&
+        plugin->v7.v6.v5.v4.hardware_action_at(base.context, prepared, 0,
+                                               &action, &error) &&
+        action.action_id && std::string_view(action.action_id) == "configuration" &&
+        action.action_class == DANG_HARDWARE_NORMAL_V1 &&
+        action.dependency_count == 0;
     if (prepared) base.release(base.context, prepared);
   }
   if (library) dlclose(library);
