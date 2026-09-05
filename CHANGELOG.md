@@ -9,6 +9,13 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Completed configuration-shape translation for the pinned Kea DHCPv4 and
+  DHCPv6 models. Singleton list and leaf-list nodes now retain JSON array
+  shape; reservations, host/config databases, and hook libraries use Kea's
+  native keys; decimal64 values remain numeric; and all modeled JSON-valued
+  leaves are decoded. Regression coverage distinguishes scalar `host`,
+  `subnet`, and `client-class` leaves from same-named lists, and isolated Kea
+  validation exercises DHCPv4/DHCPv6 validate, apply, and rollback.
 - Added generic dispatch for all RPCs declared by the installed `frr-zebra`
   schema through FRR's public native mgmtd RPC and RPC-reply messages. The wire
   codec validates format, correlation, framing, and embedded NULs; the session

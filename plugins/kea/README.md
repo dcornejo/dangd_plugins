@@ -56,12 +56,25 @@ For every affected commit, the plugin:
 4. restores DHCPv4 immediately if the DHCPv6 application fails; and
 5. retains both prior configurations for dangd-triggered reverse rollback.
 
-The current translator handles ordinary scalar leaves, containers, leaf-lists,
-the model's common lists, JSON-valued user contexts and hook parameters, IPv4
-and IPv6 address pools, and the naming differences used by shared networks,
-loggers, output options, and prefix-delegation pools. Kea remains the final
-implementation-specific validator. More specialized Kea structures must gain a
-focused translation test before being treated as production-supported.
+The translator handles ordinary scalar leaves, decimal values, containers,
+every list and leaf-list declared by the pinned configuration models,
+JSON-valued user contexts, hook parameters, HTTP header values, and DHCP queue
+control, IPv4 and IPv6 address pools, and Kea's JSON naming differences for
+reservations, databases, hooks, shared networks, loggers, output options, and
+prefix-delegation pools. Singleton lists and leaf-lists remain JSON arrays.
+Kea remains the final implementation-specific validator; a newly introduced
+model structure must gain a focused translation test before it is treated as
+production-supported.
+
+This is not yet a complete implementation of the two modules. The provider
+publishes them as configuration owners through ABI v1, but it does not publish
+their `state` containers, lease and host inventories, or lease statistics.
+It also has no notification surface because the pinned modules declare none.
+Completing the provider requires bounded operational commands against both
+daemons, conversion of their replies to schema-valid state XML, ABI operational
+publication with explicit completeness, and Linux/FreeBSD interoperability
+tests. Until then, use it as a transaction-safe configuration provider rather
+than a complete Kea management plane.
 
 The plugin deliberately uses ABI v1's transaction-wide action. This preserves
 atomic compensation across Kea's own complete-configuration `config-set`

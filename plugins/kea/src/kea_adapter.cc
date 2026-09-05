@@ -64,22 +64,27 @@ std::string Text(const xmlNode* node) {
 
 bool IsList(std::string_view name) {
   static const std::set<std::string, std::less<>> lists{
-      "client-class", "client-classes", "control-sockets", "database",
-      "hooks-libraries", "host", "host-reservation", "logger",
-      "option-data", "option-def", "output-option", "pd-pool", "pool",
-      "reservation", "shared-network", "subnet4", "subnet6"};
+      "client-class", "clients", "config-database", "control-sockets",
+      "hook-library", "host", "hosts-database", "http-headers", "lease",
+      "logger", "option-data", "option-def", "output-option", "pd-pool",
+      "pool", "shared-network", "subnet", "subnet4", "subnet6"};
   return lists.contains(name);
 }
 
 bool IsLeafList(std::string_view name) {
   static const std::set<std::string, std::less<>> leaf_lists{
-      "client-classes", "evaluate-additional-classes", "host-reservation-identifiers",
-      "interfaces", "mac-sources", "relay-addresses", "require-client-classes"};
+      "client-classes", "evaluate-additional-classes", "excluded-prefixes",
+      "host-reservation-identifiers", "interfaces", "ip-addresses",
+      "mac-sources", "prefixes", "relay-addresses",
+      "relay-supplied-options", "require-client-classes"};
   return leaf_lists.contains(name);
 }
 
 std::string JsonName(std::string_view yang_name) {
   static const std::map<std::string, std::string, std::less<>> names{
+      {"config-database", "config-databases"},
+      {"hook-library", "hooks-libraries"},
+      {"hosts-database", "hosts-databases"},
       {"logger", "loggers"},
       {"output-option", "output-options"},
       {"pd-pool", "pd-pools"},
@@ -89,15 +94,30 @@ std::string JsonName(std::string_view yang_name) {
   return found == names.end() ? std::string(yang_name) : found->second;
 }
 
-nlohmann::json Scalar(std::string_view name, const std::string& value) {
-  // Kea models carry two deliberately JSON-valued extension leaves.  Other
-  // scalar types are reconstructed from their canonical XML lexical forms.
-  if (name == "user-context" || name == "parameters") {
+nlohmann::json Scalar(const xmlNode* node, const std::string& value) {
+  const std::string name = LocalName(node);
+  // Kea models carry deliberately JSON-valued string leaves. Other scalar
+  // types are reconstructed from their canonical XML lexical forms.
+  const bool http_header_value = name == "value" && node && node->parent &&
+      LocalName(node->parent) == "http-headers";
+  if (name == "user-context" || name == "parameters" ||
+      name == "dhcp-queue-control" || http_header_value) {
     try {
       return nlohmann::json::parse(value);
     } catch (...) {
       return value;
     }
+  }
+  static const std::set<std::string, std::less<>> decimal_names{
+      "adaptive-lease-time-threshold", "cache-threshold", "ddns-ttl-percent",
+      "t1-percent", "t2-percent"};
+  if (decimal_names.contains(name)) {
+    double decimal = 0.0;
+    const auto [decimal_end, decimal_error] =
+        std::from_chars(value.data(), value.data() + value.size(), decimal);
+    if (decimal_error == std::errc{} &&
+        decimal_end == value.data() + value.size())
+      return decimal;
   }
   if (value == "true") return true;
   if (value == "false") return false;
@@ -126,15 +146,24 @@ nlohmann::json ConvertPool(const xmlNode* node) {
 
 nlohmann::json ConvertNode(const xmlNode* node) {
   const auto children = ElementChildren(node);
-  if (children.empty()) return Scalar(LocalName(node), Text(node));
+  if (children.empty()) return Scalar(node, Text(node));
   // Group siblings before conversion because singleton and repeated YANG
   // nodes require different JSON shapes even when their child syntax matches.
   std::map<std::string, std::vector<const xmlNode*>, std::less<>> grouped;
   for (const xmlNode* child : children) grouped[LocalName(child)].push_back(child);
   nlohmann::json result = nlohmann::json::object();
   for (const auto& [name, values] : grouped) {
-    const std::string json_name = JsonName(name);
-    if (values.size() > 1 || IsList(name) || IsLeafList(name)) {
+    // Several Kea models reuse a name for a list in one context and a scalar
+    // leaf in another (notably host, subnet, and client-class). A list entry
+    // always has element children because its YANG key is mandatory, whereas
+    // a scalar has only text. Use that schema-guaranteed shape to disambiguate
+    // singleton instances without turning the database "host" or subnet
+    // prefix leaves into arrays.
+    const bool list_instance =
+        IsList(name) && !ElementChildren(values.front()).empty();
+    const std::string json_name =
+        name == "host" && list_instance ? "reservations" : JsonName(name);
+    if (values.size() > 1 || list_instance || IsLeafList(name)) {
       nlohmann::json array = nlohmann::json::array();
       for (const xmlNode* value : values)
         array.push_back(name == "pool" ? ConvertPool(value)
