@@ -172,8 +172,11 @@ struct Context {
     sources.push_back({.module_name = "dang-frr-monitoring",
                        .revision = "2026-09-04",
                        .namespace_uri = "urn:dang:plugins:frr:monitoring",
+                       .belongs_to = {},
                        .imports = {},
+                       .includes = {},
                        .enabled_features = {},
+                       .is_submodule = false,
                        .source = kMonitoringModel,
                        .path = {}});
   }

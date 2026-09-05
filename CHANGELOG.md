@@ -9,6 +9,9 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added complete YANG import/include closure handling to FRR schema discovery.
+  Quoted dependencies, submodule `belongs-to` relationships, and nested RFC
+  8525 submodule revisions are validated before a schema set is advertised.
 - Documented installation of FRR from its signed Debian/Ubuntu repository,
   including fixed-series selection, required daemon enablement, package-origin
   checks, mgmtd readiness checks, and upgrade precautions.

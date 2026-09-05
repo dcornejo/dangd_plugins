@@ -18,8 +18,11 @@ struct YangSchema {
   std::string module_name;
   std::string revision;
   std::string namespace_uri;
+  std::string belongs_to;
   std::vector<std::string> imports;
+  std::vector<std::string> includes;
   std::vector<std::string> enabled_features;
+  bool is_submodule = false;
   std::string source;
   std::filesystem::path path;
 };
@@ -41,7 +44,9 @@ struct SchemaInventoryOptions {
 std::optional<std::vector<YangSchema>> DiscoverSchemaInventory(
     const SchemaInventoryOptions& options, std::string* error);
 
-// Returns the transitive import closure for roots, in inventory order.
+// Returns the transitive import/include closure for roots, in inventory order.
+// Included submodules also pull in their owning module so a closure cannot
+// publish a source whose belongs-to contract is absent.
 std::optional<std::vector<std::size_t>> ResolveImportClosure(
     const std::vector<YangSchema>& inventory,
     const std::vector<std::string>& roots, std::string* error);

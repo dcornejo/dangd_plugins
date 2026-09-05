@@ -16,8 +16,8 @@ locations are alternatives and are never overlaid, because mixing native
 schemas from different FRR installations would publish a model set matching
 neither daemon. The selected root's `modules/libyang` directory supplements it
 with standard IETF imports packaged by libyang. The loader resolves a transitive
-import closure and rejects missing imports, duplicate modules, malformed input,
-and size-limit violations.
+import-and-include closure and rejects missing imports or submodules, duplicate
+source names, malformed input, and size-limit violations.
 
 Discovery then opens a short-lived mgmtd session and reads FRR's RFC 8525 YANG
 Library. Enabled `feature` values are copied into dangd's source descriptors,
@@ -29,10 +29,13 @@ supplying a captured library document without a daemon.
 
 The loadable `dangd_frr_plugin` currently implements the `frr-routing`,
 `frr-staticd`, and `frr-zebra` configuration modules. It publishes their exact
-installed import closure and claims ABI-v8 resource domain `routing`, so dangd
-will reject simultaneous use of another routing provider. Staticd augments the
-`frr-routing:routing` root; its nodes are retained inside that atomic edit. The
-separate `frr-zebra:zebra` root participates in the same candidate transaction.
+installed import-and-include closure and claims ABI-v8 resource
+domain `routing`, so dangd will reject simultaneous use of another routing
+provider. Staticd augments the `frr-routing:routing` root; its nodes are
+retained inside that atomic edit. The separate `frr-zebra:zebra` root
+participates in the same candidate transaction. Installed submodules are
+matched to their owning module and revision in FRR's live RFC 8525 library;
+missing or mismatched submodules make discovery fail closed.
 
 The transport foundation encodes FRR's public native frontend session, lock,
 XML edit, validate, apply, abort, and unlock messages without requiring FRR's
@@ -231,7 +234,7 @@ routing milestone with:
 
 ```sh
 ./build/frr-schema-inventory /usr/share/yang \
-  frr-routing frr-zebra frr-staticd
+  frr-routing frr-zebra frr-staticd frr-bgp
 ```
 
 Use `/usr/local/share/yang` on FreeBSD. A missing imported module is a hard

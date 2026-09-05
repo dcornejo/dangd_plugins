@@ -132,6 +132,7 @@ std::optional<YangSchema> Parse(const std::filesystem::path& path,
   }
   YangSchema schema;
   schema.module_name = tokens[1];
+  schema.is_submodule = tokens[0] == "submodule";
   schema.source = std::move(source);
   schema.path = path;
   int depth = 1;
@@ -152,11 +153,19 @@ std::optional<YangSchema> Parse(const std::filesystem::path& path,
       schema.revision = value;
     if (tokens[index] == "namespace" && schema.namespace_uri.empty())
       schema.namespace_uri = value;
-    if (tokens[index] == "import" && !quoted)
-      schema.imports.push_back(tokens[index + 1]);
+    if (tokens[index] == "import")
+      schema.imports.push_back(value);
+    if (tokens[index] == "include")
+      schema.includes.push_back(value);
+    if (tokens[index] == "belongs-to" && schema.belongs_to.empty())
+      schema.belongs_to = value;
   }
   if (depth != 0) {
     if (error) *error = path.string() + ": unbalanced module braces";
+    return std::nullopt;
+  }
+  if (schema.is_submodule && schema.belongs_to.empty()) {
+    if (error) *error = path.string() + ": submodule has no belongs-to statement";
     return std::nullopt;
   }
   return schema;
@@ -261,6 +270,10 @@ std::optional<std::vector<std::size_t>> ResolveImportClosure(
     if (!selected.insert(found->second).second) continue;
     for (const std::string& dependency : inventory[found->second].imports)
       pending.push_back(dependency);
+    for (const std::string& dependency : inventory[found->second].includes)
+      pending.push_back(dependency);
+    if (inventory[found->second].is_submodule)
+      pending.push_back(inventory[found->second].belongs_to);
   }
   return std::vector<std::size_t>(selected.begin(), selected.end());
 }
@@ -306,22 +319,43 @@ bool ApplyRuntimeYangLibrary(std::string_view xml,
   std::vector<std::vector<std::string>> enabled;
   enabled.reserve(schemas->size());
   for (const YangSchema& schema : *schemas) {
-    const auto found = modules.find(schema.module_name);
-    if (found == modules.end()) {
-      if (error) *error = "running FRR omits YANG module " + schema.module_name;
+    const xmlNode* advertised = nullptr;
+    if (schema.is_submodule) {
+      const auto owner = modules.find(schema.belongs_to);
+      if (owner != modules.end())
+        for (const xmlNode* child = owner->second->children; child;
+             child = child->next)
+          if (child->type == XML_ELEMENT_NODE &&
+              std::string_view(reinterpret_cast<const char*>(child->name)) ==
+                  "submodule" &&
+              Text(Child(child, "name")) == schema.module_name) {
+            advertised = child;
+            break;
+          }
+    } else {
+      const auto found = modules.find(schema.module_name);
+      if (found != modules.end()) advertised = found->second;
+    }
+    if (!advertised) {
+      if (error)
+        *error = "running FRR omits YANG " +
+            std::string(schema.is_submodule ? "submodule " : "module ") +
+            schema.module_name;
       return false;
     }
-    const std::string revision = Text(Child(found->second, "revision"));
-    const std::string namespace_uri = Text(Child(found->second, "namespace"));
+    const std::string revision = Text(Child(advertised, "revision"));
+    const std::string namespace_uri = Text(Child(advertised, "namespace"));
     if ((!schema.revision.empty() && revision != schema.revision) ||
-        (!schema.namespace_uri.empty() && namespace_uri != schema.namespace_uri)) {
+        (!schema.is_submodule && !schema.namespace_uri.empty() &&
+         namespace_uri != schema.namespace_uri)) {
       if (error)
-        *error = "installed and running FRR disagree on YANG module " +
-                 schema.module_name;
+        *error = "installed and running FRR disagree on YANG " +
+            std::string(schema.is_submodule ? "submodule " : "module ") +
+            schema.module_name;
       return false;
     }
     std::vector<std::string> features;
-    for (const xmlNode* child = found->second->children; child;
+    for (const xmlNode* child = advertised->children; child;
          child = child->next)
       if (child->type == XML_ELEMENT_NODE &&
           std::string_view(reinterpret_cast<const char*>(child->name)) ==
