@@ -13,8 +13,10 @@
 #include "kea_adapter.h"
 #include "kea_model_sources.h"
 
+#include <array>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <new>
 #include <optional>
 #include <string>
@@ -27,6 +29,8 @@ namespace {
 using dang::plugins::kea::CommandSucceeded;
 using dang::plugins::kea::CollectHostPages;
 using dang::plugins::kea::CollectLeasePages;
+using dang::plugins::kea::CollectStatistics;
+using dang::plugins::kea::ExtractSubnetIds;
 using dang::plugins::kea::SendControlCommand;
 using dang::plugins::kea::SendControlQuery;
 using dang::plugins::kea::ServerConfiguration;
@@ -43,6 +47,27 @@ struct Prepared {
 thread_local std::string callback_error;
 thread_local std::string callback_path;
 thread_local std::string operational_xml;
+
+// Statistics must describe only configuration that actually reached Kea.
+// Preparing or validating a candidate therefore cannot alter this inventory;
+// successful apply and rollback callbacks are its only writers.
+std::mutex subnet_inventory_mutex;
+std::array<std::vector<std::uint32_t>, 2> accepted_subnet_ids;
+
+void RememberAcceptedSubnets(
+    const std::vector<ServerConfiguration>& configurations) {
+  std::array<std::vector<std::uint32_t>, 2> next;
+  for (std::size_t index = 0; index < configurations.size() && index < next.size();
+       ++index)
+    next[index] = ExtractSubnetIds(configurations[index]);
+  std::lock_guard lock(subnet_inventory_mutex);
+  accepted_subnet_ids = std::move(next);
+}
+
+std::array<std::vector<std::uint32_t>, 2> AcceptedSubnetSnapshot() {
+  std::lock_guard lock(subnet_inventory_mutex);
+  return accepted_subnet_ids;
+}
 
 void SetError(DangPluginErrorV1* error, std::string message,
               std::string path = {}) {
@@ -195,6 +220,7 @@ int ApplyConfiguration(void*, void* opaque, DangPluginErrorV1* error) {
                  "}config");
     return 0;
   }
+  RememberAcceptedSubnets(prepared->proposed);
   return 1;
 }
 
@@ -212,7 +238,10 @@ int RollbackConfiguration(void*, void* opaque, DangPluginErrorV1* error) {
       failures += (failures.empty() ? "" : "; ") + server->module_name +
           ": " + reason;
   }
-  if (failures.empty()) return 1;
+  if (failures.empty()) {
+    RememberAcceptedSubnets(prepared->before);
+    return 1;
+  }
   SetError(error, failures);
   return 0;
 }
@@ -233,9 +262,11 @@ int Operational(void*, DangOperationalDataV1* result,
   }
   operational_xml =
       "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">";
-  for (const auto& [module, socket, dhcp6, statistic_command] : {
-           std::tuple{"kea-dhcp4-server", socket4, false, "stat-lease4-get"},
-           std::tuple{"kea-dhcp6-server", socket6, true, "stat-lease6-get"}}) {
+  const auto subnet_ids = AcceptedSubnetSnapshot();
+  std::size_t server_index = 0;
+  for (const auto& [module, socket, dhcp6] : {
+           std::tuple{"kea-dhcp4-server", socket4, false},
+           std::tuple{"kea-dhcp6-server", socket6, true}}) {
     std::string reason;
     auto leases = CollectLeasePages(socket, dhcp6, SendControlQuery, &reason);
     if (!leases) {
@@ -244,8 +275,9 @@ int Operational(void*, DangOperationalDataV1* result,
                    "}state/leases");
       return 0;
     }
-    auto statistics =
-        SendControlQuery(socket, statistic_command, nullptr, &reason);
+    auto statistics = CollectStatistics(socket, dhcp6,
+                                        subnet_ids[server_index],
+                                        SendControlQuery, &reason);
     if (!statistics) {
       SetError(error, module + std::string(": ") + reason,
                "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +
@@ -268,6 +300,7 @@ int Operational(void*, DangOperationalDataV1* result,
       return 0;
     }
     operational_xml += *state;
+    ++server_index;
   }
   operational_xml += "</data>";
   result->data_xml = operational_xml.c_str();

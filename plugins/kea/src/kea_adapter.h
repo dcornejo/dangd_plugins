@@ -6,10 +6,12 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -67,6 +69,16 @@ using ControlQuery = std::function<std::optional<nlohmann::json>(
 /** Retrieves all host reservations using Kea's source-index/host-id cursor. */
 [[nodiscard]] std::optional<nlohmann::json> CollectHostPages(
     std::string_view socket_path, const ControlQuery& query,
+    std::string* error, const PageLimits& limits = {});
+
+/** Returns the unique subnet IDs present in one translated configuration. */
+[[nodiscard]] std::vector<std::uint32_t> ExtractSubnetIds(
+    const ServerConfiguration& server);
+
+/** Queries supplemental statistics once per accepted subnet under total limits. */
+[[nodiscard]] std::optional<nlohmann::json> CollectStatistics(
+    std::string_view socket_path, bool dhcp6,
+    const std::vector<std::uint32_t>& subnet_ids, const ControlQuery& query,
     std::string* error, const PageLimits& limits = {});
 
 /** Converts native lease and supplemental-statistic replies to modeled XML. */

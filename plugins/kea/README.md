@@ -84,10 +84,14 @@ native lease data, and enumeration lasting more than 30 seconds. Each individual
 control exchange retains its five-second and 16 MiB limits.
 
 Host reservations use Kea's `reservation-get-page` continuation map and the
-same aggregate safeguards as leases. The supplemental statistics command can
-still produce a large single reply when a server has many subnets. Completing
-the provider requires bounded statistics ranges and full-schema conformance and
-interoperability coverage. The pinned modules declare no notification surface.
+same aggregate safeguards as leases. Supplemental statistics are queried once
+per exact subnet ID in the last successfully applied configuration, so Kea
+cannot return an unbounded all-subnet result. The provider combines those
+results under the same 512-query, 65,536-row, 8 MiB, and 30-second aggregate
+limits. Candidate validation does not change that inventory; successful apply
+and rollback callbacks update it atomically. Completing the provider still
+requires full-schema conformance and interoperability coverage. The pinned
+modules declare no notification surface.
 
 The plugin deliberately uses ABI v1's transaction-wide action. This preserves
 atomic compensation across Kea's own complete-configuration `config-set`

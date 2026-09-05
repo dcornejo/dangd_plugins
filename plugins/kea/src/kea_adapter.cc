@@ -18,11 +18,13 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <charconv>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <map>
 #include <set>
 #include <stdexcept>
@@ -568,6 +570,34 @@ std::optional<std::string> BuildHosts(const nlohmann::json& response,
   return xml + "</hosts>";
 }
 
+void FindSubnetIds(const nlohmann::json& value, std::string_view list_name,
+                   std::vector<std::uint32_t>* result) {
+  if (value.is_array()) {
+    for (const auto& child : value) FindSubnetIds(child, list_name, result);
+    return;
+  }
+  if (!value.is_object()) return;
+  for (const auto& [name, child] : value.items()) {
+    if (name == list_name && child.is_array()) {
+      for (const auto& subnet : child) {
+        if (!subnet.is_object() || !subnet.contains("id")) continue;
+        const auto& id = subnet.at("id");
+        if (id.is_number_unsigned()) {
+          const auto unsigned_id = id.get<std::uint64_t>();
+          if (unsigned_id <= std::numeric_limits<std::uint32_t>::max())
+            result->push_back(static_cast<std::uint32_t>(unsigned_id));
+        } else if (id.is_number_integer()) {
+          const auto signed_id = id.get<std::int64_t>();
+          if (signed_id >= 0 && static_cast<std::uint64_t>(signed_id) <=
+                                    std::numeric_limits<std::uint32_t>::max())
+            result->push_back(static_cast<std::uint32_t>(signed_id));
+        }
+      }
+    }
+    FindSubnetIds(child, list_name, result);
+  }
+}
+
 }  // namespace
 
 std::optional<ServerConfiguration> TranslateConfiguration(
@@ -860,6 +890,87 @@ std::optional<nlohmann::json> CollectHostPages(
   }
   if (error) *error = "Kea host enumeration exceeds the page limit";
   return std::nullopt;
+}
+
+std::vector<std::uint32_t> ExtractSubnetIds(
+    const ServerConfiguration& server) {
+  std::vector<std::uint32_t> result;
+  const std::string list_name =
+      server.module_name == "kea-dhcp6-server" ? "subnet6" : "subnet4";
+  FindSubnetIds(server.arguments, list_name, &result);
+  std::sort(result.begin(), result.end());
+  result.erase(std::unique(result.begin(), result.end()), result.end());
+  return result;
+}
+
+std::optional<nlohmann::json> CollectStatistics(
+    std::string_view socket_path, bool dhcp6,
+    const std::vector<std::uint32_t>& subnet_ids, const ControlQuery& query,
+    std::string* error, const PageLimits& limits) {
+  if (!query || limits.maximum_pages == 0 || limits.maximum_items == 0 ||
+      limits.maximum_bytes == 0 ||
+      limits.maximum_duration <= std::chrono::milliseconds::zero()) {
+    if (error) *error = "invalid Kea statistics collection configuration";
+    return std::nullopt;
+  }
+  if (subnet_ids.size() > limits.maximum_pages) {
+    if (error) *error = "Kea statistics collection exceeds the query limit";
+    return std::nullopt;
+  }
+  const std::string command = dhcp6 ? "stat-lease6-get" : "stat-lease4-get";
+  const auto deadline = std::chrono::steady_clock::now() + limits.maximum_duration;
+  nlohmann::json columns;
+  nlohmann::json rows = nlohmann::json::array();
+  std::size_t collected_bytes = 0;
+  for (const std::uint32_t subnet_id : subnet_ids) {
+    if (std::chrono::steady_clock::now() >= deadline) {
+      if (error) *error = "Kea statistics collection exceeded its deadline";
+      return std::nullopt;
+    }
+    auto response = query(socket_path, command,
+                          nlohmann::json{{"subnet-id", subnet_id}}, error);
+    if (!response) return std::nullopt;
+    const nlohmann::json* answer = Answer(*response);
+    if (!answer || !answer->contains("result") ||
+        !answer->at("result").is_number_integer()) {
+      if (error) *error = "Kea statistics reply omits an integer result";
+      return std::nullopt;
+    }
+    const int status = answer->at("result").get<int>();
+    if (status == 3) continue;
+    if (status != 0) {
+      if (error) *error = answer->value("text", "Kea rejected statistics query");
+      return std::nullopt;
+    }
+    try {
+      const auto& set = answer->at("arguments").at("result-set");
+      const auto& response_columns = set.at("columns");
+      const auto& response_rows = set.at("rows");
+      if (!response_columns.is_array() || !response_rows.is_array())
+        throw std::runtime_error("columns or rows are not arrays");
+      if (columns.is_null()) columns = response_columns;
+      if (columns != response_columns)
+        throw std::runtime_error("columns changed between subnet queries");
+      if (rows.size() + response_rows.size() > limits.maximum_items)
+        throw std::runtime_error("row limit exceeded");
+      for (const auto& row : response_rows) {
+        const std::string encoded = row.dump();
+        if (encoded.size() > limits.maximum_bytes - collected_bytes)
+          throw std::runtime_error("byte limit exceeded");
+        collected_bytes += encoded.size();
+        rows.push_back(row);
+      }
+    } catch (const std::exception& exception) {
+      if (error)
+        *error = std::string("invalid Kea statistics reply: ") + exception.what();
+      return std::nullopt;
+    }
+  }
+  if (columns.is_null())
+    return std::optional<nlohmann::json>(nlohmann::json{{"result", 3}});
+  return std::optional<nlohmann::json>(nlohmann::json{
+      {"result", 0},
+      {"arguments", {{"result-set", {{"columns", columns}, {"rows", rows}}}}}});
 }
 
 std::optional<std::string> TranslateOperationalState(

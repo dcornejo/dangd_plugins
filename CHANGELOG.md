@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Bounded Kea supplemental statistics by querying each exact subnet ID from
+  the last successfully applied configuration and enforcing aggregate query,
+  row, byte, and duration limits. Candidate validation cannot leak uncommitted
+  subnet state into operational replies, and successful rollback restores the
+  retained before-image inventory.
 - Added paged DHCPv4/DHCPv6 host-reservation state through Kea's native
   `reservation-get-page` continuation map. Host identifiers and modeled address,
   prefix, class, and context fields are translated under the same page, item,

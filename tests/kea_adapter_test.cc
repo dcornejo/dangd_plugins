@@ -100,6 +100,12 @@ int main() {
                  "singleton excluded-prefix leaf-list is not an array");
   valid &= Check(six.at("relay-supplied-options").is_array(),
                  "singleton relay option leaf-list is not an array");
+  valid &= Check(dang::plugins::kea::ExtractSubnetIds(*dhcp4) ==
+                     std::vector<std::uint32_t>{4},
+                 "DHCPv4 subnet IDs were not extracted from translated JSON");
+  valid &= Check(dang::plugins::kea::ExtractSubnetIds(*dhcp6) ==
+                     std::vector<std::uint32_t>{6},
+                 "DHCPv6 subnet IDs were not extracted from translated JSON");
   const nlohmann::json leases4 = nlohmann::json::parse(R"json({
     "result": 0, "arguments": {"leases": [{
       "ip-address": "192.0.2.44", "hw-address": "00:01:02:03:04:05",
@@ -299,5 +305,51 @@ int main() {
                      host_requests[1].at("arguments").at("from") == 42 &&
                      host_requests[1].at("arguments").at("source-index") == 1,
                  "host paging did not carry Kea's continuation map forward");
+
+  std::vector<nlohmann::json> statistic_requests;
+  const dang::plugins::kea::ControlQuery statistics =
+      [&](std::string_view, std::string_view command,
+          const nlohmann::json& arguments,
+          std::string*) -> std::optional<nlohmann::json> {
+    statistic_requests.push_back(
+        {{"command", command}, {"arguments", arguments}});
+    const auto id = arguments.at("subnet-id");
+    nlohmann::json response{
+        {"result", 0},
+        {"arguments", {{"result-set",
+                         {{"columns", {"subnet-id", "total-addresses"}},
+                          {"rows", nlohmann::json::array({{id, 32}})}}}}}};
+    return std::optional<nlohmann::json>(std::move(response));
+  };
+  error.clear();
+  auto collected_statistics = dang::plugins::kea::CollectStatistics(
+      "/tmp/kea4.sock", false, {4, 9}, statistics, &error,
+      {.page_size = 1,
+       .maximum_pages = 2,
+       .maximum_items = 2,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(collected_statistics &&
+                     collected_statistics->at("arguments")
+                             .at("result-set").at("rows").size() == 2,
+                 "per-subnet statistics were not combined");
+  valid &= Check(statistic_requests.size() == 2 &&
+                     statistic_requests[0].at("command") ==
+                         "stat-lease4-get" &&
+                     statistic_requests[0].at("arguments").at("subnet-id") == 4 &&
+                     statistic_requests[1].at("arguments").at("subnet-id") == 9,
+                 "statistics queries did not use exact configured subnet IDs");
+
+  error.clear();
+  auto excessive_statistics = dang::plugins::kea::CollectStatistics(
+      "/tmp/kea4.sock", false, {4, 9}, statistics, &error,
+      {.page_size = 1,
+       .maximum_pages = 1,
+       .maximum_items = 2,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(!excessive_statistics &&
+                     error.find("query limit") != std::string::npos,
+                 "the aggregate statistics query limit was not enforced");
   return valid ? 0 : 1;
 }
