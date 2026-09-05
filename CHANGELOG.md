@@ -9,6 +9,9 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Documented installation of FRR from its signed Debian/Ubuntu repository,
+  including fixed-series selection, required daemon enablement, package-origin
+  checks, mgmtd readiness checks, and upgrade precautions.
 - Added the loadable ABI-v7 RFC 8431 provider for the portable destination-route
   slice. It publishes pinned models, claims exclusive `routing` ownership,
   validates deltas, and applies or reverses them as one compensated action.

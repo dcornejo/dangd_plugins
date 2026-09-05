@@ -109,7 +109,64 @@ different monitoring interval is operationally justified.
 
 ## Installation and configuration
 
-Install FRR with `mgmtd`, zebra, and staticd enabled. Build and stage the plugin:
+### Installing FRR on Debian and Ubuntu
+
+Use FRR's official Debian package repository at
+<https://deb.frrouting.org/>. The following procedure installs the repository
+signing key in a dedicated keyring and selects the FRR 10.7 release series. A
+fixed series is recommended for dangd deployments because it receives updates
+within that series without unexpectedly crossing a major-version boundary.
+
+```sh
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl
+curl -fsSL https://deb.frrouting.org/frr/keys.gpg \
+  | sudo tee /usr/share/keyrings/frrouting.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/frrouting.gpg] https://deb.frrouting.org/frr $(. /etc/os-release && echo \"$VERSION_CODENAME\") frr-10.7" \
+  | sudo tee /etc/apt/sources.list.d/frr.list >/dev/null
+sudo apt-get update
+sudo apt-get install -y frr frr-pythontools
+```
+
+FRR also publishes the moving `frr-stable` channel. Replace `frr-10.7` in the
+repository line with `frr-stable` only when automatically moving to a newer
+stable FRR series is acceptable. Consult the repository page for the currently
+supported Debian and Ubuntu releases and FRR series rather than substituting an
+unrelated distribution codename.
+
+Enable the daemons required by this plugin in `/etc/frr/daemons`:
+
+```text
+zebra=yes
+mgmtd=yes
+staticd=yes
+```
+
+Then restart FRR and verify that the installed package comes from the FRR
+repository, the service is running, and mgmtd has created its frontend socket:
+
+```sh
+sudo systemctl restart frr
+apt-cache policy frr
+systemctl is-active frr
+sudo vtysh -c 'show mgmt backend-adapter all'
+sudo test -S /run/frr/mgmtd_fe.sock
+```
+
+The policy output should identify `https://deb.frrouting.org/frr` as the source
+of the installed and candidate version. The backend-adapter output should list
+at least `mgmtd`, `zebra`, and `staticd`. Debian-family packages also make the
+socket available through the compatible `/var/run/frr/mgmtd_fe.sock` path.
+
+Before changing repository series or upgrading an existing FRR deployment,
+back up `/etc/frr` and review FRR's release notes. Package installation normally
+preserves locally modified configuration, but the daemon restart activates the
+new binaries and should be scheduled like any routing-service maintenance.
+
+### Installing the dangd plugin
+
+With FRR installed and `mgmtd`, zebra, and staticd enabled, build and stage the
+plugin:
 
 ```sh
 cmake -S . -B build -DDANGD_ROOT=/path/to/dang
