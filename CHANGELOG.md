@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Adopted the existing ABI-v4 RFC 8343/8344 IP-management provider from dangd,
+  including its direct Linux rtnetlink and FreeBSD ioctl/route-netlink
+  backends, pinned `ietf-ip` model, parser and native tests, documentation, and
+  independent Debian/FreeBSD package component. The plugin name and ABI remain
+  unchanged.
 - Added complete YANG import/include closure handling to FRR schema discovery.
   Quoted dependencies, submodule `belongs-to` relationships, and nested RFC
   8525 submodule revisions are validated before a schema set is advertised.

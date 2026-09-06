@@ -11,7 +11,7 @@ set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_STRIP_FILES OFF)
 set(CPACK_COMPONENTS_GROUPING IGNORE)
-set(CPACK_COMPONENTS_ALL example kea system pam frr rib docs)
+set(CPACK_COMPONENTS_ALL example kea ip-management system pam frr rib docs)
 
 set(CPACK_COMPONENT_EXAMPLE_DISPLAY_NAME "dangd example plugin")
 set(CPACK_COMPONENT_EXAMPLE_DESCRIPTION
@@ -19,6 +19,9 @@ set(CPACK_COMPONENT_EXAMPLE_DESCRIPTION
 set(CPACK_COMPONENT_KEA_DISPLAY_NAME "dangd Kea DHCP plugin")
 set(CPACK_COMPONENT_KEA_DESCRIPTION
   "Kea DHCPv4 and DHCPv6 configuration plugin for dangd")
+set(CPACK_COMPONENT_IP-MANAGEMENT_DISPLAY_NAME "dangd IP-management plugin")
+set(CPACK_COMPONENT_IP-MANAGEMENT_DESCRIPTION
+  "RFC 8343 interface and RFC 8344 IP management provider for dangd")
 set(CPACK_COMPONENT_SYSTEM_DISPLAY_NAME "dangd RFC 7317 system plugin")
 set(CPACK_COMPONENT_SYSTEM_DESCRIPTION
   "RFC 7317 system management and authentication provider for dangd")
@@ -47,6 +50,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(CPACK_DEBIAN_PACKAGE_DEPENDS "dangd (>= ${PROJECT_VERSION})")
   set(CPACK_DEBIAN_EXAMPLE_PACKAGE_NAME "dangd-plugin-example")
   set(CPACK_DEBIAN_KEA_PACKAGE_NAME "dangd-plugin-kea")
+  set(CPACK_DEBIAN_IP-MANAGEMENT_PACKAGE_NAME "dangd-plugin-ip-management")
   set(CPACK_DEBIAN_SYSTEM_PACKAGE_NAME "dangd-plugin-system")
   set(CPACK_DEBIAN_PAM_PACKAGE_NAME "dangd-pam")
   set(CPACK_DEBIAN_RIB_PACKAGE_NAME "dangd-plugin-rib")
@@ -75,7 +79,7 @@ include(CPack)
 # component mode.  Emit a complete CPack configuration for each install
 # component so native builders can create the same package split as Debian.
 if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
-  set(DANG_FREEBSD_PACKAGE_COMPONENTS example kea system pam frr rib docs)
+  set(DANG_FREEBSD_PACKAGE_COMPONENTS example kea ip-management system pam frr rib docs)
   foreach(DANG_PACKAGE_COMPONENT IN LISTS DANG_FREEBSD_PACKAGE_COMPONENTS)
     if(DANG_PACKAGE_COMPONENT STREQUAL "example")
       set(DANG_FREEBSD_PACKAGE_NAME "dangd-plugin-example")
@@ -84,6 +88,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
       set(DANG_FREEBSD_PACKAGE_NAME "dangd-plugin-kea")
       set(DANG_FREEBSD_PACKAGE_DEPS
         "net-mgmt/dangd;textproc/libxml2;devel/nlohmann-json")
+    elseif(DANG_PACKAGE_COMPONENT STREQUAL "ip-management")
+      set(DANG_FREEBSD_PACKAGE_NAME "dangd-plugin-ip-management")
+      set(DANG_FREEBSD_PACKAGE_DEPS
+        "net-mgmt/dangd;devel/nlohmann-json;textproc/pugixml")
     elseif(DANG_PACKAGE_COMPONENT STREQUAL "system")
       set(DANG_FREEBSD_PACKAGE_NAME "dangd-plugin-system")
       set(DANG_FREEBSD_PACKAGE_DEPS "net-mgmt/dangd;textproc/libxml2")

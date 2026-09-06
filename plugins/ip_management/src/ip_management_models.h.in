@@ -1,0 +1,21 @@
+// Copyright 2026 David Cornejo
+// SPDX-License-Identifier: Apache-2.0
+
+#ifndef DANGD_PLUGINS_IP_MANAGEMENT_MODELS_H_
+#define DANGD_PLUGINS_IP_MANAGEMENT_MODELS_H_
+
+#include <string_view>
+
+namespace dangd::ip_management {
+
+inline constexpr std::string_view kIetfInterfacesYang = R"DANG_MODEL(
+@DANGD_IETF_INTERFACES_YANG@
+)DANG_MODEL";
+
+inline constexpr std::string_view kIetfIpYang = R"DANG_MODEL(
+@DANGD_IETF_IP_YANG@
+)DANG_MODEL";
+
+}  // namespace dangd::ip_management
+
+#endif  // DANGD_PLUGINS_IP_MANAGEMENT_MODELS_H_

@@ -12,6 +12,7 @@ option(DANG_FRR_NATIVE_TESTS
 include(CTest)
 find_package(LibXml2 REQUIRED)
 find_package(nlohmann_json 3.11 REQUIRED)
+find_package(pugixml REQUIRED)
 find_package(Threads REQUIRED)
 
 add_executable(frr-schema-inventory
@@ -89,6 +90,34 @@ file(READ plugins/rib/models/ietf-i2rs-rib@2018-09-13.yang IETF_I2RS_RIB_YANG)
 file(READ plugins/rib/models/ietf-interfaces@2018-02-20.yang IETF_INTERFACES_YANG)
 configure_file(plugins/rib/src/rib_model_sources.h.in
   generated/rib_model_sources.h @ONLY)
+
+file(READ plugins/rib/models/ietf-interfaces@2018-02-20.yang
+  DANGD_IETF_INTERFACES_YANG)
+file(READ plugins/ip_management/models/ietf-ip@2018-02-22.yang
+  DANGD_IETF_IP_YANG)
+configure_file(plugins/ip_management/src/ip_management_models.h.in
+  generated/ip_management_models.h @ONLY)
+
+set(DANG_IP_PLATFORM_SOURCE
+  plugins/ip_management/src/unsupported/backend.cc)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set(DANG_IP_PLATFORM_SOURCE plugins/ip_management/src/linux/backend.cc)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+  set(DANG_IP_PLATFORM_SOURCE plugins/ip_management/src/freebsd/backend.cc)
+endif()
+add_library(dangd_ip_management_plugin MODULE
+  plugins/ip_management/src/ip_management_plugin.cc
+  plugins/ip_management/src/platform_config.cc
+  ${DANG_IP_PLATFORM_SOURCE})
+target_compile_features(dangd_ip_management_plugin PRIVATE cxx_std_20)
+target_include_directories(dangd_ip_management_plugin PRIVATE
+  "${DANGD_INCLUDE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/generated"
+  "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(dangd_ip_management_plugin PRIVATE
+  nlohmann_json::nlohmann_json pugixml::pugixml)
+target_compile_options(dangd_ip_management_plugin PRIVATE
+  -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+set_target_properties(dangd_ip_management_plugin PROPERTIES PREFIX "")
 
 file(READ plugins/system/models/ietf-system@2014-08-06.yang IETF_SYSTEM_YANG)
 file(READ plugins/system/models/iana-crypt-hash@2014-08-06.yang
@@ -191,6 +220,42 @@ if(BUILD_TESTING)
   add_test(NAME kea_plugin_discovery
     COMMAND plugin_loader_smoke_test $<TARGET_FILE:dangd_kea_plugin>
       dang-kea kea-types)
+  add_test(NAME ip_management_plugin_discovery
+    COMMAND plugin_loader_smoke_test $<TARGET_FILE:dangd_ip_management_plugin>
+      dangd-ip-management ietf-ip)
+
+  add_executable(ip_management_platform_test
+    tests/ip_management_platform_test.cc
+    plugins/ip_management/src/platform_config.cc)
+  target_compile_features(ip_management_platform_test PRIVATE cxx_std_20)
+  target_include_directories(ip_management_platform_test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(ip_management_platform_test PRIVATE
+    GTest::gtest_main pugixml::pugixml)
+  target_compile_options(ip_management_platform_test PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME ip_management_configuration_parser
+    COMMAND ip_management_platform_test)
+
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(ip_management_native_test tests/linux_ip_backend_test.cc
+      plugins/ip_management/src/linux/backend.cc
+      plugins/ip_management/src/platform_config.cc)
+  elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+    add_executable(ip_management_native_test tests/freebsd_ip_backend_test.cc
+      plugins/ip_management/src/freebsd/backend.cc
+      plugins/ip_management/src/platform_config.cc)
+  endif()
+  if(TARGET ip_management_native_test)
+    target_compile_features(ip_management_native_test PRIVATE cxx_std_20)
+    target_include_directories(ip_management_native_test PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(ip_management_native_test PRIVATE
+      GTest::gtest_main pugixml::pugixml)
+    target_compile_options(ip_management_native_test PRIVATE
+      -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    add_test(NAME ip_management_native_backend COMMAND ip_management_native_test)
+  endif()
 
   if(TARGET dangd_rib_plugin)
     add_executable(rib_plugin_contract_test tests/rib_plugin_contract_test.cc)
@@ -419,6 +484,9 @@ install(TARGETS dangd_example_external_plugin
 install(TARGETS dangd_kea_plugin
   LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/dangd/plugins"
   COMPONENT kea)
+install(TARGETS dangd_ip_management_plugin
+  LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/dangd/plugins"
+  COMPONENT ip-management)
 install(TARGETS dangd_frr_plugin
   LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/dangd/plugins"
   COMPONENT frr)
@@ -445,6 +513,14 @@ install(FILES
   plugins/rib/models/ietf-interfaces@2018-02-20.yang
   DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules"
   COMPONENT rib)
+install(FILES
+  plugins/rib/models/ietf-interfaces@2018-02-20.yang
+  plugins/ip_management/models/ietf-ip@2018-02-22.yang
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules"
+  COMPONENT ip-management)
+install(FILES plugins/ip_management/README.md
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/dangd-plugins"
+  RENAME IP-MANAGEMENT.md COMPONENT ip-management)
 if(TARGET dangd_rib_plugin)
   install(TARGETS dangd_rib_plugin
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/dangd/plugins"
