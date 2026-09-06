@@ -120,8 +120,10 @@ resolve `nexthop-ref` against the
 containing RIB and fail closed for absent or cross-RIB identifiers. Reference
 lifetime is enforced for prepared and active datastore configurations, and
 `nh-delete` reports a modeled failure while such a route retains the object.
-Imperative route RPC bindings do not yet retain their referenced objects, so
-reusable-nexthop semantics are not yet compliant.
+Imperative `route-add` and `route-update` operations retain the same bindings;
+successful `route-delete` and `rib-delete` release them. Registry persistence
+and operational publication remain before reusable-nexthop semantics are
+compliant.
 
 Numeric names are an intentional temporary variance: RFC 8431 RIB names are
 arbitrary strings, while Linux policy tables and FreeBSD FIBs need an explicit

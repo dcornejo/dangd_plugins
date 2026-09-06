@@ -193,6 +193,48 @@ void NexthopRegistry::Release(const std::string& rib, std::uint32_t id) {
   if (--found->second == 0) references_.erase(found);
 }
 
+void NexthopRegistry::BindRoute(
+    const Route& route, std::optional<std::uint32_t> reserved_reference) {
+  std::lock_guard lock(mutex_);
+  const auto route_key = std::make_tuple(route.rib, route.address_family,
+                                         route.destination);
+  const auto old = route_references_.find(route_key);
+  if (old != route_references_.end()) {
+    const auto reference_key = std::make_pair(route.rib, old->second);
+    const auto count = references_.find(reference_key);
+    if (count != references_.end() && --count->second == 0)
+      references_.erase(count);
+    route_references_.erase(old);
+  }
+  if (reserved_reference)
+    route_references_.emplace(route_key, *reserved_reference);
+}
+
+void NexthopRegistry::ForgetRoute(const Route& route) {
+  BindRoute(route, std::nullopt);
+}
+
+void NexthopRegistry::ForgetRib(const std::string& rib) {
+  std::lock_guard lock(mutex_);
+  for (auto route = route_references_.begin(); route != route_references_.end();) {
+    if (std::get<0>(route->first) != rib) { ++route; continue; }
+    const auto key = std::make_pair(rib, route->second);
+    const auto count = references_.find(key);
+    if (count != references_.end() && --count->second == 0)
+      references_.erase(count);
+    route = route_references_.erase(route);
+  }
+}
+
+std::optional<std::uint32_t> NexthopRegistry::RouteReference(
+    const Route& route) {
+  std::lock_guard lock(mutex_);
+  const auto found = route_references_.find(
+      std::make_tuple(route.rib, route.address_family, route.destination));
+  return found == route_references_.end()
+             ? std::nullopt : std::optional<std::uint32_t>(found->second);
+}
+
 bool NexthopRegistry::Resolve(const std::string& rib, std::uint32_t id,
                               std::optional<std::string>* gateway,
                               std::optional<std::string>* interface) {
@@ -208,7 +250,8 @@ bool NexthopRegistry::Resolve(const std::string& rib, std::uint32_t id,
 bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
                     std::string* output_xml, std::string* error,
                     std::string* error_path, const CommandRunner& runner,
-                    const NexthopResolver& resolver) {
+                    const NexthopResolver& resolver,
+                    NexthopRegistry* registry) {
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "route-add.xml", nullptr,
@@ -267,10 +310,21 @@ bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
       failed.emplace_back(index, 3U);
       continue;
     }
+    Route route = config.routes.front();
+    if (route.nexthop_ref &&
+        (!registry || !registry->Retain(route.rib, *route.nexthop_ref))) {
+      failed.emplace_back(index, 2U); continue;
+    }
     ExecutionResult result = ExecuteChanges(
-        platform, {{ChangeKind::kInstall, config.routes.front()}}, runner);
-    if (result.ok) ++success;
-    else failed.emplace_back(index, 0U);
+        platform, {{ChangeKind::kInstall, route}}, runner);
+    if (result.ok) {
+      if (registry) registry->BindRoute(route, route.nexthop_ref);
+      ++success;
+    } else {
+      if (route.nexthop_ref)
+        registry->Release(route.rib, *route.nexthop_ref);
+      failed.emplace_back(index, 0U);
+    }
   }
   *output_xml = Output(success, failed, details);
   return true;
@@ -279,7 +333,8 @@ bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
 bool InvokeRouteDelete(NativePlatform platform, const char* input_xml,
                        std::string* output_xml, std::string* error,
                        std::string* error_path, const CommandRunner& runner,
-                       const RouteObserver& supplied_observer) {
+                       const RouteObserver& supplied_observer,
+                       NexthopRegistry* registry) {
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "route-delete.xml", nullptr,
@@ -334,8 +389,11 @@ bool InvokeRouteDelete(NativePlatform platform, const char* input_xml,
     Route route = matches.front()->route;
     route.index = index;
     const ExecutionResult result = ExecuteChanges(
-        platform, {{ChangeKind::kDelete, std::move(route)}}, runner);
-    if (result.ok) ++success;
+        platform, {{ChangeKind::kDelete, route}}, runner);
+    if (result.ok) {
+      if (registry) registry->ForgetRoute(route);
+      ++success;
+    }
     else failed.emplace_back(index, 0U);
   }
   *output_xml = Output(success, failed, details);
@@ -346,7 +404,8 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
                        std::string* output_xml, std::string* error,
                        std::string* error_path, const CommandRunner& runner,
                        const RouteObserver& observer,
-                       const NexthopResolver& resolver) {
+                       const NexthopResolver& resolver,
+                       NexthopRegistry* registry) {
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "route-update.xml", nullptr,
@@ -398,6 +457,8 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
     if (matches.size() != 1U) { failed.emplace_back(index, 0U); continue; }
     Route replacement = matches.front()->route;
     replacement.index = index;
+    if (registry)
+      replacement.nexthop_ref = registry->RouteReference(replacement);
     if (xmlNodePtr updated = Child(node, "updated-nexthop")) {
       xmlNodePtr base = Child(updated, "nexthop-base");
       if (!base) { failed.emplace_back(index, 3U); continue; }
@@ -419,6 +480,9 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
           failed.emplace_back(index, 2U);
           continue;
         }
+        replacement.nexthop_ref = id;
+      } else {
+        replacement.nexthop_ref.reset();
       }
       if (replacement.gateway->empty()) replacement.gateway.reset();
       if (replacement.interface->empty()) replacement.interface.reset();
@@ -440,11 +504,21 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
       failed.emplace_back(index, 3U); continue;
     }
     const Route original = matches.front()->route;
+    if (replacement.nexthop_ref &&
+        (!registry || !registry->Retain(rib_name, *replacement.nexthop_ref))) {
+      failed.emplace_back(index, 2U); continue;
+    }
     const ExecutionResult result = ExecuteChanges(
         platform, {{ChangeKind::kDelete, original},
                    {ChangeKind::kInstall, replacement}}, runner);
-    if (result.ok) ++success;
-    else failed.emplace_back(index, 0U);
+    if (result.ok) {
+      if (registry) registry->BindRoute(replacement, replacement.nexthop_ref);
+      ++success;
+    } else {
+      if (replacement.nexthop_ref)
+        registry->Release(rib_name, *replacement.nexthop_ref);
+      failed.emplace_back(index, 0U);
+    }
   }
   *output_xml = Output(success, failed, details);
   return true;
@@ -490,7 +564,8 @@ bool InvokeRibAdd(NativePlatform platform, const char* input_xml,
 bool InvokeRibDelete(NativePlatform platform, const char* input_xml,
                      std::string* output_xml, std::string* error,
                      std::string* error_path, const CommandRunner& runner,
-                     const RouteObserver& observer) {
+                     const RouteObserver& observer,
+                     NexthopRegistry* registry) {
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "rib-delete.xml", nullptr,
@@ -530,6 +605,7 @@ bool InvokeRibDelete(NativePlatform platform, const char* input_xml,
     return true;
   }
   *output_xml = BooleanOutput(true);
+  if (registry) registry->ForgetRib(name);
   return true;
 }
 

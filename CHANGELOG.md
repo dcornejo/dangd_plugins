@@ -25,6 +25,10 @@ All notable changes to the external dangd plugin collection are recorded here.
   datastore-managed nexthops. `nh-delete` now fails closed while a prepared or
   committed route retains the requested RIB/identifier pair, including across
   apply and rollback transitions.
+- Extended reference lifetime enforcement to imperative route RPCs. Successful
+  add/update binds the route key to its retained nexthop, delete/RIB deletion
+  releases bindings, failed native mutations release reservations, and a new
+  lifecycle test caught and fixed moved-from route-key cleanup.
 
 - Adopted the existing ABI-v4 RFC 8343/8344 IP-management provider from dangd,
   including its direct Linux rtnetlink and FreeBSD ioctl/route-netlink

@@ -341,7 +341,7 @@ TEST(RibConfigTest, RouteUpdateResolvesRegisteredNexthop) {
           std::optional<std::string>* gateway,
           std::optional<std::string>* interface) {
         return registry.Resolve(rib, id, gateway, interface);
-      })) << error;
+      }, &registry)) << error;
   ASSERT_EQ(commands.size(), 2U);
   EXPECT_NE(std::ranges::find(commands[1].arguments, "192.0.2.44"),
             commands[1].arguments.end());
@@ -378,7 +378,7 @@ TEST(RibConfigTest, RibAddValidatesLogicalNamespaceAndRejectsRpf) {
   ASSERT_TRUE(InvokeRibAdd(NativePlatform::kLinux,
       R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv4</address-family></rib-add>)",
       &output, &error, &path));
-  EXPECT_NE(output.find(">true</result>"), std::string::npos);
+  EXPECT_NE(output.find(">true</result>"), std::string::npos) << output;
   ASSERT_TRUE(InvokeRibAdd(NativePlatform::kLinux,
       R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv4</address-family><ip-rpf-check>true</ip-rpf-check></rib-add>)",
       &output, &error, &path));
@@ -539,13 +539,36 @@ TEST(RibConfigTest, RouteAddExecutesResolvedRegisteredNexthop) {
           std::optional<std::string>* gateway,
           std::optional<std::string>* interface) {
         return registry.Resolve(rib, reference, gateway, interface);
-      })) << error;
+      }, &registry)) << error;
   ASSERT_EQ(commands.size(), 1U);
   EXPECT_NE(std::ranges::find(commands.front().arguments, "192.0.2.9"),
             commands.front().arguments.end());
   EXPECT_NE(std::ranges::find(commands.front().arguments, "dummy9"),
             commands.front().arguments.end());
   EXPECT_NE(output.find(">1</success-count>"), std::string::npos);
+
+  constexpr char nh_delete[] =
+      R"(<nh-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-id>1</nexthop-id></nh-delete>)";
+  ASSERT_TRUE(InvokeNexthopDelete(&registry, nh_delete, &output, &error, &path));
+  EXPECT_NE(output.find("referenced by a route"), std::string::npos);
+
+  ObservedRoute installed;
+  installed.route = {.routing_instance = "default", .rib = "100",
+                     .address_family = "ipv4", .index = 9,
+                     .destination = "198.51.100.0/24",
+                     .gateway = "192.0.2.9", .interface = "dummy9",
+                     .nexthop_ref = std::nullopt, .preference = 10,
+                     .local_only = false};
+  ASSERT_TRUE(InvokeRouteDelete(
+      NativePlatform::kLinux,
+      R"(<route-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><routes><route-list><route-index>9</route-index><match><ipv4><dest-ipv4-prefix>198.51.100.0/24</dest-ipv4-prefix></ipv4></match></route-list></routes></route-delete>)",
+      &output, &error, &path,
+      [](const NativeCommand&, std::string*) { return true; },
+      [&](std::vector<ObservedRoute>* routes, std::string*) {
+        *routes = {installed}; return true;
+      }, &registry));
+  ASSERT_TRUE(InvokeNexthopDelete(&registry, nh_delete, &output, &error, &path));
+  EXPECT_NE(output.find(">true</result>"), std::string::npos) << output;
 }
 
 }  // namespace

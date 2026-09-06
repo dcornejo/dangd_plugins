@@ -10,6 +10,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <tuple>
 
 #include "plugins/rib/src/platform_executor.h"
 #include "plugins/rib/src/route_observer.h"
@@ -30,6 +31,15 @@ class NexthopRegistry {
   [[nodiscard]] RemoveResult Remove(const std::string& rib, std::uint32_t id);
   [[nodiscard]] bool Retain(const std::string& rib, std::uint32_t id);
   void Release(const std::string& rib, std::uint32_t id);
+  /** Commits a route binding, consuming one prior Retain for a new reference. */
+  void BindRoute(const Route& route,
+                 std::optional<std::uint32_t> reserved_reference);
+  /** Releases and removes the reference associated with one native route. */
+  void ForgetRoute(const Route& route);
+  /** Releases all imperative route bindings in a deleted RIB. */
+  void ForgetRib(const std::string& rib);
+  [[nodiscard]] std::optional<std::uint32_t> RouteReference(
+      const Route& route);
   [[nodiscard]] bool Resolve(const std::string& rib, std::uint32_t id,
                              std::optional<std::string>* gateway,
                              std::optional<std::string>* interface);
@@ -38,6 +48,8 @@ class NexthopRegistry {
   std::mutex mutex_;
   std::map<std::pair<std::string, std::uint32_t>, Entry> entries_;
   std::map<std::pair<std::string, std::uint32_t>, std::size_t> references_;
+  std::map<std::tuple<std::string, std::string, std::string>, std::uint32_t>
+      route_references_;
   std::uint32_t next_id_ = 1;
 };
 
@@ -48,7 +60,8 @@ class NexthopRegistry {
                                   std::string* error,
                                   std::string* error_path,
                                   const CommandRunner& runner = RunNativeCommand,
-                                  const NexthopResolver& resolver = {});
+                                  const NexthopResolver& resolver = {},
+                                  NexthopRegistry* registry = nullptr);
 
 /** Injectable route inventory used to resolve route-delete prefix requests. */
 using RouteObserver =
@@ -59,7 +72,7 @@ using RouteObserver =
     NativePlatform platform, const char* input_xml, std::string* output_xml,
     std::string* error, std::string* error_path,
     const CommandRunner& runner = RunNativeCommand,
-    const RouteObserver& observer = {});
+    const RouteObserver& observer = {}, NexthopRegistry* registry = nullptr);
 
 /** Updates prefix-selected routes with a base nexthop or route attributes. */
 [[nodiscard]] bool InvokeRouteUpdate(
@@ -67,7 +80,8 @@ using RouteObserver =
     std::string* error, std::string* error_path,
     const CommandRunner& runner = RunNativeCommand,
     const RouteObserver& observer = {},
-    const NexthopResolver& resolver = {});
+    const NexthopResolver& resolver = {},
+    NexthopRegistry* registry = nullptr);
 
 /** Validates availability of a native RIB/FIB for the rib-add RPC. */
 [[nodiscard]] bool InvokeRibAdd(NativePlatform platform, const char* input_xml,
@@ -79,7 +93,7 @@ using RouteObserver =
     NativePlatform platform, const char* input_xml, std::string* output_xml,
     std::string* error, std::string* error_path,
     const CommandRunner& runner = RunNativeCommand,
-    const RouteObserver& observer = {});
+    const RouteObserver& observer = {}, NexthopRegistry* registry = nullptr);
 
 /** Allocates and retains a portable base nexthop for nh-add. */
 [[nodiscard]] bool InvokeNexthopAdd(NexthopRegistry* registry,
