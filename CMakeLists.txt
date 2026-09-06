@@ -164,6 +164,34 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     "${CMAKE_CURRENT_SOURCE_DIR}")
   target_compile_options(vpp-ownership-inventory PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+
+  # VAPI is optional so the other plugins remain buildable on distributions
+  # for which FD.io does not publish a matching development package.
+  find_path(DANG_VPP_VAPI_INCLUDE_DIR vapi/vapi.hpp)
+  find_library(DANG_VPP_VAPI_CLIENT_LIBRARY vapiclient)
+  if(DANG_VPP_VAPI_INCLUDE_DIR AND DANG_VPP_VAPI_CLIENT_LIBRARY)
+    add_library(dang_vpp_vapi_client STATIC
+      plugins/vpp/src/vapi_vpp_client.cc)
+    target_compile_features(dang_vpp_vapi_client PRIVATE cxx_std_20)
+    target_include_directories(dang_vpp_vapi_client PUBLIC
+      "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_include_directories(dang_vpp_vapi_client SYSTEM PRIVATE
+      "${DANG_VPP_VAPI_INCLUDE_DIR}")
+    target_link_libraries(dang_vpp_vapi_client PUBLIC
+      "${DANG_VPP_VAPI_CLIENT_LIBRARY}")
+    target_compile_options(dang_vpp_vapi_client PRIVATE
+      -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    add_executable(vpp-vapi-loopback-check
+      plugins/vpp/src/vapi_loopback_probe.cc
+      plugins/vpp/src/loopback_transaction.cc)
+    target_compile_features(vpp-vapi-loopback-check PRIVATE cxx_std_20)
+    target_include_directories(vpp-vapi-loopback-check PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(vpp-vapi-loopback-check PRIVATE
+      dang_vpp_vapi_client)
+    target_compile_options(vpp-vapi-loopback-check PRIVATE
+      -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  endif()
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")

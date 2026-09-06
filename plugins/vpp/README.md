@@ -49,22 +49,48 @@ host ownership. VPP is not installed on either host. No driver, address, route,
 or link state was changed while establishing this checkpoint.
 
 The model and evaluator are a validation-only scaffold and are not yet exposed
-by a loadable dangd plugin. The next implementation steps are VPP package and
-binary-API discovery, then VPP-created loopback transactions before any
-physical-device ownership work. Bridge, bond, VLAN-parent, and required-route
+by a loadable dangd plugin. Bridge, bond, VLAN-parent, and required-route
 evidence plus the recovery watchdog remain prerequisites for physical claims.
 
-The provider now also has a narrow C++ client seam for VPP loopback creation,
+The provider has a narrow C++ client seam for VPP loopback creation,
 administrative state, and deletion. Its API-only transaction retains the VPP
 software index, restores absence on rollback, immediately compensates a failed
 administrative-up request, and preserves the handle for later recovery if that
-compensation fails. Focused tests use an in-memory client; they do not pretend
-to establish daemon interoperability.
+compensation fails. The production implementation uses FD.io's generated C++
+VAPI messages for `create_loopback`, `sw_interface_set_flags`, and
+`delete_loopback`; it checks message availability and waits for the correlated
+reply before reading it. The client uses VPP's Unix-domain-socket binary API so
+an absent daemon fails promptly and stale shared-memory segments cannot hang a
+worker. Focused tests use an in-memory client, while the live probe performs the
+same complete lifecycle against a real daemon.
+
+## VAPI build and isolated validation
+
+The optional VAPI target is enabled when CMake finds `vapi/vapi.hpp` and
+`libvapiclient`. For a supported FD.io installation, install matching versions
+of `vpp`, `vpp-dev`, `libvppinfra`, and `libvppinfra-dev`; `vpp-plugin-core` is
+needed when later providers use functionality outside VPP's core. Configure the
+repository normally and build `vpp-vapi-loopback-check`. Pass its optional first
+argument as the VPP binary API socket; the default is `/run/vpp/api.sock`.
+
+`tests/vpp-isolated-startup.conf` is the safe live-test profile. It disables all
+external plugins (including PCI drivers), uses a private API segment, and puts
+its binary API socket, CLI, statistics socket, runtime data, and log below
+`/tmp/dang-vpp-run`. Start a disposable VPP with that profile, run
+`vpp-vapi-loopback-check /tmp/dang-vpp-run/api.sock`, and always terminate that
+exact daemon process afterward. A successful interaction is:
+
+```text
+created and enabled sw_if_index:1
+restored pre-test state
+```
 
 Both test hosts currently run Ubuntu 26.04. FD.io's release repository publishes
 VPP 26.06 packages for Ubuntu 24.04 and Debian 12, but not Ubuntu 26.04. No
-unsupported repository or mismatched package was installed. Production code
-will target the generated C++ VAPI headers from `vpp-dev`; live loopback
-validation needs either an officially supported test OS or an isolated build
-whose complete dependencies and runtime are kept outside the host package
-database.
+unsupported repository or mismatched package was installed. For compatibility
+testing only, the matching Ubuntu 24.04 packages were downloaded, unpacked
+below `/tmp/dang-vpp-2606`, and loaded without modifying the package database.
+On both hosts the adapter built warning-clean, the three portable VPP tests
+passed, and an isolated daemon completed and reversed the live loopback
+lifecycle. This is useful interoperability evidence, but it does not make the
+unpublished Ubuntu 26.04 package combination a supported deployment.

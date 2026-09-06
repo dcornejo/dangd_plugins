@@ -29,6 +29,13 @@ All notable changes to the external dangd plugin collection are recorded here.
   when compensation fails. Failure-injected tests pass on both Linux hosts;
   live VAPI testing remains deferred because FD.io does not publish an Ubuntu
   26.04 repository for the current test systems.
+- Added the real FD.io generated C++ VAPI adapter for loopback creation,
+  administrative state, and deletion, including message-availability and
+  bounded correlated-response checks. Unix-domain-socket transport rejects an
+  absent daemon immediately and avoids stale shared-memory attachment. An
+  isolated, plugin-free VPP 26.06 lifecycle now passes on both Ubuntu 26.04
+  hosts using unpacked Ubuntu 24.04 packages without changing their package
+  databases or exposing PCI devices.
 
 - Implemented RFC 8431 `nh-add` and `nh-delete` with thread-safe, per-RIB
   nexthop identifier allocation, strict portable base-nexthop validation, and
