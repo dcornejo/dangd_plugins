@@ -161,6 +161,7 @@ TEST(RibConfigTest, SerializesObservedRoutesAsRfc8431State) {
                     .destination = "192.0.2.0/24",
                     .gateway = "198.51.100.1",
                     .interface = "dummy&0",
+                    .nexthop_ref = std::nullopt,
                     .preference = 10,
                     .local_only = false};
   const std::string xml = SerializeOperationalRoutes({observed});
@@ -217,7 +218,8 @@ TEST(RibConfigTest, RouteDeleteResolvesObservedRouteAndReportsMissingRoute) {
   route.route = {.routing_instance = "default", .rib = "100",
                  .address_family = "ipv4", .index = 99,
                  .destination = "192.0.2.0/24", .gateway = "192.0.2.1",
-                 .interface = "dummy0", .preference = 10};
+                 .interface = "dummy0", .nexthop_ref = std::nullopt,
+                 .preference = 10};
   std::vector<NativeCommand> commands;
   std::string output;
   std::string error;
@@ -243,7 +245,8 @@ TEST(RibConfigTest, RouteDeleteRejectsAmbiguousObservedRoute) {
   ObservedRoute route;
   route.route = {.routing_instance = "default", .rib = "100",
                  .address_family = "ipv4", .destination = "192.0.2.0/24",
-                 .gateway = std::nullopt, .interface = std::nullopt};
+                 .gateway = std::nullopt, .interface = std::nullopt,
+                 .nexthop_ref = std::nullopt};
   std::string output;
   std::string error;
   std::string path;
@@ -262,7 +265,8 @@ TEST(RibConfigTest, RouteUpdateReplacesAttributesTransactionally) {
   route.route = {.routing_instance = "default", .rib = "100",
                  .address_family = "ipv4", .index = 99,
                  .destination = "192.0.2.0/24", .gateway = "192.0.2.1",
-                 .interface = "dummy0", .preference = 10};
+                 .interface = "dummy0", .nexthop_ref = std::nullopt,
+                 .preference = 10};
   std::vector<NativeCommand> commands;
   std::string output;
   std::string error;
@@ -289,6 +293,7 @@ TEST(RibConfigTest, RouteUpdateRestoresOriginalAfterInstallFailure) {
   route.route = {.routing_instance = "default", .rib = "100",
                  .address_family = "ipv4", .destination = "192.0.2.0/24",
                  .gateway = "192.0.2.1", .interface = "dummy0",
+                 .nexthop_ref = std::nullopt,
                  .preference = 10};
   unsigned calls = 0;
   std::string output;
@@ -316,6 +321,7 @@ TEST(RibConfigTest, RouteUpdateResolvesRegisteredNexthop) {
   observed.route = {.routing_instance = "default", .rib = "100",
                     .address_family = "ipv4", .destination = "192.0.2.0/24",
                     .gateway = "192.0.2.1", .interface = "dummy0",
+                    .nexthop_ref = std::nullopt,
                     .preference = 10};
   std::vector<NativeCommand> commands;
   std::string output;
@@ -349,6 +355,7 @@ TEST(RibConfigTest, RouteUpdateReportsMissingNexthopReference) {
   observed.route = {.routing_instance = "default", .rib = "100",
                     .address_family = "ipv4", .destination = "192.0.2.0/24",
                     .gateway = "192.0.2.1", .interface = std::nullopt,
+                    .nexthop_ref = std::nullopt,
                     .preference = 10};
   std::string output;
   std::string error;
@@ -383,7 +390,8 @@ TEST(RibConfigTest, RibDeleteRestoresEarlierRoutesAfterFailure) {
   ObservedRoute first;
   first.route = {.routing_instance = "default", .rib = "100",
                  .address_family = "ipv4", .destination = "192.0.2.0/24",
-                 .gateway = "192.0.2.1", .interface = "dummy0"};
+                 .gateway = "192.0.2.1", .interface = "dummy0",
+                 .nexthop_ref = std::nullopt};
   ObservedRoute second = first;
   second.route.destination = "198.51.100.0/24";
   unsigned calls = 0;
@@ -435,6 +443,24 @@ TEST(RibConfigTest, NexthopLifecycleAllocatesAndScopesIdentifiersByRib) {
       R"(<nh-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-id>1</nexthop-id></nh-delete>)",
       &output, &error, &path));
   EXPECT_NE(output.find(">false</result>"), std::string::npos);
+}
+
+TEST(RibConfigTest, NexthopDeleteRejectsRetainedReferenceUntilRelease) {
+  NexthopRegistry registry;
+  ASSERT_EQ(registry.Add({.rib = "100", .gateway = "192.0.2.1",
+                          .interface = std::nullopt}), 1U);
+  ASSERT_TRUE(registry.Retain("100", 1));
+  std::string output;
+  std::string error;
+  std::string path;
+  constexpr char deletion[] =
+      R"(<nh-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-id>1</nexthop-id></nh-delete>)";
+  ASSERT_TRUE(InvokeNexthopDelete(&registry, deletion, &output, &error, &path));
+  EXPECT_NE(output.find(">false</result>"), std::string::npos);
+  EXPECT_NE(output.find("referenced by a route"), std::string::npos);
+  registry.Release("100", 1);
+  ASSERT_TRUE(InvokeNexthopDelete(&registry, deletion, &output, &error, &path));
+  EXPECT_NE(output.find(">true</result>"), std::string::npos);
 }
 
 TEST(RibConfigTest, NexthopAddRejectsUnsupportedCompositeForm) {

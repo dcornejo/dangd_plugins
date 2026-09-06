@@ -118,8 +118,10 @@ nexthop objects. It is currently volatile and is not yet emitted in operational
 state. Configuration commits, `route-add`, and prefix-selected `route-update`
 resolve `nexthop-ref` against the
 containing RIB and fail closed for absent or cross-RIB identifiers. Reference
-lifetime enforcement remains pending, so reusable-nexthop semantics are not
-yet compliant.
+lifetime is enforced for prepared and active datastore configurations, and
+`nh-delete` reports a modeled failure while such a route retains the object.
+Imperative route RPC bindings do not yet retain their referenced objects, so
+reusable-nexthop semantics are not yet compliant.
 
 Numeric names are an intentional temporary variance: RFC 8431 RIB names are
 arbitrary strings, while Linux policy tables and FreeBSD FIBs need an explicit

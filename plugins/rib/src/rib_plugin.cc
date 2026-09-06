@@ -29,8 +29,15 @@ constexpr NativePlatform kPlatform = NativePlatform::kFreeBsd;
 #error "The RFC 8431 plugin supports only Linux and FreeBSD"
 #endif
 
-struct Prepared { std::vector<Change> changes; bool applied = false; };
 struct Context { NexthopRegistry nexthops; };
+using Reference = std::pair<std::string, std::uint32_t>;
+struct Prepared {
+  std::vector<Change> changes;
+  std::vector<Reference> before_references;
+  std::vector<Reference> proposed_references;
+  NexthopRegistry* registry = nullptr;
+  bool applied = false;
+};
 Context plugin_context;
 NexthopResolver Resolver(Context* owner) {
   return [owner](const std::string& rib, std::uint32_t id,
@@ -38,6 +45,26 @@ NexthopResolver Resolver(Context* owner) {
                  std::optional<std::string>* interface) {
     return owner->nexthops.Resolve(rib, id, gateway, interface);
   };
+}
+std::vector<Reference> References(const Config& config) {
+  std::vector<Reference> result;
+  for (const Route& route : config.routes)
+    if (route.nexthop_ref) result.emplace_back(route.rib, *route.nexthop_ref);
+  return result;
+}
+bool RetainAll(NexthopRegistry* registry, const std::vector<Reference>& refs) {
+  std::size_t retained = 0;
+  for (; retained < refs.size(); ++retained)
+    if (!registry->Retain(refs[retained].first, refs[retained].second)) break;
+  if (retained == refs.size()) return true;
+  while (retained > 0) {
+    --retained;
+    registry->Release(refs[retained].first, refs[retained].second);
+  }
+  return false;
+}
+void ReleaseAll(NexthopRegistry* registry, const std::vector<Reference>& refs) {
+  for (const auto& [rib, id] : refs) registry->Release(rib, id);
 }
 thread_local std::string message;
 thread_local std::string path;
@@ -66,8 +93,22 @@ int Prepare(void* raw_context, const DangTransactionV1* tx, void** out, DangPlug
   const auto resolver = Resolver(static_cast<Context*>(raw_context));
   if (!ParseConfig(tx->before_xml, &before, &why, &where, resolver)) return Fail(error, why, where);
   if (!ParseConfig(tx->proposed_xml, &proposed, &why, &where, resolver)) return Fail(error, why, where);
-  auto* prepared = new (std::nothrow) Prepared{PlanChanges(before, proposed)};
+  auto* owner = static_cast<Context*>(raw_context);
+  auto* prepared = new (std::nothrow) Prepared{
+      PlanChanges(before, proposed), References(before), References(proposed),
+      &owner->nexthops};
   if (!prepared) return Fail(error, "cannot retain RIB transaction plan");
+  if (!RetainAll(prepared->registry, prepared->before_references)) {
+    delete prepared;
+    return Fail(error, "cannot reserve a referenced nexthop",
+                "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop");
+  }
+  if (!RetainAll(prepared->registry, prepared->proposed_references)) {
+    ReleaseAll(prepared->registry, prepared->before_references);
+    delete prepared;
+    return Fail(error, "cannot reserve a referenced nexthop",
+                "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop");
+  }
   *out = prepared; return 1;
 }
 int Validate(void*, void* raw, DangPluginErrorV1* error) {
@@ -81,6 +122,9 @@ int Apply(void*, void* raw, DangPluginErrorV1* error) {
   if (prepared->applied) return 1;
   auto result = ExecuteChanges(kPlatform, prepared->changes);
   if (!result.ok) return Fail(error, result.error, result.error_path);
+  if (!RetainAll(prepared->registry, prepared->proposed_references))
+    return Fail(error, "reserved nexthop disappeared during apply");
+  ReleaseAll(prepared->registry, prepared->before_references);
   prepared->applied = true; return 1;
 }
 int Rollback(void*, void* raw, DangPluginErrorV1* error) {
@@ -91,9 +135,18 @@ int Rollback(void*, void* raw, DangPluginErrorV1* error) {
     inverse.push_back({i->kind == ChangeKind::kDelete ? ChangeKind::kInstall : ChangeKind::kDelete, i->route});
   auto result = ExecuteChanges(kPlatform, inverse);
   if (!result.ok) return Fail(error, result.error, result.error_path);
+  if (!RetainAll(prepared->registry, prepared->before_references))
+    return Fail(error, "reserved nexthop disappeared during rollback");
+  ReleaseAll(prepared->registry, prepared->proposed_references);
   prepared->applied = false; return 1;
 }
-void Release(void*, void* raw) { delete static_cast<Prepared*>(raw); }
+void Release(void*, void* raw) {
+  auto* prepared = static_cast<Prepared*>(raw);
+  if (!prepared) return;
+  ReleaseAll(prepared->registry, prepared->before_references);
+  ReleaseAll(prepared->registry, prepared->proposed_references);
+  delete prepared;
+}
 size_t ActionCount(void*, void* raw) { return raw ? 1 : 0; }
 int ActionAt(void*, void* raw, size_t index, DangHardwareActionV1* action, DangPluginErrorV1* error) {
   if (!raw || !action || index) return Fail(error, "RIB transaction action is unavailable");

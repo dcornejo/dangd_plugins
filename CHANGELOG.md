@@ -21,6 +21,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 - Extended `nexthop-ref` resolution to prefix-selected `route-update`, retaining
   its observed before-image rollback while reporting unknown references through
   per-route RFC failure detail.
+- Added transaction-lifetime reservations and active reference counts for
+  datastore-managed nexthops. `nh-delete` now fails closed while a prepared or
+  committed route retains the requested RIB/identifier pair, including across
+  apply and rollback transitions.
 
 - Adopted the existing ABI-v4 RFC 8343/8344 IP-management provider from dangd,
   including its direct Linux rtnetlink and FreeBSD ioctl/route-netlink

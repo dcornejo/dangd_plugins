@@ -176,6 +176,7 @@ bool ParseConfig(const char* xml, Config* config, std::string* error,
           return Fail("nexthop-ref does not identify a registered nexthop in this RIB",
                       "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/nexthop-base/nexthop-ref",
                       error, error_path);
+        route.nexthop_ref = static_cast<std::uint32_t>(id);
       }
       if (!route.gateway && !route.interface)
         return Fail("base nexthop requires an IP gateway or outgoing interface",

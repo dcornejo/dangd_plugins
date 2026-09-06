@@ -19,6 +19,7 @@ namespace dang::rib {
 /** Process-local, thread-safe store for RFC 8431 reusable nexthops. */
 class NexthopRegistry {
  public:
+  enum class RemoveResult { kRemoved, kMissing, kInUse };
   struct Entry {
     std::string rib;
     std::optional<std::string> gateway;
@@ -26,7 +27,9 @@ class NexthopRegistry {
     bool sharable = false;
   };
   [[nodiscard]] std::optional<std::uint32_t> Add(Entry entry);
-  [[nodiscard]] bool Remove(const std::string& rib, std::uint32_t id);
+  [[nodiscard]] RemoveResult Remove(const std::string& rib, std::uint32_t id);
+  [[nodiscard]] bool Retain(const std::string& rib, std::uint32_t id);
+  void Release(const std::string& rib, std::uint32_t id);
   [[nodiscard]] bool Resolve(const std::string& rib, std::uint32_t id,
                              std::optional<std::string>* gateway,
                              std::optional<std::string>* interface);
@@ -34,6 +37,7 @@ class NexthopRegistry {
  private:
   std::mutex mutex_;
   std::map<std::pair<std::string, std::uint32_t>, Entry> entries_;
+  std::map<std::pair<std::string, std::uint32_t>, std::size_t> references_;
   std::uint32_t next_id_ = 1;
 };
 

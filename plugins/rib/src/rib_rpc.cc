@@ -167,9 +167,30 @@ std::optional<std::uint32_t> NexthopRegistry::Add(Entry entry) {
   return std::nullopt;
 }
 
-bool NexthopRegistry::Remove(const std::string& rib, std::uint32_t id) {
+NexthopRegistry::RemoveResult NexthopRegistry::Remove(
+    const std::string& rib, std::uint32_t id) {
   std::lock_guard lock(mutex_);
-  return entries_.erase({rib, id}) == 1;
+  const auto key = std::make_pair(rib, id);
+  if (!entries_.contains(key)) return RemoveResult::kMissing;
+  if (references_.contains(key)) return RemoveResult::kInUse;
+  entries_.erase(key);
+  return RemoveResult::kRemoved;
+}
+
+bool NexthopRegistry::Retain(const std::string& rib, std::uint32_t id) {
+  std::lock_guard lock(mutex_);
+  const auto key = std::make_pair(rib, id);
+  if (!entries_.contains(key)) return false;
+  ++references_[key];
+  return true;
+}
+
+void NexthopRegistry::Release(const std::string& rib, std::uint32_t id) {
+  std::lock_guard lock(mutex_);
+  const auto key = std::make_pair(rib, id);
+  const auto found = references_.find(key);
+  if (found == references_.end()) return;
+  if (--found->second == 0) references_.erase(found);
 }
 
 bool NexthopRegistry::Resolve(const std::string& rib, std::uint32_t id,
@@ -578,10 +599,15 @@ bool InvokeNexthopDelete(NexthopRegistry* registry, const char* input_xml,
     *error_path = "/ietf-i2rs-rib:nh-delete";
     return false;
   }
-  *output_xml = registry->Remove(rib, id)
-                    ? BooleanOutput(true)
-                    : BooleanOutput(false,
-                          "the nexthop identifier does not exist in this RIB");
+  switch (registry->Remove(rib, id)) {
+    case NexthopRegistry::RemoveResult::kRemoved:
+      *output_xml = BooleanOutput(true); break;
+    case NexthopRegistry::RemoveResult::kInUse:
+      *output_xml = BooleanOutput(false, "the nexthop is referenced by a route"); break;
+    case NexthopRegistry::RemoveResult::kMissing:
+      *output_xml = BooleanOutput(false,
+          "the nexthop identifier does not exist in this RIB"); break;
+  }
   return true;
 }
 

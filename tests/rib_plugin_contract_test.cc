@@ -34,6 +34,38 @@ int main(int argc, char** argv) {
       state.complete == 0 && state.data_xml &&
       std::string_view(state.data_xml).find("routing-instance") != std::string_view::npos;
   if (prepared) base.release(base.context, prepared);
+
+  constexpr char nh_add_xml[] = R"(<nh-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-base><ipv4-address>192.0.2.1</ipv4-address></nexthop-base></nh-add>)";
+  DangOperationV1 operation{"ietf-i2rs-rib", "nh-add",
+                            "/ietf-i2rs-rib:nh-add", nh_add_xml};
+  DangOperationResultV1 operation_result{};
+  valid = valid && api->v6.v5.v4.v3.v2.invoke(
+      base.context, &operation, &operation_result, &error) &&
+      operation_result.output_xml &&
+      std::string_view(operation_result.output_xml).find(">1</nexthop-id>") !=
+          std::string_view::npos;
+  constexpr char referenced[] = R"(<config><routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>default</name><rib-list><name>100</name><address-family>ipv4</address-family><route-list><route-index>8</route-index><match><ipv4><dest-ipv4-prefix>198.18.1.0/24</dest-ipv4-prefix></ipv4></match><nexthop><nexthop-base><nexthop-ref>1</nexthop-ref></nexthop-base></nexthop><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes></route-list></rib-list></routing-instance></config>)";
+  DangTransactionV1 referenced_transaction{before, referenced, "[]"};
+  void* referenced_prepared = nullptr;
+  valid = valid && base.prepare(base.context, &referenced_transaction,
+                                 &referenced_prepared, &error);
+  constexpr char nh_delete_xml[] = R"(<nh-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-id>1</nexthop-id></nh-delete>)";
+  operation = {"ietf-i2rs-rib", "nh-delete", "/ietf-i2rs-rib:nh-delete",
+               nh_delete_xml};
+  operation_result = {};
+  valid = valid && api->v6.v5.v4.v3.v2.invoke(
+      base.context, &operation, &operation_result, &error) &&
+      operation_result.output_xml &&
+      std::string_view(operation_result.output_xml).find("referenced by a route") !=
+          std::string_view::npos;
+  if (referenced_prepared)
+    base.release(base.context, referenced_prepared);
+  operation_result = {};
+  valid = valid && api->v6.v5.v4.v3.v2.invoke(
+      base.context, &operation, &operation_result, &error) &&
+      operation_result.output_xml &&
+      std::string_view(operation_result.output_xml).find(">true</result>") !=
+          std::string_view::npos;
   dlclose(library);
   if (!valid) std::cerr << (error.message ? error.message : "RIB plugin contract failed") << '\n';
   return valid ? 0 : 1;

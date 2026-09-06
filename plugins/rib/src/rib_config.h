@@ -29,6 +29,7 @@ struct Route {
   std::string destination;
   std::optional<std::string> gateway;
   std::optional<std::string> interface;
+  std::optional<std::uint32_t> nexthop_ref;
   std::uint32_t preference = 0;
   bool local_only = false;
 
