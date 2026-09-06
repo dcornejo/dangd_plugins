@@ -39,6 +39,13 @@ All notable changes to the external dangd plugin collection are recorded here.
   atomic candidate operations, rollback, reconciliation, drift detection, and
   operational output. Protocol configuration augmenting an interface can no
   longer be advertised while silently falling outside the provider transaction.
+- Extended runtime-gated FRR protocol support to BFD, EIGRP, OSPFv2, Pathd,
+  PIM, RIPng, and VRRP in addition to RIP and IS-IS. The provider loads and
+  advertises a daemon schema only when FRR's live YANG Library implements it,
+  owns each modeled standalone root, retains augment-only modules inside the
+  routing/interface parent transaction, publishes standalone operational data,
+  and permits their native modeled RPCs through the common mgmtd path. BGP
+  remains deliberately excluded until its backend appears in the live library.
 - Added the Linux-only VPP provider architecture and its physical-interface
   ownership safety boundary. Documented stable PCI identity, empty-by-default
   allowlisting, trusted management-path denial, independent recovery, and the

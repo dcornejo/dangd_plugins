@@ -55,6 +55,13 @@ int main(int argc, char** argv) {
         "module frr-ripd { namespace \"http://frrouting.org/yang/ripd\";"
         " prefix ripd; revision 2020-02-14;"
         " notification authentication-failure { leaf reason { type string; } } }");
+  Write(directory / "frr-ripngd.yang",
+        "module frr-ripngd { namespace \"http://frrouting.org/yang/ripngd\";"
+        " prefix ripngd; revision 2020-02-14; container ripngd {}"
+        " rpc clear-ripng-route {} }");
+  Write(directory / "frr-ospfd.yang",
+        "module frr-ospfd { namespace \"http://frrouting.org/yang/ospfd\";"
+        " prefix ospfd; revision 2020-06-16; }");
   const auto library_path = directory / "yang-library.xml";
   Write(library_path, R"(<yang-library xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-library"><module-set>
     <module><name>frr-routing</name><revision>2019-08-15</revision>
@@ -70,6 +77,10 @@ int main(int argc, char** argv) {
       <namespace>http://frrouting.org/yang/vrf</namespace></module>
     <module><name>frr-ripd</name><revision>2020-02-14</revision>
       <namespace>http://frrouting.org/yang/ripd</namespace></module>
+    <module><name>frr-ripngd</name><revision>2020-02-14</revision>
+      <namespace>http://frrouting.org/yang/ripngd</namespace></module>
+    <module><name>frr-ospfd</name><revision>2020-06-16</revision>
+      <namespace>http://frrouting.org/yang/ospfd</namespace></module>
   </module-set></yang-library>)");
   setenv("DANG_FRR_YANG_DIR", directory.c_str(), 1);
   setenv("DANG_FRR_YANG_LIBRARY_FILE", library_path.c_str(), 1);
@@ -109,8 +120,9 @@ int main(int argc, char** argv) {
     }
     valid = valid && found_runtime_feature && implemented ==
         std::set<std::string>({"dang-frr-monitoring", "frr-interface",
-                               "frr-ripd", "frr-routing", "frr-staticd",
-                               "frr-vrf", "frr-zebra"});
+                               "frr-ospfd", "frr-ripd", "frr-ripngd",
+                               "frr-routing", "frr-staticd", "frr-vrf",
+                               "frr-zebra"});
     DangNotificationV1 event{};
     DangPluginErrorV1 notification_error{};
     valid = valid && plugin->next_notification(base.context, &event,

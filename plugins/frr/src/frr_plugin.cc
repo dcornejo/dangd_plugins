@@ -45,6 +45,32 @@ constexpr std::string_view kInterfaceNamespace =
 constexpr std::string_view kVrfNamespace =
     "http://frrouting.org/yang/vrf";
 constexpr std::size_t kMaximumPendingNotifications = 1024;
+struct ProtocolDescriptor {
+  std::string_view module;
+  std::string_view namespace_uri;
+  std::string_view root_name;
+  std::string_view root_xpath;
+};
+
+// A blank root denotes a module whose configuration consists entirely of
+// augments below an already-owned routing or interface parent.
+constexpr ProtocolDescriptor kProtocolDescriptors[]{
+    {"frr-bfdd", "http://frrouting.org/yang/bfdd", "bfdd",
+     "/frr-bfdd:bfdd"},
+    {"frr-eigrpd", "http://frrouting.org/yang/eigrpd", "eigrpd",
+     "/frr-eigrpd:eigrpd"},
+    {"frr-isisd", "http://frrouting.org/yang/isisd", "isis",
+     "/frr-isisd:isis"},
+    {"frr-ospfd", "http://frrouting.org/yang/ospfd", "", ""},
+    {"frr-pathd", "http://frrouting.org/yang/pathd", "pathd",
+     "/frr-pathd:pathd"},
+    {"frr-pim", "http://frrouting.org/yang/pim", "pim", "/frr-pim:pim"},
+    {"frr-ripd", "http://frrouting.org/yang/ripd", "ripd",
+     "/frr-ripd:ripd"},
+    {"frr-ripngd", "http://frrouting.org/yang/ripngd", "ripngd",
+     "/frr-ripngd:ripngd"},
+    {"frr-vrrpd", "http://frrouting.org/yang/vrrpd", "", ""},
+};
 constexpr char kMonitoringModel[] = R"yang(module dang-frr-monitoring {
   yang-version 1.1;
   namespace "urn:dang:plugins:frr:monitoring";
@@ -71,6 +97,7 @@ struct Context {
   std::vector<dang::plugins::frr::YangSchema> sources;
   std::vector<std::string> source_uris;
   std::set<std::string> implemented_modules;
+  std::vector<std::string> protocol_modules;
   std::vector<std::string> notification_modules;
   std::vector<dang::plugins::frr::RootDescriptor> roots;
   std::string socket_path = "/var/run/frr/mgmtd_fe.sock";
@@ -173,13 +200,14 @@ struct Context {
     for (const std::string_view module : {"frr-interface", "frr-vrf"})
       if (runtime_modules->contains(std::string(module)))
         schema_roots.emplace_back(module);
-    // RIP and IS-IS are the only FRR 10.7 native modules that declare modeled
-    // notifications. Load either complete closure only when the running daemon
-    // advertises it as implemented; installed source alone is insufficient.
-    for (const std::string_view module : {"frr-ripd", "frr-isisd"}) {
-      if (!runtime_modules->contains(std::string(module))) continue;
-      schema_roots.emplace_back(module);
-      notification_modules.emplace_back(module);
+    // Load daemon schemas only when the running backend advertises them.
+    // Installed source alone is insufficient evidence that mgmtd can serve it.
+    for (const auto& protocol : kProtocolDescriptors) {
+      if (!runtime_modules->contains(std::string(protocol.module))) continue;
+      schema_roots.emplace_back(protocol.module);
+      protocol_modules.emplace_back(protocol.module);
+      if (protocol.module == "frr-ripd" || protocol.module == "frr-isisd")
+        notification_modules.emplace_back(protocol.module);
     }
     auto closure = dang::plugins::frr::ResolveImportClosure(
         *inventory, schema_roots, &initialization_error);
@@ -204,13 +232,21 @@ struct Context {
       source_uris.clear();
       return;
     }
+    for (const auto& protocol : kProtocolDescriptors) {
+      if (runtime_modules->contains(std::string(protocol.module)) &&
+          namespace_for(protocol.module) != protocol.namespace_uri) {
+        initialization_error = "installed FRR protocol has unexpected namespace";
+        sources.clear();
+        source_uris.clear();
+        return;
+      }
+    }
     if (!dang::plugins::frr::ApplyRuntimeYangLibrary(
             *library_xml, &sources, &initialization_error))
       return;
     implemented_modules = {"dang-frr-monitoring", "frr-routing", "frr-zebra",
                            "frr-staticd"};
-    implemented_modules.insert(notification_modules.begin(),
-                               notification_modules.end());
+    implemented_modules.insert(protocol_modules.begin(), protocol_modules.end());
     for (const std::string_view module : {"frr-interface", "frr-vrf"})
       if (runtime_modules->contains(std::string(module)))
         implemented_modules.emplace(module);
@@ -224,12 +260,13 @@ struct Context {
     if (implemented_modules.contains("frr-vrf"))
       this->roots.push_back({"frr-vrf", std::string(kVrfNamespace), "lib",
                              "/frr-vrf:lib"});
-    if (implemented_modules.contains("frr-ripd"))
-      this->roots.push_back({"frr-ripd", "http://frrouting.org/yang/ripd",
-                             "ripd", "/frr-ripd:ripd"});
-    if (implemented_modules.contains("frr-isisd"))
-      this->roots.push_back({"frr-isisd", "http://frrouting.org/yang/isisd",
-                             "isis", "/frr-isisd:isis"});
+    for (const auto& protocol : kProtocolDescriptors)
+      if (implemented_modules.contains(std::string(protocol.module)) &&
+          !protocol.root_xpath.empty())
+        this->roots.push_back({std::string(protocol.module),
+                               std::string(protocol.namespace_uri),
+                               std::string(protocol.root_name),
+                               std::string(protocol.root_xpath)});
     source_uris.emplace_back("embedded:dang-frr-monitoring");
     sources.push_back({.module_name = "dang-frr-monitoring",
                        .revision = "2026-09-04",
@@ -515,10 +552,12 @@ int Operational(void* raw, DangOperationalDataV1* result,
   std::vector<std::string> fragments;
   auto zebra = session->GetOperationalData("/frr-zebra:zebra", &callback_error);
   if (zebra && !zebra->empty()) fragments.push_back(std::move(*zebra));
-  for (const std::string& module : owner->notification_modules) {
-    const std::string xpath = module == "frr-ripd" ? "/frr-ripd:ripd"
-                                                    : "/frr-isisd:isis";
-    auto protocol = session->GetOperationalData(xpath, &callback_error);
+  for (const auto& descriptor : owner->roots) {
+    if (std::ranges::find(owner->protocol_modules, descriptor.module_name) ==
+        owner->protocol_modules.end())
+      continue;
+    auto protocol =
+        session->GetOperationalData(descriptor.xpath, &callback_error);
     if (!protocol) {
       zebra.reset();
       break;
@@ -627,8 +666,8 @@ int Invoke(void* raw, const DangOperationV1* operation,
     return Fail(error, "FRR RPC input is incomplete", "/");
   const std::string module(operation->module_name);
   if (module != "frr-zebra" &&
-      std::ranges::find(owner->notification_modules, module) ==
-          owner->notification_modules.end())
+      std::ranges::find(owner->protocol_modules, module) ==
+          owner->protocol_modules.end())
     return Fail(error, "FRR RPC module is not implemented", "/");
   const std::string xpath = "/" + module + ":" + operation->operation_name;
   auto session = OpenConcreteSession(owner, &callback_error);

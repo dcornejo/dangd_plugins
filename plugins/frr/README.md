@@ -82,8 +82,10 @@ backend actually registers these modeled RPCs. The plugin preserves FRR's
 rejection instead of substituting CLI behavior.
 
 Native FRR protocols beyond zebra/staticd are enabled only when FRR's live
-library and backend advertise them. RIP and IS-IS are the first conditional
-protocols. The provider additionally publishes its small implemented
+library and backend advertise them. The conditional set is BFD, EIGRP, IS-IS,
+OSPFv2, Pathd, PIM, RIP, RIPng, and VRRP. Modules with standalone roots own
+those roots; OSPFv2 and VRRP consist of augments within already-owned routing
+or interface parents. The provider additionally publishes its small implemented
 `dang-frr-monitoring` model. Its `configuration-drift` notification is
 provider health telemetry rather than an alteration of FRR's native models.
 The operational callback publishes FRR's observed tree; it does not substitute
@@ -122,6 +124,14 @@ VRF settings, RIP interface authentication, and IS-IS circuit configuration.
 Operational retrieval likewise returns the complete implemented parent roots;
 the older zebra-only filter remains a compatibility path when a runtime exposes
 zebra's augments without implementing the parent module.
+
+The same runtime gate applies to native RPC dispatch and standalone operational
+retrieval. BFD, EIGRP, IS-IS, Pathd, PIM, RIP, and RIPng roots are fetched only
+when their module is live. RPCs declared by any enabled conditional protocol use
+the same correlated mgmtd request/reply path as zebra. OSPFv2 and VRRP data is
+carried by the routing/interface parent roots. BGP is deliberately absent from
+this list: FRR 10.7.1 installs its source family, but the tested bgpd does not
+register it as an implemented mgmtd module.
 
 The opt-in Linux interaction creates two network namespaces and a disposable
 veth, commits `/frr-ripd:ripd` through mgmtd, subscribes to

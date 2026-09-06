@@ -13,7 +13,9 @@ const std::vector<dang::plugins::frr::RootDescriptor> kRoots{
     {"frr-zebra", "http://frrouting.org/yang/zebra", "zebra",
      "/frr-zebra:zebra"},
     {"frr-interface", "http://frrouting.org/yang/interface", "lib",
-     "/frr-interface:lib"}};
+     "/frr-interface:lib"},
+    {"frr-ripngd", "http://frrouting.org/yang/ripngd", "ripngd",
+     "/frr-ripngd:ripngd"}};
 
 TEST(FrrConfigTest, ExtractsChangedRootsAndPreservesAugmentedNamespaces) {
   const std::string before = R"(<config>
@@ -97,7 +99,7 @@ TEST(FrrConfigTest, ReplacesOnlyOwnedRootsWithObservedRunningState) {
   </config>)";
   const std::vector<std::optional<std::string>> observed{
       R"(<routing xmlns="http://frrouting.org/yang/routing"><accepted/></routing>)",
-      std::nullopt, std::nullopt};
+      std::nullopt, std::nullopt, std::nullopt};
   std::string error;
   std::string path;
   auto reconciled = dang::plugins::frr::ReconcileConfigurationRoots(
@@ -114,7 +116,7 @@ TEST(FrrConfigTest, RejectsObservedRootFromWrongModule) {
   std::string path;
   const std::vector<std::optional<std::string>> observed{
       R"(<zebra xmlns="http://frrouting.org/yang/zebra"/>)", std::nullopt,
-      std::nullopt};
+      std::nullopt, std::nullopt};
   EXPECT_FALSE(dang::plugins::frr::ReconcileConfigurationRoots(
       "<config/>", kRoots, observed, &error, &path));
   EXPECT_EQ(path, "/frr-routing:routing");
