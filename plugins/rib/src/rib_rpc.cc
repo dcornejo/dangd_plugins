@@ -139,4 +139,73 @@ bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
   return true;
 }
 
+bool InvokeRouteDelete(NativePlatform platform, const char* input_xml,
+                       std::string* output_xml, std::string* error,
+                       std::string* error_path, const CommandRunner& runner,
+                       const RouteObserver& supplied_observer) {
+  if (!input_xml || !output_xml || !error || !error_path) return false;
+  xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
+                                "route-delete.xml", nullptr,
+                                XML_PARSE_NONET | XML_PARSE_NOBLANKS |
+                                    XML_PARSE_NOERROR | XML_PARSE_NOWARNING);
+  std::unique_ptr<xmlDoc, decltype(&xmlFreeDoc)> input(raw, xmlFreeDoc);
+  xmlNodePtr root = input ? xmlDocGetRootElement(input.get()) : nullptr;
+  if (!Is(root, "route-delete")) {
+    *error = "route-delete input is not RFC 8431 XML";
+    *error_path = "/ietf-i2rs-rib:route-delete";
+    return false;
+  }
+  const std::string rib_name = Text(Child(root, "rib-name"));
+  xmlNodePtr routes_node = Child(root, "routes");
+  if (rib_name.empty() || !routes_node) {
+    *error = "route-delete requires rib-name and routes";
+    *error_path = "/ietf-i2rs-rib:route-delete";
+    return false;
+  }
+  std::vector<ObservedRoute> observed;
+  std::string observe_error;
+  const bool observed_ok = supplied_observer
+      ? supplied_observer(&observed, &observe_error)
+      : (platform == NativePlatform::kLinux
+             ? ObserveLinuxRoutes(&observed, &observe_error)
+             : ObserveFreeBsdRoutes(&observed, &observe_error));
+  if (!observed_ok) {
+    *error = "cannot read host RIB: " + observe_error;
+    *error_path = "/ietf-i2rs-rib:route-delete/routes";
+    return false;
+  }
+  const bool details = Boolean(Child(root, "return-failure-detail"));
+  unsigned success = 0;
+  std::vector<std::pair<std::uint64_t, unsigned>> failed;
+  for (xmlNodePtr node = routes_node->children; node; node = node->next) {
+    if (!Is(node, "route-list")) continue;
+    std::uint64_t index = 0;
+    try { index = std::stoull(Text(Child(node, "route-index"))); }
+    catch (...) { failed.emplace_back(0U, 3U); continue; }
+    xmlNodePtr match = Child(node, "match");
+    xmlNodePtr family = Child(match, "ipv4");
+    bool ipv6 = false;
+    if (!family) { family = Child(match, "ipv6"); ipv6 = true; }
+    const std::string destination = Text(Child(
+        family, ipv6 ? "dest-ipv6-prefix" : "dest-ipv4-prefix"));
+    if (destination.empty()) { failed.emplace_back(index, 3U); continue; }
+    std::vector<const ObservedRoute*> matches;
+    for (const ObservedRoute& candidate : observed)
+      if (candidate.route.rib == rib_name &&
+          candidate.route.address_family == (ipv6 ? "ipv6" : "ipv4") &&
+          candidate.route.destination == destination)
+        matches.push_back(&candidate);
+    if (matches.empty()) { failed.emplace_back(index, 2U); continue; }
+    if (matches.size() != 1U) { failed.emplace_back(index, 0U); continue; }
+    Route route = matches.front()->route;
+    route.index = index;
+    const ExecutionResult result = ExecuteChanges(
+        platform, {{ChangeKind::kDelete, std::move(route)}}, runner);
+    if (result.ok) ++success;
+    else failed.emplace_back(index, 0U);
+  }
+  *output_xml = Output(success, failed, details);
+  return true;
+}
+
 }  // namespace dang::rib

@@ -34,6 +34,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   failure counts, optional per-route error details, and attributed malformed
   envelope errors. Native Linux namespace and FreeBSD VNET tests exercise the
   RPC installation and transaction-backed cleanup without touching LAN routes.
+- Added RFC 8431 `route-delete`. It resolves prefix-only requests from a fresh
+  native route inventory, deletes only unique matches using their observed
+  nexthop data, reports missing routes with error code 2, and fails closed on
+  ambiguous multipath matches. Native tests now exercise RPC add and delete as
+  one isolated lifecycle.
 - Fixed FRR hardware-coordinator integration by advertising its complete mgmtd
   candidate transaction as one normal action. Commits now schedule the existing
   atomic apply/rollback callbacks instead of treating a zero-action plan as

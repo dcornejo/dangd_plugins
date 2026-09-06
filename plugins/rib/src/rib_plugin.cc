@@ -104,12 +104,18 @@ int Invoke(void*, const DangOperationV1* operation,
     return Fail(error, "RIB RPC module is not implemented", "/");
   const std::string rpc_path = "/ietf-i2rs-rib:" +
                                std::string(operation->operation_name);
-  if (std::string_view(operation->operation_name) != "route-add")
-    return Fail(error, "RFC 8431 operation is not implemented", rpc_path);
   std::string why;
   std::string where;
-  if (!InvokeRouteAdd(kPlatform, operation->input_xml, &rpc_output_xml, &why,
-                      &where))
+  bool invoked = false;
+  if (std::string_view(operation->operation_name) == "route-add")
+    invoked = InvokeRouteAdd(kPlatform, operation->input_xml, &rpc_output_xml,
+                             &why, &where);
+  else if (std::string_view(operation->operation_name) == "route-delete")
+    invoked = InvokeRouteDelete(kPlatform, operation->input_xml,
+                                &rpc_output_xml, &why, &where);
+  else
+    return Fail(error, "RFC 8431 operation is not implemented", rpc_path);
+  if (!invoked)
     return Fail(error, why, where.empty() ? rpc_path : where);
   result->output_xml = rpc_output_xml.c_str();
   return 1;

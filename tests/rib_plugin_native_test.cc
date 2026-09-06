@@ -92,14 +92,22 @@ int main(int argc, char** argv) {
       operation_result.output_xml &&
       std::string_view(operation_result.output_xml).find(">1</success-count>") !=
           std::string_view::npos;
-  DangTransactionV1 cleanup_transaction{candidate.c_str(), before, "[]"};
-  void* cleanup = nullptr;
-  ok = ok && base.prepare(base.context, &cleanup_transaction, &cleanup, &error) &&
-      base.validate(base.context, cleanup, &error) &&
-      api->v6.v5.v4.hardware_action_at(base.context, cleanup, 0, &action, &error) &&
-      api->v6.v5.v4.apply_hardware_action(base.context, cleanup,
-                                          action.action_id, &error);
-  if (cleanup) base.release(base.context, cleanup);
+  std::ostringstream deletion;
+  deletion << "<route-delete xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\">"
+              "<return-failure-detail>true</return-failure-detail><rib-name>"
+           << argv[2] << "</rib-name><routes><route-list><route-index>1</route-index><match><"
+           << (ipv6 ? "ipv6><dest-ipv6-prefix>" : "ipv4><dest-ipv4-prefix>")
+           << prefix << (ipv6 ? "</dest-ipv6-prefix></ipv6>" : "</dest-ipv4-prefix></ipv4>")
+           << "</match></route-list></routes></route-delete>";
+  const std::string deletion_input = deletion.str();
+  operation = {"ietf-i2rs-rib", "route-delete",
+               "/ietf-i2rs-rib:route-delete", deletion_input.c_str()};
+  operation_result = {};
+  ok = ok && api->v6.v5.v4.v3.v2.invoke(base.context, &operation,
+                                        &operation_result, &error) &&
+      operation_result.output_xml &&
+      std::string_view(operation_result.output_xml).find(">1</success-count>") !=
+          std::string_view::npos;
   if (!ok)
     std::cerr << (error.message ? error.message : "RIB plugin lifecycle failed")
               << (error.instance_path ? std::string(" at ") + error.instance_path : "")

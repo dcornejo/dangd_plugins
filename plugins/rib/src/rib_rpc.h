@@ -8,6 +8,7 @@
 #include <string>
 
 #include "plugins/rib/src/platform_executor.h"
+#include "plugins/rib/src/route_observer.h"
 
 namespace dang::rib {
 
@@ -18,6 +19,17 @@ namespace dang::rib {
                                   std::string* error,
                                   std::string* error_path,
                                   const CommandRunner& runner = RunNativeCommand);
+
+/** Injectable route inventory used to resolve route-delete prefix requests. */
+using RouteObserver =
+    std::function<bool(std::vector<ObservedRoute>*, std::string*)>;
+
+/** Executes RFC 8431 route-delete against unambiguous observed routes. */
+[[nodiscard]] bool InvokeRouteDelete(
+    NativePlatform platform, const char* input_xml, std::string* output_xml,
+    std::string* error, std::string* error_path,
+    const CommandRunner& runner = RunNativeCommand,
+    const RouteObserver& observer = {});
 
 }  // namespace dang::rib
 

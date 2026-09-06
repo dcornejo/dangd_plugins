@@ -207,5 +207,54 @@ TEST(RibConfigTest, RouteAddRejectsMalformedEnvelope) {
   EXPECT_EQ(path, "/ietf-i2rs-rib:route-add");
 }
 
+TEST(RibConfigTest, RouteDeleteResolvesObservedRouteAndReportsMissingRoute) {
+  constexpr char input[] = R"xml(<route-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib">
+    <return-failure-detail>true</return-failure-detail><rib-name>100</rib-name><routes>
+      <route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match></route-list>
+      <route-list><route-index>8</route-index><match><ipv4><dest-ipv4-prefix>198.51.100.0/24</dest-ipv4-prefix></ipv4></match></route-list>
+    </routes></route-delete>)xml";
+  ObservedRoute route;
+  route.route = {.routing_instance = "default", .rib = "100",
+                 .address_family = "ipv4", .index = 99,
+                 .destination = "192.0.2.0/24", .gateway = "192.0.2.1",
+                 .interface = "dummy0", .preference = 10};
+  std::vector<NativeCommand> commands;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRouteDelete(
+      NativePlatform::kLinux, input, &output, &error, &path,
+      [&](const NativeCommand& command, std::string*) {
+        commands.push_back(command); return true;
+      },
+      [&](std::vector<ObservedRoute>* routes, std::string*) {
+        *routes = {route}; return true;
+      })) << error;
+  ASSERT_EQ(commands.size(), 1U);
+  EXPECT_EQ(commands.front().arguments[3], "delete");
+  EXPECT_NE(output.find(">1</success-count>"), std::string::npos);
+  EXPECT_NE(output.find(">1</failed-count>"), std::string::npos);
+  EXPECT_NE(output.find("<route-index>8</route-index><error-code>2</error-code>"),
+            std::string::npos);
+}
+
+TEST(RibConfigTest, RouteDeleteRejectsAmbiguousObservedRoute) {
+  constexpr char input[] = R"xml(<route-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><return-failure-detail>true</return-failure-detail><rib-name>100</rib-name><routes><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match></route-list></routes></route-delete>)xml";
+  ObservedRoute route;
+  route.route = {.routing_instance = "default", .rib = "100",
+                 .address_family = "ipv4", .destination = "192.0.2.0/24",
+                 .gateway = std::nullopt, .interface = std::nullopt};
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRouteDelete(
+      NativePlatform::kLinux, input, &output, &error, &path,
+      [](const NativeCommand&, std::string*) { return true; },
+      [&](std::vector<ObservedRoute>* routes, std::string*) {
+        *routes = {route, route}; return true;
+      }));
+  EXPECT_NE(output.find("<error-code>0</error-code>"), std::string::npos);
+}
+
 }  // namespace
 }  // namespace dang::rib
