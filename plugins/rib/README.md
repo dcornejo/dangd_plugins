@@ -16,8 +16,10 @@ The source files are unmodified copies from the IETF YangModels RFC registry:
 
 The `dangd_rib_plugin` advertises the pinned model and implements the documented
 destination-prefix configuration slice. It claims ABI-v7 exclusive ownership
-of `routing`, so dangd rejects loading it together with the FRR provider. RPCs,
-notifications, and observed operational state remain incomplete.
+of `routing`, so dangd rejects loading it together with the FRR provider. RPCs
+and notifications remain incomplete. Operational reads enumerate host IPv4
+and IPv6 unicast routes through native kernel APIs and publish active and
+installed status as partial RFC 8431 state.
 
 ## Installation status and dependencies
 
@@ -61,7 +63,10 @@ tunnel routes with an attributed model path, and computes replacements as an
 old-route deletion followed by a new-route installation. Separate Linux `ip`
 and FreeBSD `route` argv planners require numeric RIB/FIB names and never invoke
 a shell. The shared executor uses `posix_spawnp(3)`, stops on the first failed
-operation, and compensates completed changes in reverse order. Unit tests cover
+operation, and compensates completed changes in reverse order. Linux state is
+read through rtnetlink and FreeBSD state through `NET_RT_DUMP`; command output
+is never parsed. Kernel routes receive deterministic synthetic `route-index`
+values because neither native API exposes the model's list key. Unit tests cover
 successful execution, apply failure, complete rollback, and incomplete
 rollback reporting.
 
@@ -72,9 +77,9 @@ Privileged native tests are opt-in with `-DDANG_RIB_NATIVE_TESTS=ON`. Linux
 creates a disposable network namespace and dummy interface. FreeBSD creates a
 disposable VNET jail and epair, assigns only documentation-prefix addresses,
 and destroys both afterward. Each interaction installs the test route, verifies
-it through the native kernel route inventory, deletes it, and verifies absence.
-No host LAN interface or host default route is used. The executor is not yet
-wired into an advertised plugin, so normal builds cannot mutate routes.
+it in the plugin's operational XML and through the native kernel route
+inventory, deletes it, and verifies absence. No host LAN interface or host
+default route is used.
 
 Numeric names are an intentional temporary variance: RFC 8431 RIB names are
 arbitrary strings, while Linux policy tables and FreeBSD FIBs need an explicit

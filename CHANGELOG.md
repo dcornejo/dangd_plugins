@@ -19,6 +19,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   slice. It publishes pinned models, claims exclusive `routing` ownership,
   validates deltas, and applies or reverses them as one compensated action.
   Plugin lifecycle and native tests pass in Linux namespaces and FreeBSD jails.
+- Added RFC 8431 observed route publication. The plugin reads Linux rtnetlink
+  and FreeBSD `NET_RT_DUMP` data directly, emits IPv4/IPv6 unicast routes with
+  active/installed status and stable synthetic indexes, and reports attributed
+  kernel-read failures. Native tests require an installed isolated route to
+  appear in the plugin's operational XML before rollback.
 - Fixed FRR hardware-coordinator integration by advertising its complete mgmtd
   candidate transaction as one normal action. Commits now schedule the existing
   atomic apply/rollback callbacks instead of treating a zero-action plan as

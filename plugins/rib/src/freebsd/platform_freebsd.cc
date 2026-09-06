@@ -4,8 +4,21 @@
 /** @file FreeBSD route(8) mapping for the portable RFC 8431 route plan. */
 
 #include "plugins/rib/src/platform_command.h"
+#include "plugins/rib/src/route_observer.h"
 
 #include <charconv>
+
+#if defined(__FreeBSD__)
+#include <arpa/inet.h>
+#include <net/if.h>
+#include <net/route.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/sysctl.h>
+
+#include <cerrno>
+#include <cstring>
+#endif
 
 namespace dang::rib {
 namespace {
@@ -62,6 +75,92 @@ bool BuildFreeBsdCommands(const std::vector<Change>& changes,
     commands->push_back(std::move(command));
   }
   return true;
+}
+
+bool ObserveFreeBsdRoutes(std::vector<ObservedRoute>* routes,
+                          std::string* error) {
+#if !defined(__FreeBSD__)
+  (void)routes;
+  if (error) *error = "FreeBSD route observation is unavailable on this host";
+  return false;
+#else
+  if (!routes || !error) return false;
+  routes->clear();
+  int mib[] = {CTL_NET, PF_ROUTE, 0, AF_UNSPEC, NET_RT_DUMP, 0};
+  size_t length = 0;
+  if (sysctl(mib, 6, nullptr, &length, nullptr, 0) < 0) {
+    *error = std::strerror(errno); return false;
+  }
+  std::vector<char> buffer(length);
+  if (length && sysctl(mib, 6, buffer.data(), &length, nullptr, 0) < 0) {
+    *error = std::strerror(errno); return false;
+  }
+  const auto aligned = [](const sockaddr* address) {
+    return address->sa_len ? 1U + ((address->sa_len - 1U) | (sizeof(long) - 1U))
+                           : sizeof(long);
+  };
+  for (char* cursor = buffer.data(); cursor < buffer.data() + length;) {
+    const auto* message = reinterpret_cast<const rt_msghdr*>(cursor);
+    if (message->rtm_msglen == 0) break;
+    cursor += message->rtm_msglen;
+    if (message->rtm_version != RTM_VERSION || !(message->rtm_flags & RTF_UP) ||
+        (message->rtm_flags & RTF_LLINFO)) continue;
+    const sockaddr* addresses[RTAX_MAX]{};
+    const char* address_cursor = reinterpret_cast<const char*>(message + 1);
+    for (int index = 0; index < RTAX_MAX; ++index) {
+      if (!(message->rtm_addrs & (1 << index))) continue;
+      addresses[index] = reinterpret_cast<const sockaddr*>(address_cursor);
+      address_cursor += aligned(addresses[index]);
+    }
+    const sockaddr* destination = addresses[RTAX_DST];
+    if (!destination || (destination->sa_family != AF_INET && destination->sa_family != AF_INET6))
+      continue;
+    const bool ipv4 = destination->sa_family == AF_INET;
+    const unsigned bits = ipv4 ? 32U : 128U;
+    unsigned prefix = (message->rtm_flags & RTF_HOST) ? bits : 0U;
+    if (!(message->rtm_flags & RTF_HOST) && addresses[RTAX_NETMASK]) {
+      const auto* bytes = reinterpret_cast<const unsigned char*>(addresses[RTAX_NETMASK]) + 2;
+      const size_t byte_count = addresses[RTAX_NETMASK]->sa_len > 2
+                                    ? addresses[RTAX_NETMASK]->sa_len - 2U : 0U;
+      for (size_t i = 0; i < byte_count; ++i)
+        prefix += static_cast<unsigned>(__builtin_popcount(bytes[i]));
+    }
+    const void* destination_bytes = ipv4
+        ? static_cast<const void*>(&reinterpret_cast<const sockaddr_in*>(destination)->sin_addr)
+        : static_cast<const void*>(&reinterpret_cast<const sockaddr_in6*>(destination)->sin6_addr);
+    char text[INET6_ADDRSTRLEN]{};
+    if (!inet_ntop(destination->sa_family, destination_bytes, text, sizeof(text))) continue;
+    ObservedRoute observed;
+    Route& route = observed.route;
+    route.routing_instance = "default";
+    route.rib = "0";  // NET_RT_DUMP reports the calling process's selected FIB.
+    route.address_family = ipv4 ? "ipv4" : "ipv6";
+    route.destination = std::string(text) + "/" + std::to_string(prefix);
+    route.preference = static_cast<std::uint32_t>(message->rtm_rmx.rmx_weight);
+    if (message->rtm_index) {
+      char interface_name[IF_NAMESIZE]{};
+      if (if_indextoname(message->rtm_index, interface_name)) route.interface = interface_name;
+    }
+    const sockaddr* gateway = addresses[RTAX_GATEWAY];
+    if (gateway && gateway->sa_family == destination->sa_family) {
+      const void* gateway_bytes = ipv4
+          ? static_cast<const void*>(&reinterpret_cast<const sockaddr_in*>(gateway)->sin_addr)
+          : static_cast<const void*>(&reinterpret_cast<const sockaddr_in6*>(gateway)->sin6_addr);
+      if (inet_ntop(gateway->sa_family, gateway_bytes, text, sizeof(text))) route.gateway = text;
+    }
+    const std::string key = route.rib + "|" + route.address_family + "|" +
+                            route.destination + "|" + route.gateway.value_or("") +
+                            "|" + route.interface.value_or("");
+    std::uint64_t hash = 1469598103934665603ULL;
+    for (const char byte : key) {
+      hash ^= static_cast<unsigned char>(byte);
+      hash *= 1099511628211ULL;
+    }
+    route.index = hash;
+    routes->push_back(std::move(observed));
+  }
+  return true;
+#endif
 }
 
 }  // namespace dang::rib

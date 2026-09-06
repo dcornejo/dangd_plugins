@@ -4,6 +4,7 @@
 #include "plugins/rib/src/rib_config.h"
 #include "plugins/rib/src/platform_command.h"
 #include "plugins/rib/src/platform_executor.h"
+#include "plugins/rib/src/route_observer.h"
 
 #include <gtest/gtest.h>
 
@@ -148,6 +149,25 @@ TEST(RibConfigTest, ReportsIncompleteCompensation) {
   ASSERT_EQ(result.rollback_failures.size(), 1U);
   EXPECT_NE(result.rollback_failures[0].find("rollback failed"),
             std::string::npos);
+}
+
+TEST(RibConfigTest, SerializesObservedRoutesAsRfc8431State) {
+  ObservedRoute observed;
+  observed.route = {.routing_instance = "default",
+                    .rib = "100",
+                    .address_family = "ipv4",
+                    .index = 42,
+                    .destination = "192.0.2.0/24",
+                    .gateway = "198.51.100.1",
+                    .interface = "dummy&0",
+                    .preference = 10,
+                    .local_only = false};
+  const std::string xml = SerializeOperationalRoutes({observed});
+  EXPECT_NE(xml.find("<route-index>42</route-index>"), std::string::npos);
+  EXPECT_NE(xml.find("<route-state>active</route-state>"), std::string::npos);
+  EXPECT_NE(xml.find("<route-installed-state>installed</route-installed-state>"),
+            std::string::npos);
+  EXPECT_NE(xml.find("dummy&amp;0"), std::string::npos);
 }
 
 }  // namespace

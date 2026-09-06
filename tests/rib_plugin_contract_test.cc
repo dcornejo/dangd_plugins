@@ -31,7 +31,8 @@ int main(int argc, char** argv) {
       action.action_id && std::string_view(action.action_id) == "routes";
   DangOperationalDataV2 state{};
   valid = valid && api->v6.v5.get_operational_data_v2(base.context, &state, &error) &&
-      state.complete == 0;
+      state.complete == 0 && state.data_xml &&
+      std::string_view(state.data_xml).find("routing-instance") != std::string_view::npos;
   if (prepared) base.release(base.context, prepared);
   dlclose(library);
   if (!valid) std::cerr << (error.message ? error.message : "RIB plugin contract failed") << '\n';

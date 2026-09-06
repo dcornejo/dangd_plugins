@@ -10,6 +10,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <string_view>
 
 int main(int argc, char** argv) {
   if (argc != 5 && argc != 6) {
@@ -59,7 +60,10 @@ int main(int argc, char** argv) {
   ok = ok && api->v6.v5.v4.hardware_action_at(base.context, prepared, 0,
                                                &action, &error) &&
       api->v6.v5.v4.apply_hardware_action(base.context, prepared,
-                                          action.action_id, &error) &&
+                                          action.action_id, &error);
+  DangOperationalDataV2 state{};
+  ok = ok && api->v6.v5.get_operational_data_v2(base.context, &state, &error) &&
+      state.data_xml && std::string_view(state.data_xml).find(prefix) != std::string_view::npos &&
       api->v6.v5.v4.rollback_hardware_action(base.context, prepared,
                                              action.action_id, &error);
   if (!ok)

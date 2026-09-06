@@ -7,6 +7,7 @@
 #include "plugins/rib/src/platform_command.h"
 #include "plugins/rib/src/platform_executor.h"
 #include "plugins/rib/src/rib_config.h"
+#include "plugins/rib/src/route_observer.h"
 #include "rib_model_sources.h"
 
 #include <algorithm>
@@ -94,7 +95,14 @@ int RollbackAction(void* context, void* raw, const char* id, DangPluginErrorV1* 
 }
 int Operational(void*, DangOperationalDataV2* out, DangPluginErrorV1* error) {
   if (!out) return Fail(error, "RIB operational output is missing");
-  operational_xml = "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\"/>";
+  std::vector<ObservedRoute> routes;
+  std::string why;
+  const bool ok = kPlatform == NativePlatform::kLinux
+                      ? ObserveLinuxRoutes(&routes, &why)
+                      : ObserveFreeBsdRoutes(&routes, &why);
+  if (!ok) return Fail(error, "cannot read host RIB: " + why,
+                       "/ietf-i2rs-rib:routing-instance/rib-list");
+  operational_xml = SerializeOperationalRoutes(routes);
   *out = {operational_xml.c_str(), 0}; return 1;
 }
 size_t ResourceCount(void*) { return 1; }
