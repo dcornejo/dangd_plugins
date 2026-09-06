@@ -98,6 +98,13 @@ file(READ plugins/ip_management/models/ietf-ip@2018-02-22.yang
 configure_file(plugins/ip_management/src/ip_management_models.h.in
   generated/ip_management_models.h @ONLY)
 
+file(READ plugins/vpp/models/dang-vpp-interfaces@2026-09-07.yang
+  DANG_VPP_INTERFACES_YANG)
+file(READ plugins/vpp/models/dang-vpp-interface-ownership@2026-09-06.yang
+  DANG_VPP_OWNERSHIP_YANG)
+configure_file(plugins/vpp/src/vpp_model_sources.h.in
+  generated/vpp_model_sources.h @ONLY)
+
 set(DANG_IP_PLATFORM_SOURCE
   plugins/ip_management/src/unsupported/backend.cc)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -181,6 +188,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       "${DANG_VPP_VAPI_CLIENT_LIBRARY}")
     target_compile_options(dang_vpp_vapi_client PRIVATE
       -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    set_target_properties(dang_vpp_vapi_client PROPERTIES
+      POSITION_INDEPENDENT_CODE ON)
     add_executable(vpp-vapi-loopback-check
       plugins/vpp/src/vapi_loopback_probe.cc
       plugins/vpp/src/loopback_transaction.cc)
@@ -191,6 +200,20 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       dang_vpp_vapi_client)
     target_compile_options(vpp-vapi-loopback-check PRIVATE
       -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    add_library(dangd_vpp_plugin MODULE
+      plugins/vpp/src/vpp_plugin.cc
+      plugins/vpp/src/loopback_plan.cc
+      plugins/vpp/src/ownership_inventory.cc
+      plugins/vpp/src/ownership_policy.cc)
+    target_compile_features(dangd_vpp_plugin PRIVATE cxx_std_20)
+    target_include_directories(dangd_vpp_plugin PRIVATE
+      "${DANGD_INCLUDE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/generated"
+      "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(dangd_vpp_plugin PRIVATE
+      dang_vpp_vapi_client LibXml2::LibXml2)
+    target_compile_options(dangd_vpp_plugin PRIVATE
+      -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    set_target_properties(dangd_vpp_plugin PROPERTIES PREFIX "")
   endif()
 endif()
 
@@ -285,6 +308,17 @@ if(BUILD_TESTING)
     target_compile_options(vpp_loopback_plan_test PRIVATE
       -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
     add_test(NAME vpp_loopback_plan COMMAND vpp_loopback_plan_test)
+    if(TARGET dangd_vpp_plugin)
+      add_test(NAME vpp_plugin_discovery COMMAND plugin_loader_smoke_test
+        $<TARGET_FILE:dangd_vpp_plugin> dang-vpp dang-vpp-interfaces)
+      add_executable(vpp_plugin_live_test tests/vpp_plugin_live_test.cc)
+      target_compile_features(vpp_plugin_live_test PRIVATE cxx_std_20)
+      target_include_directories(vpp_plugin_live_test PRIVATE
+        "${DANGD_INCLUDE_DIR}")
+      target_link_libraries(vpp_plugin_live_test PRIVATE "${CMAKE_DL_LIBS}")
+      target_compile_options(vpp_plugin_live_test PRIVATE
+        -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    endif()
   endif()
   add_executable(plugin_loader_smoke_test tests/plugin_loader_smoke_test.cc)
   target_compile_features(plugin_loader_smoke_test PRIVATE cxx_std_20)

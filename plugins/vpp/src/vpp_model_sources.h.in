@@ -1,0 +1,10 @@
+// Copyright 2026 David Cornejo
+// SPDX-License-Identifier: Apache-2.0
+
+#ifndef DANG_PLUGINS_VPP_MODEL_SOURCES_H_
+#define DANG_PLUGINS_VPP_MODEL_SOURCES_H_
+
+inline constexpr char kVppInterfacesYang[] = R"yang(@DANG_VPP_INTERFACES_YANG@)yang";
+inline constexpr char kVppOwnershipYang[] = R"yang(@DANG_VPP_OWNERSHIP_YANG@)yang";
+
+#endif

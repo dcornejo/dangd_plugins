@@ -41,6 +41,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   ephemeral `sw_if_index`; safe plans create before activation and deactivate
   before deletion. Schema, parser, ordering, and live `loop0` rollback tests
   pass on both Linux hosts.
+- Added the loadable ABI-v7 VPP provider with embedded model retrieval,
+  exclusive resource declarations, live loopback lookup after restart, and one
+  compensated software-interface hardware action. Real provider-level
+  create/enable and rollback-to-absence interactions pass on both Linux hosts;
+  physical ownership remains deliberately fail-closed.
 
 - Implemented RFC 8431 `nh-add` and `nh-delete` with thread-safe, per-RIB
   nexthop identifier allocation, strict portable base-nexthop validation, and

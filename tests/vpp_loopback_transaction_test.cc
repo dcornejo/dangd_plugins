@@ -27,6 +27,12 @@ class FakeVppClient final : public VppClient {
     *created = {.software_index = 17, .name = created_name};
     return true;
   }
+  bool FindLoopback(uint32_t instance, CreatedInterface* found,
+                    std::string*) override {
+    calls.push_back("find:" + std::to_string(instance));
+    *found = {.software_index = 17, .name = "loop" + std::to_string(instance)};
+    return true;
+  }
   bool SetAdminState(uint32_t index, bool up, std::string* error) override {
     calls.push_back(std::string(up ? "up:" : "down:") + std::to_string(index));
     if ((up && !admin_up_ok) || (!up && !admin_down_ok)) {

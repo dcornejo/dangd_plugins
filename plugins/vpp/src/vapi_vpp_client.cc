@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <string>
 
@@ -108,6 +109,33 @@ bool VapiVppClient::CreateLoopback(uint32_t instance,
   // the mutation's success boundary.
   created->name = "loop" + std::to_string(instance);
   return true;
+}
+
+bool VapiVppClient::FindLoopback(uint32_t instance, CreatedInterface* found,
+                                  std::string* error) {
+  if (!found || !error) return false;
+  error->clear();
+  if (!RequireMessage(&impl_->connection, vapi_msg_id_sw_interface_dump,
+                      "sw_interface_dump", error))
+    return false;
+  vapi::Sw_interface_dump request(impl_->connection, 0, nullptr);
+  auto& payload = request.get_request().get_payload();
+  payload.sw_if_index = UINT32_MAX;
+  payload.name_filter_valid = false;
+  payload.name_filter.length = 0;
+  if (!Execute(&impl_->connection, &request, "sw_interface_dump", error))
+    return false;
+  const std::string expected = "loop" + std::to_string(instance);
+  for (const auto& response : request.get_result_set()) {
+    const auto& detail = response.get_payload();
+    const char* name = reinterpret_cast<const char*>(detail.interface_name);
+    const std::string actual(name, strnlen(name, sizeof(detail.interface_name)));
+    if (actual != expected) continue;
+    *found = {.software_index = detail.sw_if_index, .name = actual};
+    return true;
+  }
+  *error = "VPP loopback " + expected + " does not exist";
+  return false;
 }
 
 bool VapiVppClient::SetAdminState(uint32_t software_index, bool up,

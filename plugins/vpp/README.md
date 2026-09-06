@@ -69,7 +69,16 @@ intent. Each entry is keyed by VPP's persistent user instance, yielding native
 name `loopN`; `sw_if_index` remains only the live mutation handle. The snapshot
 planner emits all creates before activation, and deactivates an enabled
 loopback before deletion. This ordering is covered independently of the daemon
-and is ready to be surfaced as ABI-v7 hardware actions.
+and is surfaced through one ABI-v7 hardware action.
+
+When VAPI development files are present, `dangd_vpp_plugin.so` exposes both VPP
+models through ABI v7 and claims the `vpp-software-interfaces` and
+`hardware-interface-ownership` resource domains. It applies the complete
+software-interface plan as one compensated coordinator action and resolves
+pre-existing `loopN` objects from a fresh VPP interface dump, so restart does
+not depend on cached software indexes. Physical `owner vpp` requests remain
+explicitly rejected after live identity and management-path validation; the
+model is visible for forward compatibility, not an unsafe claim of support.
 
 ## VAPI build and isolated validation
 

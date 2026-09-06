@@ -29,6 +29,10 @@ class VppClient {
   [[nodiscard]] virtual bool CreateLoopback(uint32_t instance,
                                              CreatedInterface* created,
                                              std::string* error) = 0;
+  /** Resolves stable loopN identity to its current VPP software index. */
+  [[nodiscard]] virtual bool FindLoopback(uint32_t instance,
+                                           CreatedInterface* found,
+                                           std::string* error) = 0;
   [[nodiscard]] virtual bool SetAdminState(uint32_t software_index, bool up,
                                             std::string* error) = 0;
   [[nodiscard]] virtual bool DeleteLoopback(uint32_t software_index,
