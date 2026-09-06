@@ -324,7 +324,8 @@ bool InvokeRouteDelete(NativePlatform platform, const char* input_xml,
 bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
                        std::string* output_xml, std::string* error,
                        std::string* error_path, const CommandRunner& runner,
-                       const RouteObserver& observer) {
+                       const RouteObserver& observer,
+                       const NexthopResolver& resolver) {
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "route-update.xml", nullptr,
@@ -388,6 +389,15 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
         replacement.gateway = Text(Child(combined, ipv6 ? "ipv6-address"
                                                          : "ipv4-address"));
         replacement.interface = Text(Child(combined, "outgoing-interface"));
+      }
+      if (xmlNodePtr reference = Child(base, "nexthop-ref")) {
+        std::uint32_t id = 0;
+        if (!resolver || !Unsigned(reference, &id) ||
+            !resolver(rib_name, id, &replacement.gateway,
+                      &replacement.interface)) {
+          failed.emplace_back(index, 2U);
+          continue;
+        }
       }
       if (replacement.gateway->empty()) replacement.gateway.reset();
       if (replacement.interface->empty()) replacement.interface.reset();

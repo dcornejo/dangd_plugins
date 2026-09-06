@@ -18,6 +18,9 @@ All notable changes to the external dangd plugin collection are recorded here.
 - Resolved registered `nexthop-ref` identifiers during configuration commits
   and `route-add`, scoped lookup to the containing RIB, and added attributed
   missing-reference failures plus native-planner projection tests.
+- Extended `nexthop-ref` resolution to prefix-selected `route-update`, retaining
+  its observed before-image rollback while reporting unknown references through
+  per-route RFC failure detail.
 
 - Adopted the existing ABI-v4 RFC 8343/8344 IP-management provider from dangd,
   including its direct Linux rtnetlink and FreeBSD ioctl/route-netlink

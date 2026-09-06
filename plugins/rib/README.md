@@ -115,10 +115,11 @@ combined nexthop and retains it in a mutex-protected registry scoped by RIB.
 failure for an unknown pair. This portable registry is intentionally owned by
 the plugin because Linux and FreeBSD do not expose equivalent standalone
 nexthop objects. It is currently volatile and is not yet emitted in operational
-state. Configuration commits and `route-add` resolve `nexthop-ref` against the
+state. Configuration commits, `route-add`, and prefix-selected `route-update`
+resolve `nexthop-ref` against the
 containing RIB and fail closed for absent or cross-RIB identifiers. Reference
-lifetime enforcement and `route-update` reference resolution remain pending,
-so reusable-nexthop semantics are not yet compliant.
+lifetime enforcement remains pending, so reusable-nexthop semantics are not
+yet compliant.
 
 Numeric names are an intentional temporary variance: RFC 8431 RIB names are
 arbitrary strings, while Linux policy tables and FreeBSD FIBs need an explicit

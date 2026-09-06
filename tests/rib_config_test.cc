@@ -308,6 +308,62 @@ TEST(RibConfigTest, RouteUpdateRestoresOriginalAfterInstallFailure) {
   EXPECT_NE(output.find(">1</failed-count>"), std::string::npos);
 }
 
+TEST(RibConfigTest, RouteUpdateResolvesRegisteredNexthop) {
+  NexthopRegistry registry;
+  ASSERT_EQ(registry.Add({.rib = "100", .gateway = "192.0.2.44",
+                          .interface = "dummy44"}), 1U);
+  ObservedRoute observed;
+  observed.route = {.routing_instance = "default", .rib = "100",
+                    .address_family = "ipv4", .destination = "192.0.2.0/24",
+                    .gateway = "192.0.2.1", .interface = "dummy0",
+                    .preference = 10};
+  std::vector<NativeCommand> commands;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRouteUpdate(
+      NativePlatform::kLinux,
+      R"(<route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><input-routes><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><updated-nexthop><nexthop-base><nexthop-ref>1</nexthop-ref></nexthop-base></updated-nexthop></route-list></input-routes></route-update>)",
+      &output, &error, &path,
+      [&](const NativeCommand& command, std::string*) {
+        commands.push_back(command); return true;
+      },
+      [&](std::vector<ObservedRoute>* routes, std::string*) {
+        *routes = {observed}; return true;
+      },
+      [&](const std::string& rib, std::uint32_t id,
+          std::optional<std::string>* gateway,
+          std::optional<std::string>* interface) {
+        return registry.Resolve(rib, id, gateway, interface);
+      })) << error;
+  ASSERT_EQ(commands.size(), 2U);
+  EXPECT_NE(std::ranges::find(commands[1].arguments, "192.0.2.44"),
+            commands[1].arguments.end());
+  EXPECT_NE(std::ranges::find(commands[1].arguments, "dummy44"),
+            commands[1].arguments.end());
+  EXPECT_NE(output.find(">1</success-count>"), std::string::npos);
+}
+
+TEST(RibConfigTest, RouteUpdateReportsMissingNexthopReference) {
+  ObservedRoute observed;
+  observed.route = {.routing_instance = "default", .rib = "100",
+                    .address_family = "ipv4", .destination = "192.0.2.0/24",
+                    .gateway = "192.0.2.1", .interface = std::nullopt,
+                    .preference = 10};
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRouteUpdate(
+      NativePlatform::kLinux,
+      R"(<route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><return-failure-detail>true</return-failure-detail><rib-name>100</rib-name><input-routes><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><updated-nexthop><nexthop-base><nexthop-ref>99</nexthop-ref></nexthop-base></updated-nexthop></route-list></input-routes></route-update>)",
+      &output, &error, &path,
+      [](const NativeCommand&, std::string*) { return true; },
+      [&](std::vector<ObservedRoute>* routes, std::string*) {
+        *routes = {observed}; return true;
+      }));
+  EXPECT_NE(output.find("<error-code>2</error-code>"), std::string::npos);
+}
+
 TEST(RibConfigTest, RibAddValidatesLogicalNamespaceAndRejectsRpf) {
   std::string output;
   std::string error;

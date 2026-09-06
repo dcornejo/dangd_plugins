@@ -126,7 +126,9 @@ int Invoke(void* raw_context, const DangOperationV1* operation,
                                 &rpc_output_xml, &why, &where);
   else if (std::string_view(operation->operation_name) == "route-update")
     invoked = InvokeRouteUpdate(kPlatform, operation->input_xml,
-                                &rpc_output_xml, &why, &where);
+                                &rpc_output_xml, &why, &where,
+                                RunNativeCommand, {},
+                                Resolver(static_cast<Context*>(raw_context)));
   else if (std::string_view(operation->operation_name) == "rib-add")
     invoked = InvokeRibAdd(kPlatform, operation->input_xml, &rpc_output_xml,
                            &why, &where);

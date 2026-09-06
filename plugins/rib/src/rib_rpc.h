@@ -62,7 +62,8 @@ using RouteObserver =
     NativePlatform platform, const char* input_xml, std::string* output_xml,
     std::string* error, std::string* error_path,
     const CommandRunner& runner = RunNativeCommand,
-    const RouteObserver& observer = {});
+    const RouteObserver& observer = {},
+    const NexthopResolver& resolver = {});
 
 /** Validates availability of a native RIB/FIB for the rib-add RPC. */
 [[nodiscard]] bool InvokeRibAdd(NativePlatform platform, const char* input_xml,
