@@ -218,11 +218,23 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
 endif()
 
 if(BUILD_TESTING)
+  find_package(GTest REQUIRED)
   if(TARGET vpp-ownership-inventory)
     add_test(NAME vpp_ownership_inventory_read_only
       COMMAND vpp-ownership-inventory)
+    add_executable(vpp_ownership_policy_test
+      tests/vpp_ownership_policy_test.cc
+      plugins/vpp/src/ownership_policy.cc)
+    target_compile_features(vpp_ownership_policy_test PRIVATE cxx_std_20)
+    target_include_directories(vpp_ownership_policy_test PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(vpp_ownership_policy_test PRIVATE
+      GTest::gtest_main LibXml2::LibXml2)
+    target_compile_options(vpp_ownership_policy_test PRIVATE
+      -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    add_test(NAME vpp_ownership_policy_validation
+      COMMAND vpp_ownership_policy_test)
   endif()
-  find_package(GTest REQUIRED)
   add_executable(plugin_loader_smoke_test tests/plugin_loader_smoke_test.cc)
   target_compile_features(plugin_loader_smoke_test PRIVATE cxx_std_20)
   target_include_directories(plugin_loader_smoke_test PRIVATE
@@ -303,6 +315,9 @@ if(BUILD_TESTING)
 
   find_program(DANG_YANGLINT_EXECUTABLE yanglint)
   if(DANG_YANGLINT_EXECUTABLE)
+    add_test(NAME vpp_ownership_schema
+      COMMAND "${DANG_YANGLINT_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/plugins/vpp/models/dang-vpp-interface-ownership@2026-09-06.yang")
     add_test(NAME rfc8431_schema_interoperability
       COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_rfc8431_yanglint.sh"
         "${DANG_YANGLINT_EXECUTABLE}"

@@ -14,6 +14,7 @@ struct InterfaceEvidence {
   std::string name;
   std::string pci_address;
   std::string mac_address;
+  std::string vendor_device;
   std::string driver;
   bool carries_default_route = false;
   bool carries_management_session = false;

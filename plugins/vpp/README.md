@@ -10,8 +10,11 @@ Configuration uses VPP's programmatic API; `vppctl` is diagnostic only.
 Physical-device ownership is deliberately separate from ordinary VPP interface
 configuration. The `hardware-interface-ownership` resource domain will move an
 explicitly allowlisted PCI function between the host and VPP. Interface names
-are display metadata, never durable identity. A claim records PCI BDF, expected
-MAC address, vendor/device identity, original driver, and desired owner.
+are display metadata, never durable identity. The initial
+`dang-vpp-interface-ownership` model identifies a claim with its PCI BDF and
+pins the expected MAC and PCI vendor/device values. The original driver is
+captured from live inventory for the eventual reversible transaction rather
+than trusted as client-supplied policy.
 
 ```mermaid
 flowchart LR
@@ -22,22 +25,31 @@ flowchart LR
   O -. independent timeout .-> R[Host-side recovery watchdog]
 ```
 
-The default allowlist is empty. A device is ineligible when it carries the
-current management session, an IPv4 or IPv6 default route, or participates in a
-management bridge, bond, VLAN parent, or required route. Uncertain identity is
-denied. Claiming a device will require a captured host before-image, an
-independent recovery watchdog, a surviving management path, and confirmed
-commit semantics.
+The default allowlist is empty: an absent ownership subtree requests no VPP
+transfer, and each listed device defaults to owner `host`. Before accepting
+owner `vpp`, the policy evaluator compares the configured PCI BDF, MAC address,
+and vendor/device pair with a fresh inventory. A missing device, identity
+drift, default-route evidence, management-session evidence, or uncertain
+eligibility fails closed with the affected YANG path. A future transfer must
+also reject bridge, bond, VLAN-parent, and required-route participation.
+Claiming a device will require a captured host before-image, an independent
+recovery watchdog, a surviving management path, and confirmed-commit
+semantics.
 
 ## Current discovery checkpoint
 
-The initial code is read-only and claims no device. On `dev-linux-1` and
+The current code is read-only and claims no device. On `dev-linux-1` and
 `dev-linux-2`, `ens18` maps to PCI `0000:06:12.0`, carries SSH plus IPv4/IPv6
 default routes, and is permanently protected. `ens19` maps to PCI
-`0000:06:13.0`, uses `virtio_net`, and is the isolated `10.254.254.0/30`
-private-LAN candidate. VPP is not installed on either host. No driver, address,
-route, or link state was changed while establishing this checkpoint.
+`0000:06:13.0`, uses `virtio_net` with PCI identity `1af4:1000`, and is the
+isolated `10.254.254.0/30` private-LAN candidate. The inventory and ownership
+policy tests pass on both hosts; the policy tests cover exact identity,
+identity drift, unknown PCI functions, protected management paths, and explicit
+host ownership. VPP is not installed on either host. No driver, address, route,
+or link state was changed while establishing this checkpoint.
 
-The next implementation steps are a programmatic inventory API, an explicit
-allowlist model, VPP package/API discovery, and loopback-only transactions
-before any physical-device ownership work.
+The model and evaluator are a validation-only scaffold and are not yet exposed
+by a loadable dangd plugin. The next implementation steps are VPP package and
+binary-API discovery, then VPP-created loopback transactions before any
+physical-device ownership work. Bridge, bond, VLAN-parent, and required-route
+evidence plus the recovery watchdog remain prerequisites for physical claims.

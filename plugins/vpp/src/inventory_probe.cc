@@ -19,6 +19,8 @@ int main() {
               << (item.pci_address.empty() ? "none" : item.pci_address)
               << " driver=" << (item.driver.empty() ? "none" : item.driver)
               << " mac=" << item.mac_address
+              << " vendor-device="
+              << (item.vendor_device.empty() ? "none" : item.vendor_device)
               << " default-route=" << (item.carries_default_route ? "yes" : "no")
               << " management-session="
               << (item.carries_management_session ? "yes" : "no")

@@ -19,6 +19,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   `getifaddrs`, and reads IPv4/IPv6 default-route evidence from procfs. It
   excludes Linux's unreachable IPv6 loopback sentinel and passed independently
   on both authorized Linux hosts without changing network state.
+- Added the validation-only `dang-vpp-interface-ownership` YANG model and a
+  fail-closed ownership evaluator. VPP claims now require an exact live PCI,
+  MAC, and vendor/device match and reject unknown, default-route, and current
+  management-session interfaces with an attributed model path. Portable policy
+  tests and read-only live validation pass on both Linux hosts.
 
 - Implemented RFC 8431 `nh-add` and `nh-delete` with thread-safe, per-RIB
   nexthop identifier allocation, strict portable base-nexthop validation, and

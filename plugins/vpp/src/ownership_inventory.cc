@@ -105,6 +105,16 @@ bool DiscoverInterfaces(std::vector<InterfaceEvidence>* interfaces,
     value.name = item->if_name;
     value.pci_address = PciAddress(base / "device");
     value.mac_address = ReadLine(base / "address");
+    if (!value.pci_address.empty()) {
+      const auto pci = std::filesystem::path("/sys/bus/pci/devices") /
+                       value.pci_address;
+      std::string vendor = ReadLine(pci / "vendor");
+      std::string device = ReadLine(pci / "device");
+      if (vendor.starts_with("0x")) vendor.erase(0, 2);
+      if (device.starts_with("0x")) device.erase(0, 2);
+      if (!vendor.empty() && !device.empty())
+        value.vendor_device = vendor + ":" + device;
+    }
     std::error_code driver_error;
     const auto driver = std::filesystem::canonical(base / "device/driver", driver_error);
     if (!driver_error) value.driver = driver.filename().string();

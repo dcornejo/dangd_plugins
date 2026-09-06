@@ -1,0 +1,42 @@
+// Copyright 2026 David Cornejo
+// SPDX-License-Identifier: Apache-2.0
+
+module dang-vpp-interface-ownership {
+  yang-version 1.1;
+  namespace "urn:dang:vpp:interface-ownership";
+  prefix dvio;
+
+  organization "dang project";
+  description
+    "Explicit, fail-closed authorization for transferring Linux PCI network
+     devices to VPP. This model grants eligibility only; live management-path
+     safety checks remain mandatory at every transaction.";
+
+  revision 2026-09-06 {
+    description "Initial validation-only ownership policy.";
+  }
+
+  container vpp-interface-ownership {
+    list device {
+      key "pci-address";
+      leaf pci-address {
+        type string { pattern '[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]'; }
+      }
+      leaf expected-mac-address {
+        type string { pattern '[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}'; }
+        mandatory true;
+      }
+      leaf expected-vendor-device {
+        type string { pattern '[0-9a-fA-F]{4}:[0-9a-fA-F]{4}'; }
+        mandatory true;
+      }
+      leaf owner {
+        type enumeration { enum host; enum vpp; }
+        default host;
+      }
+      description
+        "One exact PCI function. A request for owner vpp is rejected when
+         identity differs or live management-path evidence is present.";
+    }
+  }
+}
