@@ -155,6 +155,17 @@ target_compile_options(dangd_frr_plugin PRIVATE
   -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 set_target_properties(dangd_frr_plugin PROPERTIES PREFIX "")
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  add_executable(vpp-ownership-inventory
+    plugins/vpp/src/inventory_probe.cc
+    plugins/vpp/src/ownership_inventory.cc)
+  target_compile_features(vpp-ownership-inventory PRIVATE cxx_std_20)
+  target_include_directories(vpp-ownership-inventory PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_compile_options(vpp-ownership-inventory PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+endif()
+
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
   add_library(dangd_rib_plugin MODULE plugins/rib/src/rib_plugin.cc
     plugins/rib/src/rib_config.cc plugins/rib/src/platform_executor.cc
@@ -207,6 +218,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
 endif()
 
 if(BUILD_TESTING)
+  if(TARGET vpp-ownership-inventory)
+    add_test(NAME vpp_ownership_inventory_read_only
+      COMMAND vpp-ownership-inventory)
+  endif()
   find_package(GTest REQUIRED)
   add_executable(plugin_loader_smoke_test tests/plugin_loader_smoke_test.cc)
   target_compile_features(plugin_loader_smoke_test PRIVATE cxx_std_20)

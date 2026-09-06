@@ -9,6 +9,17 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added the Linux-only VPP provider architecture and its physical-interface
+  ownership safety boundary. Documented stable PCI identity, empty-by-default
+  allowlisting, trusted management-path denial, independent recovery, and the
+  read-only test-host checkpoint that permanently protects `ens18` and limits
+  future physical experiments to explicitly authorized `ens19` devices.
+- Added a shell-free Linux ownership inventory that maps interfaces to stable
+  PCI identity and drivers through sysfs, detects the live SSH destination with
+  `getifaddrs`, and reads IPv4/IPv6 default-route evidence from procfs. It
+  excludes Linux's unreachable IPv6 loopback sentinel and passed independently
+  on both authorized Linux hosts without changing network state.
+
 - Implemented RFC 8431 `nh-add` and `nh-delete` with thread-safe, per-RIB
   nexthop identifier allocation, strict portable base-nexthop validation, and
   modeled failures for unknown identifiers and unsupported forms. Added

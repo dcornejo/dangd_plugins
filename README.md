@@ -22,6 +22,7 @@ plugins/
   kea/            Kea DHCPv4/DHCPv6 provider and deployment guide
   frr/            FRR-native provider and mgmtd integration (in progress)
   rib/            RFC 8431 schema and in-progress native backend
+  vpp/            Linux-only VPP ownership safety architecture
   system/         RFC 7317 provider and platform implementations
 pam/              PAM adapter and recovery-first installation guide
 tests/            collection-wide loader and contract tests
