@@ -26,6 +26,14 @@ All notable changes to the external dangd plugin collection are recorded here.
   those module prefixes, checks event/session/module identity, bounds its queue,
   and reconnects after daemon restarts. Native protocol RPCs follow the same
   live-module gate. Captured-library tests never start background I/O.
+- Corrected conditional protocol ownership so the separate
+  `/frr-ripd:ripd` and `/frr-isisd:isis` roots participate in extraction,
+  validation, atomic commit, rollback, applied-state reconciliation, drift
+  detection, and operational retrieval. Live testing also replaced invalid
+  bare module-prefix subscriptions with exact modeled event XPaths and added a
+  guarded Linux namespace reproducer. FRR 10.7.1 successfully emits the RIP
+  event but mgmtd aborts while encoding it; the opt-in test reports that exact
+  upstream assertion as skipped and fails for any other error.
 - Added the Linux-only VPP provider architecture and its physical-interface
   ownership safety boundary. Documented stable PCI identity, empty-by-default
   allowlisting, trusted management-path denial, independent recovery, and the

@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -18,13 +19,42 @@ int main(int argc, char** argv) {
   const std::string_view mode = argc >= 3 ? argv[2] : "";
   if (argc < 2 || argc > 5 ||
       (argc >= 3 && mode != "--operational" && mode != "--running" &&
-       mode != "--rpc") ||
+       mode != "--rpc" && mode != "--notify" && mode != "--replace") ||
       (mode == "--running" && argc != 4) ||
+      (mode == "--notify" && argc != 4) ||
+      (mode == "--replace" && argc != 5) ||
       (mode == "--rpc" && (argc < 4 || argc > 5))) {
     std::cerr <<
         "usage: frr-mgmtd-session-check SOCKET "
-        "[--operational [XPATH] | --running XPATH | --rpc XPATH [XML]]\n";
+        "[--operational [XPATH] | --running XPATH | --rpc XPATH [XML] | "
+        "--notify XPATH | --replace XPATH XML]\n";
     return 2;
+  }
+  if (mode == "--replace") {
+    const std::filesystem::path socket_path(argv[1]);
+    const std::filesystem::path parent = socket_path.parent_path();
+    std::error_code filesystem_error;
+    const auto parent_status = std::filesystem::symlink_status(
+        parent, filesystem_error);
+    const auto socket_status = std::filesystem::status(
+        socket_path, filesystem_error);
+    const std::filesystem::path grandparent =
+        std::filesystem::weakly_canonical(parent.parent_path(),
+                                           filesystem_error);
+    const bool recognized_frr_run_directory =
+        grandparent == "/var/run/frr" ||
+        grandparent == "/usr/local/var/run/frr";
+    if (filesystem_error || socket_path.filename() != "mgmtd_fe.sock" ||
+        !parent.filename().string().starts_with("dang-notify-") ||
+        !recognized_frr_run_directory ||
+        std::filesystem::is_symlink(parent_status) ||
+        !std::filesystem::is_directory(parent_status) ||
+        !std::filesystem::is_socket(socket_status)) {
+      std::cerr <<
+          "refusing mutation outside a real disposable dang-notify FRR "
+          "pathspace\n";
+      return 2;
+    }
   }
   std::string error;
   auto transport = dang::plugins::frr::mgmtd::Transport::Connect(
@@ -46,7 +76,30 @@ int main(int argc, char** argv) {
   const std::uint64_t session_id = session->id();
   std::optional<std::string> operational;
   if (argc >= 3) {
-    if (mode == "--running")
+    if (mode == "--replace") {
+      if (!session->LockCandidate(&error) ||
+          !session->ReplaceCandidate(argv[3], argv[4], &error) ||
+          !session->ValidateCandidate(&error) ||
+          !session->ApplyCandidate(&error) ||
+          !session->UnlockCandidate(&error)) {
+        std::cerr << error << '\n';
+        return 1;
+      }
+    } else if (mode == "--notify") {
+      const std::string_view selector = argv[3];
+      if (!session->SelectNotifications(
+              std::span<const std::string_view>(&selector, 1), &error)) {
+        std::cerr << error << '\n';
+        return 1;
+      }
+      bool timed_out = false;
+      auto event = session->NextNotification(&timed_out, &error);
+      if (!event) {
+        std::cerr << (timed_out ? "notification wait timed out" : error) << '\n';
+        return 1;
+      }
+      operational = event->xpath + "\n" + event->xml;
+    } else if (mode == "--running")
       operational = session->GetRunningConfiguration(argv[3], &error);
     else if (mode == "--rpc")
       operational = session->InvokeRpc(argv[3], argc == 5 ? argv[4] : "",
@@ -54,7 +107,7 @@ int main(int argc, char** argv) {
     else
       operational = session->GetOperationalData(argc == 4 ? argv[3] : "/*",
                                                 &error);
-    if (!operational) {
+    if (mode != "--replace" && !operational) {
       std::cerr << error << '\n';
       (void)session->Close(&error);
       return 1;

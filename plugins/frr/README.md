@@ -99,20 +99,30 @@ The provider now starts a dedicated long-lived notification connection when
 FRR's live RFC 8525 module-set advertises `frr-ripd` or `frr-isisd`. Installed
 source files alone do not enable either module. The matching complete schema
 closure is then published as implemented, its configuration augments remain
-inside the existing atomic `/frr-routing:routing` transaction, and its native
+inside the same atomic mgmtd transaction. The provider explicitly owns the
+modules' separate `/frr-ripd:ripd` and `/frr-isisd:isis` roots for extraction,
+rollback, reconciliation, drift checks, and operational retrieval; its native
 RPCs use the same mgmtd dispatch path. The session explicitly negotiates XML,
-selects only the enabled module prefixes, distinguishes safe idle timeouts,
-checks session and module identity, places at most 1,024 events in the
-nonblocking ABI-v8 queue, and reconnects after mgmtd restarts. Dangd performs
-the final schema validation, subscription filtering, and NACM authorization.
+selects every enabled modeled event by its exact schema XPath, distinguishes
+safe idle timeouts, checks session and module identity, places at most 1,024
+events in the nonblocking ABI-v8 queue, and reconnects after mgmtd restarts.
+Dangd performs the final schema validation, subscription filtering, and NACM
+authorization.
 Captured YANG-library fixtures deliberately disable the reader so discovery
 tests cannot contact a production socket.
 
-Successful live notification generation remains to be demonstrated. The four
-current validation hosts install the RIP and IS-IS source files, but their live
-FRR service enables only mgmtd, zebra, and staticd, so neither protocol module
-appears in the running library yet. Protocol tests must use isolated interfaces
-and must not attach a host LAN interface.
+The opt-in Linux interaction creates two network namespaces and a disposable
+veth, commits `/frr-ripd:ripd` through mgmtd, subscribes to
+`authentication-type-failure`, and sends a malformed RIPv2 authentication
+record from the peer namespace. It never attaches a host LAN interface. FRR
+10.7.1 registers the RIP backend, applies the modeled configuration, opens UDP
+520, and emits the notification, but mgmtd then reports `Unexpected notification
+element "authentication-type-failure"` and aborts at
+`assure_notify_msg_cache()`. The CTest case uses skip result 77 only for that
+exact signature; any other failure remains a failed test. Successful forwarding
+is therefore blocked upstream. FreeBSD compilation passes, but repeating an
+already identified platform-independent mgmtd assertion there would not supply
+successful interoperability evidence.
 
 After every successful apply, ABI-v6 reconciliation reads
 `/frr-routing:routing` and `/frr-zebra:zebra` back from FRR's running datastore.

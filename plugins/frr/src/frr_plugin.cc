@@ -68,6 +68,7 @@ struct Context {
   std::vector<std::string> source_uris;
   std::set<std::string> implemented_modules;
   std::vector<std::string> notification_modules;
+  std::vector<dang::plugins::frr::RootDescriptor> roots;
   std::string socket_path = "/var/run/frr/mgmtd_fe.sock";
   std::chrono::milliseconds timeout{2000};
   std::atomic<std::uint64_t> next_client{1};
@@ -161,17 +162,18 @@ struct Context {
     auto runtime_modules = dang::plugins::frr::RuntimeImplementedModules(
         *library_xml, &initialization_error);
     if (!runtime_modules) return;
-    std::vector<std::string> roots{"frr-routing", "frr-zebra", "frr-staticd"};
+    std::vector<std::string> schema_roots{
+        "frr-routing", "frr-zebra", "frr-staticd"};
     // RIP and IS-IS are the only FRR 10.7 native modules that declare modeled
     // notifications. Load either complete closure only when the running daemon
     // advertises it as implemented; installed source alone is insufficient.
     for (const std::string_view module : {"frr-ripd", "frr-isisd"}) {
       if (!runtime_modules->contains(std::string(module))) continue;
-      roots.emplace_back(module);
+      schema_roots.emplace_back(module);
       notification_modules.emplace_back(module);
     }
     auto closure = dang::plugins::frr::ResolveImportClosure(
-        *inventory, roots, &initialization_error);
+        *inventory, schema_roots, &initialization_error);
     if (!closure) return;
     for (const std::size_t index : *closure) {
       source_uris.push_back((*inventory)[index].path.string());
@@ -196,6 +198,16 @@ struct Context {
                            "frr-staticd"};
     implemented_modules.insert(notification_modules.begin(),
                                notification_modules.end());
+    this->roots = {{"frr-routing", std::string(kRoutingNamespace), "routing",
+              "/frr-routing:routing"},
+             {"frr-zebra", std::string(kZebraNamespace), "zebra",
+              "/frr-zebra:zebra"}};
+    if (implemented_modules.contains("frr-ripd"))
+      this->roots.push_back({"frr-ripd", "http://frrouting.org/yang/ripd",
+                             "ripd", "/frr-ripd:ripd"});
+    if (implemented_modules.contains("frr-isisd"))
+      this->roots.push_back({"frr-isisd", "http://frrouting.org/yang/isisd",
+                             "isis", "/frr-isisd:isis"});
     source_uris.emplace_back("embedded:dang-frr-monitoring");
     sources.push_back({.module_name = "dang-frr-monitoring",
                        .revision = "2026-09-04",
@@ -224,15 +236,6 @@ thread_local std::string operational_xml;
 thread_local std::string reconciled_xml;
 thread_local std::string rpc_output_xml;
 thread_local std::vector<const char*> callback_features;
-
-const std::vector<dang::plugins::frr::RootDescriptor>& RootDescriptors() {
-  static const std::vector<dang::plugins::frr::RootDescriptor> descriptors{
-      {"frr-routing", std::string(kRoutingNamespace), "routing",
-       "/frr-routing:routing"},
-      {"frr-zebra", std::string(kZebraNamespace), "zebra",
-       "/frr-zebra:zebra"}};
-  return descriptors;
-}
 
 int Fail(DangPluginErrorV1* error, std::string message,
          std::string path = "/frr-routing:routing") {
@@ -318,8 +321,23 @@ void StartNotificationReader(Context* owner) {
   owner->notification_reader = std::jthread([owner](std::stop_token stop) {
     std::vector<std::string> selector_storage;
     std::vector<std::string_view> selectors;
-    for (const std::string& module : owner->notification_modules)
-      selector_storage.push_back("/" + module + ":");
+    for (const std::string& module : owner->notification_modules) {
+      if (module == "frr-ripd") {
+        selector_storage.push_back("/frr-ripd:authentication-type-failure");
+        selector_storage.push_back("/frr-ripd:authentication-failure");
+      } else if (module == "frr-isisd") {
+        for (const std::string_view name : {
+                 "database-overload", "lsp-too-large", "if-state-change",
+                 "corrupted-lsp-detected", "attempt-to-exceed-max-sequence",
+                 "id-len-mismatch", "max-area-addresses-mismatch",
+                 "own-lsp-purge", "sequence-number-skipped",
+                 "authentication-type-failure", "authentication-failure",
+                 "version-skew", "area-mismatch", "rejected-adjacency",
+                 "lsp-error-detected", "adjacency-state-change",
+                 "lsp-received", "lsp-generation"})
+          selector_storage.push_back("/frr-isisd:" + std::string(name));
+      }
+    }
     for (const std::string& selector : selector_storage)
       selectors.push_back(selector);
     while (!stop.stop_requested()) {
@@ -352,9 +370,10 @@ void StartNotificationReader(Context* owner) {
 }
 
 std::optional<std::vector<std::optional<std::string>>> ReadRunningRoots(
-    dang::plugins::frr::mgmtd::Session* session, std::string* error) {
+    Context* owner, dang::plugins::frr::mgmtd::Session* session,
+    std::string* error) {
   std::vector<std::optional<std::string>> roots;
-  for (const auto& descriptor : RootDescriptors()) {
+  for (const auto& descriptor : owner->roots) {
     auto xml = session->GetRunningConfiguration(descriptor.xpath, error);
     if (!xml) return std::nullopt;
     roots.push_back(xml->empty() ? std::nullopt
@@ -378,7 +397,7 @@ void StartDriftWatcher(Context* owner) {
       std::string ignored_error;
       auto session = OpenConcreteSession(owner, &ignored_error);
       if (!session) continue;
-      auto observed = ReadRunningRoots(session.get(), &ignored_error);
+      auto observed = ReadRunningRoots(owner, session.get(), &ignored_error);
       std::string close_error;
       const bool closed = session->Close(&close_error);
       if (!observed || !closed || observed->size() != expected->size()) continue;
@@ -386,7 +405,7 @@ void StartDriftWatcher(Context* owner) {
         auto equivalent = dang::plugins::frr::EquivalentConfigurationRoot(
             (*expected)[index], (*observed)[index], &ignored_error);
         if (!equivalent || *equivalent) continue;
-        const std::string& path = RootDescriptors()[index].xpath;
+        const std::string& path = owner->roots[index].xpath;
         bool newly_reported = false;
         {
           std::lock_guard lock(owner->notification_mutex);
@@ -418,7 +437,7 @@ int Prepare(void* raw, const DangTransactionV1* transaction, void** output,
   std::string extraction_path;
   auto roots = dang::plugins::frr::ExtractConfigurationRoots(
       transaction->before_xml, transaction->proposed_xml,
-      RootDescriptors(),
+      owner->roots,
       &extraction_error, &extraction_path);
   if (!roots)
     return Fail(error, extraction_error,
@@ -474,6 +493,16 @@ int Operational(void* raw, DangOperationalDataV1* result,
   std::vector<std::string> fragments;
   auto zebra = session->GetOperationalData("/frr-zebra:zebra", &callback_error);
   if (zebra && !zebra->empty()) fragments.push_back(std::move(*zebra));
+  for (const std::string& module : owner->notification_modules) {
+    const std::string xpath = module == "frr-ripd" ? "/frr-ripd:ripd"
+                                                    : "/frr-isisd:isis";
+    auto protocol = session->GetOperationalData(xpath, &callback_error);
+    if (!protocol) {
+      zebra.reset();
+      break;
+    }
+    if (!protocol->empty()) fragments.push_back(std::move(*protocol));
+  }
   for (const auto& [xpath, descriptor] : {
            std::pair{
                "/frr-interface:lib",
@@ -500,7 +529,7 @@ int Operational(void* raw, DangOperationalDataV1* result,
     if (!filtered->empty()) fragments.push_back(std::move(*filtered));
   }
   std::unique_lock running_lock(owner->running_mutex);
-  auto running = zebra ? ReadRunningRoots(session.get(), &callback_error)
+  auto running = zebra ? ReadRunningRoots(owner, session.get(), &callback_error)
                        : std::nullopt;
   std::string close_error;
   const bool closed = session->Close(&close_error);
@@ -513,10 +542,10 @@ int Operational(void* raw, DangOperationalDataV1* result,
       auto equivalent = dang::plugins::frr::EquivalentConfigurationRoot(
           (*owner->expected_running)[index], (*running)[index], &callback_error);
       if (!equivalent)
-        return Fail(error, callback_error, RootDescriptors()[index].xpath);
+        return Fail(error, callback_error, owner->roots[index].xpath);
       if (!*equivalent)
         return Fail(error, "FRR running configuration changed outside dangd",
-                    RootDescriptors()[index].xpath);
+                    owner->roots[index].xpath);
     }
   }
   operational_xml = dang::plugins::frr::OperationalDocument(fragments);
@@ -534,7 +563,7 @@ int Reconcile(void* raw, void* prepared_raw, const char* current_xml,
   auto session = OpenConcreteSession(owner, &callback_error);
   if (!session) return Fail(error, callback_error, "/");
   std::unique_lock running_lock(owner->running_mutex);
-  auto observed = ReadRunningRoots(session.get(), &callback_error);
+  auto observed = ReadRunningRoots(owner, session.get(), &callback_error);
   std::string close_error;
   const bool closed = session->Close(&close_error);
   if (!observed)
@@ -542,7 +571,7 @@ int Reconcile(void* raw, void* prepared_raw, const char* current_xml,
   if (!closed) return Fail(error, close_error, "/");
   std::string reconciliation_path;
   auto reconciled = dang::plugins::frr::ReconcileConfigurationRoots(
-      current_xml, RootDescriptors(), *observed, &callback_error,
+      current_xml, owner->roots, *observed, &callback_error,
       &reconciliation_path);
   if (!reconciled)
     return Fail(error, callback_error,
