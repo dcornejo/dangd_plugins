@@ -34,6 +34,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   guarded Linux namespace reproducer. FRR 10.7.1 successfully emits the RIP
   event but mgmtd aborts while encoding it; the opt-in test reports that exact
   upstream assertion as skipped and fails for any other error.
+- Corrected FRR parent-tree ownership by publishing live `frr-interface` and
+  `frr-vrf` modules as implemented and including their complete `lib` roots in
+  atomic candidate operations, rollback, reconciliation, drift detection, and
+  operational output. Protocol configuration augmenting an interface can no
+  longer be advertised while silently falling outside the provider transaction.
 - Added the Linux-only VPP provider architecture and its physical-interface
   ownership safety boundary. Documented stable PCI identity, empty-by-default
   allowlisting, trusted management-path denial, independent recovery, and the

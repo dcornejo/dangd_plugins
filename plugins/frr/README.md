@@ -81,10 +81,11 @@ successful live interoperability remains blocked until an FRR release or
 backend actually registers these modeled RPCs. The plugin preserves FRR's
 rejection instead of substituting CLI behavior.
 
-Native FRR notifications and protocols beyond zebra/staticd are not yet
-implemented. The provider additionally publishes its small implemented
-`dang-frr-monitoring` model. Its `configuration-drift` notification is provider
-health telemetry rather than an alteration of FRR's native models.
+Native FRR protocols beyond zebra/staticd are enabled only when FRR's live
+library and backend advertise them. RIP and IS-IS are the first conditional
+protocols. The provider additionally publishes its small implemented
+`dang-frr-monitoring` model. Its `configuration-drift` notification is
+provider health telemetry rather than an alteration of FRR's native models.
 The operational callback publishes FRR's observed tree; it does not substitute
 requested configuration for observed state.
 
@@ -94,7 +95,8 @@ on-change or periodic XPath-prefix subscriptions and strictly decode modeled
 XML `NOTIFY` frames. Datastore replace/delete/patch synchronization messages
 are deliberately rejected by that decoder so they cannot be mislabeled as
 RFC 5277 events. The installed FRR 10.7 model set declares notifications only
-in `frr-isisd` and `frr-ripd`; neither module is advertised by this plugin yet.
+in `frr-isisd` and `frr-ripd`; each is advertised only when the running FRR
+module-set implements it.
 The provider now starts a dedicated long-lived notification connection when
 FRR's live RFC 8525 module-set advertises `frr-ripd` or `frr-isisd`. Installed
 source files alone do not enable either module. The matching complete schema
@@ -111,6 +113,16 @@ authorization.
 Captured YANG-library fixtures deliberately disable the reader so discovery
 tests cannot contact a production socket.
 
+FRR protocol models also place configuration beneath keyed instances in
+`/frr-interface:lib`, and zebra places configuration beneath both that root and
+`/frr-vrf:lib`. When the live library implements these parent modules, the
+provider publishes them as implemented and owns each complete root in the same
+atomic transaction. This includes interface descriptions, zebra address and
+VRF settings, RIP interface authentication, and IS-IS circuit configuration.
+Operational retrieval likewise returns the complete implemented parent roots;
+the older zebra-only filter remains a compatibility path when a runtime exposes
+zebra's augments without implementing the parent module.
+
 The opt-in Linux interaction creates two network namespaces and a disposable
 veth, commits `/frr-ripd:ripd` through mgmtd, subscribes to
 `authentication-type-failure`, and sends a malformed RIPv2 authentication
@@ -124,12 +136,14 @@ is therefore blocked upstream. FreeBSD compilation passes, but repeating an
 already identified platform-independent mgmtd assertion there would not supply
 successful interoperability evidence.
 
-After every successful apply, ABI-v6 reconciliation reads
-`/frr-routing:routing` and `/frr-zebra:zebra` back from FRR's running datastore.
-Those observed roots replace only the corresponding roots in dangd's complete
-applied snapshot. An absent FRR root removes the requested root, a wrong
-namespace or malformed reply fails closed, and configuration belonging to
-other plugins is preserved byte-for-tree rather than reconstructed from FRR.
+After every successful apply, ABI-v6 reconciliation reads every managed root
+back from FRR's running datastore. This always includes
+`/frr-routing:routing` and `/frr-zebra:zebra`, and conditionally includes the
+live interface, VRF, RIP, and IS-IS roots. Those observed roots replace only
+their corresponding roots in dangd's complete applied snapshot. An absent FRR
+root removes the requested root, a wrong namespace or malformed reply fails
+closed, and configuration belonging to other plugins is preserved
+byte-for-tree rather than reconstructed from FRR.
 
 The reconciled roots become the provider's expected running state. Each later
 operational retrieval reads those roots again and compares XML element names,

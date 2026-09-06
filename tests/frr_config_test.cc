@@ -11,7 +11,9 @@ const std::vector<dang::plugins::frr::RootDescriptor> kRoots{
     {"frr-routing", "http://frrouting.org/yang/routing", "routing",
      "/frr-routing:routing"},
     {"frr-zebra", "http://frrouting.org/yang/zebra", "zebra",
-     "/frr-zebra:zebra"}};
+     "/frr-zebra:zebra"},
+    {"frr-interface", "http://frrouting.org/yang/interface", "lib",
+     "/frr-interface:lib"}};
 
 TEST(FrrConfigTest, ExtractsChangedRootsAndPreservesAugmentedNamespaces) {
   const std::string before = R"(<config>
@@ -52,6 +54,25 @@ TEST(FrrConfigTest, RepresentsRemovedRootAsDelete) {
   EXPECT_FALSE(roots->front().proposed_xml);
 }
 
+TEST(FrrConfigTest, IncludesProtocolAugmentsInsideTheirParentRoot) {
+  const std::string proposed = R"(<config>
+    <lib xmlns="http://frrouting.org/yang/interface"
+         xmlns:rip="http://frrouting.org/yang/ripd">
+      <interface><name>eth0</name><rip:rip><rip:v2-broadcast>true</rip:v2-broadcast></rip:rip></interface>
+    </lib>
+  </config>)";
+  std::string error;
+  std::string path;
+  auto roots = dang::plugins::frr::ExtractConfigurationRoots(
+      "<config/>", proposed, kRoots, &error, &path);
+  ASSERT_TRUE(roots) << error;
+  ASSERT_EQ(roots->size(), 1);
+  EXPECT_EQ(roots->front().xpath, "/frr-interface:lib");
+  ASSERT_TRUE(roots->front().proposed_xml);
+  EXPECT_NE(roots->front().proposed_xml->find("v2-broadcast"),
+            std::string::npos);
+}
+
 TEST(FrrConfigTest, RejectsMalformedAndDuplicateRootsWithPath) {
   std::string error;
   std::string path;
@@ -76,7 +97,7 @@ TEST(FrrConfigTest, ReplacesOnlyOwnedRootsWithObservedRunningState) {
   </config>)";
   const std::vector<std::optional<std::string>> observed{
       R"(<routing xmlns="http://frrouting.org/yang/routing"><accepted/></routing>)",
-      std::nullopt};
+      std::nullopt, std::nullopt};
   std::string error;
   std::string path;
   auto reconciled = dang::plugins::frr::ReconcileConfigurationRoots(
@@ -92,7 +113,8 @@ TEST(FrrConfigTest, RejectsObservedRootFromWrongModule) {
   std::string error;
   std::string path;
   const std::vector<std::optional<std::string>> observed{
-      R"(<zebra xmlns="http://frrouting.org/yang/zebra"/>)", std::nullopt};
+      R"(<zebra xmlns="http://frrouting.org/yang/zebra"/>)", std::nullopt,
+      std::nullopt};
   EXPECT_FALSE(dang::plugins::frr::ReconcileConfigurationRoots(
       "<config/>", kRoots, observed, &error, &path));
   EXPECT_EQ(path, "/frr-routing:routing");

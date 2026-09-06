@@ -40,6 +40,17 @@ int main(int argc, char** argv) {
   Write(directory / "frr-zebra.yang",
         "module frr-zebra { namespace \"http://frrouting.org/yang/zebra\";"
         " prefix zebra; revision 2019-06-01; container zebra {} }");
+  Write(directory / "frr-interface.yang",
+        "module frr-interface {"
+        " namespace \"http://frrouting.org/yang/interface\";"
+        " prefix frr-if; revision 2019-11-20;"
+        " container lib { list interface { key name; leaf name { type string; } } }"
+        " }");
+  Write(directory / "frr-vrf.yang",
+        "module frr-vrf { namespace \"http://frrouting.org/yang/vrf\";"
+        " prefix frr-vrf; revision 2019-12-06;"
+        " container lib { list vrf { key name; leaf name { type string; } } }"
+        " }");
   Write(directory / "frr-ripd.yang",
         "module frr-ripd { namespace \"http://frrouting.org/yang/ripd\";"
         " prefix ripd; revision 2020-02-14;"
@@ -53,6 +64,10 @@ int main(int argc, char** argv) {
     <module><name>frr-zebra</name><revision>2019-06-01</revision>
       <namespace>http://frrouting.org/yang/zebra</namespace>
       <feature>ipv6-router-advertisements</feature></module>
+    <module><name>frr-interface</name><revision>2019-11-20</revision>
+      <namespace>http://frrouting.org/yang/interface</namespace></module>
+    <module><name>frr-vrf</name><revision>2019-12-06</revision>
+      <namespace>http://frrouting.org/yang/vrf</namespace></module>
     <module><name>frr-ripd</name><revision>2020-02-14</revision>
       <namespace>http://frrouting.org/yang/ripd</namespace></module>
   </module-set></yang-library>)");
@@ -93,8 +108,9 @@ int main(int argc, char** argv) {
         found_runtime_feature = true;
     }
     valid = valid && found_runtime_feature && implemented ==
-        std::set<std::string>({"dang-frr-monitoring", "frr-ripd",
-                               "frr-routing", "frr-staticd", "frr-zebra"});
+        std::set<std::string>({"dang-frr-monitoring", "frr-interface",
+                               "frr-ripd", "frr-routing", "frr-staticd",
+                               "frr-vrf", "frr-zebra"});
     DangNotificationV1 event{};
     DangPluginErrorV1 notification_error{};
     valid = valid && plugin->next_notification(base.context, &event,
@@ -102,7 +118,8 @@ int main(int argc, char** argv) {
     const std::string before = "<config/>";
     const std::string proposed =
         "<config><routing xmlns=\"http://frrouting.org/yang/routing\"/>"
-        "</config>";
+        "<lib xmlns=\"http://frrouting.org/yang/interface\">"
+        "<interface><name>eth0</name></interface></lib></config>";
     DangTransactionV1 transaction{before.c_str(), proposed.c_str(), "[]"};
     DangPluginErrorV1 error{};
     void* prepared = nullptr;

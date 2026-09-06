@@ -40,6 +40,10 @@ constexpr std::string_view kRoutingNamespace =
     "http://frrouting.org/yang/routing";
 constexpr std::string_view kZebraNamespace =
     "http://frrouting.org/yang/zebra";
+constexpr std::string_view kInterfaceNamespace =
+    "http://frrouting.org/yang/interface";
+constexpr std::string_view kVrfNamespace =
+    "http://frrouting.org/yang/vrf";
 constexpr std::size_t kMaximumPendingNotifications = 1024;
 constexpr char kMonitoringModel[] = R"yang(module dang-frr-monitoring {
   yang-version 1.1;
@@ -164,6 +168,11 @@ struct Context {
     if (!runtime_modules) return;
     std::vector<std::string> schema_roots{
         "frr-routing", "frr-zebra", "frr-staticd"};
+    // Interface and VRF are real configuration roots, not merely type-only
+    // imports: zebra and protocol modules augment their keyed instances.
+    for (const std::string_view module : {"frr-interface", "frr-vrf"})
+      if (runtime_modules->contains(std::string(module)))
+        schema_roots.emplace_back(module);
     // RIP and IS-IS are the only FRR 10.7 native modules that declare modeled
     // notifications. Load either complete closure only when the running daemon
     // advertises it as implemented; installed source alone is insufficient.
@@ -185,7 +194,11 @@ struct Context {
       return {};
     };
     if (namespace_for("frr-routing") != kRoutingNamespace ||
-        namespace_for("frr-zebra") != kZebraNamespace) {
+        namespace_for("frr-zebra") != kZebraNamespace ||
+        (runtime_modules->contains("frr-interface") &&
+         namespace_for("frr-interface") != kInterfaceNamespace) ||
+        (runtime_modules->contains("frr-vrf") &&
+         namespace_for("frr-vrf") != kVrfNamespace)) {
       initialization_error = "installed FRR roots have unexpected namespaces";
       sources.clear();
       source_uris.clear();
@@ -198,10 +211,19 @@ struct Context {
                            "frr-staticd"};
     implemented_modules.insert(notification_modules.begin(),
                                notification_modules.end());
+    for (const std::string_view module : {"frr-interface", "frr-vrf"})
+      if (runtime_modules->contains(std::string(module)))
+        implemented_modules.emplace(module);
     this->roots = {{"frr-routing", std::string(kRoutingNamespace), "routing",
-              "/frr-routing:routing"},
-             {"frr-zebra", std::string(kZebraNamespace), "zebra",
-              "/frr-zebra:zebra"}};
+                    "/frr-routing:routing"},
+                   {"frr-zebra", std::string(kZebraNamespace), "zebra",
+                    "/frr-zebra:zebra"}};
+    if (implemented_modules.contains("frr-interface"))
+      this->roots.push_back({"frr-interface", std::string(kInterfaceNamespace),
+                             "lib", "/frr-interface:lib"});
+    if (implemented_modules.contains("frr-vrf"))
+      this->roots.push_back({"frr-vrf", std::string(kVrfNamespace), "lib",
+                             "/frr-vrf:lib"});
     if (implemented_modules.contains("frr-ripd"))
       this->roots.push_back({"frr-ripd", "http://frrouting.org/yang/ripd",
                              "ripd", "/frr-ripd:ripd"});
@@ -503,31 +525,36 @@ int Operational(void* raw, DangOperationalDataV1* result,
     }
     if (!protocol->empty()) fragments.push_back(std::move(*protocol));
   }
-  for (const auto& [xpath, descriptor] : {
-           std::pair{
-               "/frr-interface:lib",
-               dang::plugins::frr::AugmentedList{
-                   "http://frrouting.org/yang/interface", "lib", "interface",
-                   {"name", "vrf"}}},
-           std::pair{
-               "/frr-vrf:lib",
-               dang::plugins::frr::AugmentedList{
-                   "http://frrouting.org/yang/vrf", "lib", "vrf", {"name"}}}}) {
-    if (!zebra) break;
+  const auto add_parent_operational =
+      [&](std::string_view module, std::string_view xpath,
+          const dang::plugins::frr::AugmentedList& descriptor) {
     auto imported = session->GetOperationalData(xpath, &callback_error);
     if (!imported) {
-      zebra.reset();
-      break;
+      return false;
     }
-    if (imported->empty()) continue;
+    if (imported->empty()) return true;
+    // When FRR implements the parent module, this provider owns the complete
+    // root and publishes its base state plus every loaded protocol augment.
+    // The filter remains for older libraries that expose only zebra's augment.
+    if (owner->implemented_modules.contains(std::string(module))) {
+      fragments.push_back(std::move(*imported));
+      return true;
+    }
     auto filtered = dang::plugins::frr::ExtractZebraAugments(
         *imported, descriptor, &callback_error);
-    if (!filtered) {
-      zebra.reset();
-      break;
-    }
+    if (!filtered) return false;
     if (!filtered->empty()) fragments.push_back(std::move(*filtered));
-  }
+    return true;
+  };
+  if (zebra &&
+      (!add_parent_operational(
+           "frr-interface", "/frr-interface:lib",
+           {std::string(kInterfaceNamespace), "lib", "interface",
+            {"name", "vrf"}}) ||
+       !add_parent_operational("frr-vrf", "/frr-vrf:lib",
+                               {std::string(kVrfNamespace), "lib", "vrf",
+                                {"name"}})))
+    zebra.reset();
   std::unique_lock running_lock(owner->running_mutex);
   auto running = zebra ? ReadRunningRoots(owner, session.get(), &callback_error)
                        : std::nullopt;
