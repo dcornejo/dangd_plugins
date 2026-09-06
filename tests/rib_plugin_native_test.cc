@@ -92,6 +92,24 @@ int main(int argc, char** argv) {
       operation_result.output_xml &&
       std::string_view(operation_result.output_xml).find(">1</success-count>") !=
           std::string_view::npos;
+  std::ostringstream update;
+  update << "<route-update xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\">"
+            "<rib-name>" << argv[2]
+         << "</rib-name><input-routes><route-list><route-index>1</route-index><match><"
+         << (ipv6 ? "ipv6><dest-ipv6-prefix>" : "ipv4><dest-ipv4-prefix>")
+         << prefix << (ipv6 ? "</dest-ipv6-prefix></ipv6>" : "</dest-ipv4-prefix></ipv4>")
+         << "</match><updated-route-attr><route-preference>20</route-preference>"
+            "<local-only>false</local-only></updated-route-attr></route-list>"
+            "</input-routes></route-update>";
+  const std::string update_input = update.str();
+  operation = {"ietf-i2rs-rib", "route-update",
+               "/ietf-i2rs-rib:route-update", update_input.c_str()};
+  operation_result = {};
+  ok = ok && api->v6.v5.v4.v3.v2.invoke(base.context, &operation,
+                                        &operation_result, &error) &&
+      operation_result.output_xml &&
+      std::string_view(operation_result.output_xml).find(">1</success-count>") !=
+          std::string_view::npos;
   std::ostringstream deletion;
   deletion << "<route-delete xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\">"
               "<return-failure-detail>true</return-failure-detail><rib-name>"

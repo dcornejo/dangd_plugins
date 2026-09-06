@@ -256,5 +256,57 @@ TEST(RibConfigTest, RouteDeleteRejectsAmbiguousObservedRoute) {
   EXPECT_NE(output.find("<error-code>0</error-code>"), std::string::npos);
 }
 
+TEST(RibConfigTest, RouteUpdateReplacesAttributesTransactionally) {
+  constexpr char input[] = R"xml(<route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><return-failure-detail>true</return-failure-detail><rib-name>100</rib-name><input-routes><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><updated-route-attr><route-preference>20</route-preference><local-only>true</local-only></updated-route-attr></route-list></input-routes></route-update>)xml";
+  ObservedRoute route;
+  route.route = {.routing_instance = "default", .rib = "100",
+                 .address_family = "ipv4", .index = 99,
+                 .destination = "192.0.2.0/24", .gateway = "192.0.2.1",
+                 .interface = "dummy0", .preference = 10};
+  std::vector<NativeCommand> commands;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRouteUpdate(
+      NativePlatform::kLinux, input, &output, &error, &path,
+      [&](const NativeCommand& command, std::string*) {
+        commands.push_back(command); return true;
+      },
+      [&](std::vector<ObservedRoute>* routes, std::string*) {
+        *routes = {route}; return true;
+      })) << error;
+  ASSERT_EQ(commands.size(), 2U);
+  EXPECT_EQ(commands[0].arguments[3], "delete");
+  EXPECT_EQ(commands[1].arguments[3], "replace");
+  EXPECT_NE(std::ranges::find(commands[1].arguments, "20"),
+            commands[1].arguments.end());
+  EXPECT_NE(output.find(">1</success-count>"), std::string::npos);
+}
+
+TEST(RibConfigTest, RouteUpdateRestoresOriginalAfterInstallFailure) {
+  constexpr char input[] = R"xml(<route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><input-routes><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><updated-route-attr><route-preference>20</route-preference><local-only>false</local-only></updated-route-attr></route-list></input-routes></route-update>)xml";
+  ObservedRoute route;
+  route.route = {.routing_instance = "default", .rib = "100",
+                 .address_family = "ipv4", .destination = "192.0.2.0/24",
+                 .gateway = "192.0.2.1", .interface = "dummy0",
+                 .preference = 10};
+  unsigned calls = 0;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRouteUpdate(
+      NativePlatform::kLinux, input, &output, &error, &path,
+      [&](const NativeCommand&, std::string* command_error) {
+        ++calls;
+        if (calls != 2U) return true;
+        *command_error = "injected update failure"; return false;
+      },
+      [&](std::vector<ObservedRoute>* routes, std::string*) {
+        *routes = {route}; return true;
+      }));
+  EXPECT_EQ(calls, 3U);
+  EXPECT_NE(output.find(">1</failed-count>"), std::string::npos);
+}
+
 }  // namespace
 }  // namespace dang::rib

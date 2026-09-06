@@ -39,6 +39,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   nexthop data, reports missing routes with error code 2, and fails closed on
   ambiguous multipath matches. Native tests now exercise RPC add and delete as
   one isolated lifecycle.
+- Added prefix-selected RFC 8431 `route-update` for portable base-nexthop and
+  complete route-attribute replacements. Updates use the observed route as a
+  before-image and compensate a failed installation by restoring it. Portable
+  tests inject the failure boundary, and native tests exercise add, update, and
+  delete in Linux namespaces and FreeBSD VNET jails.
 - Fixed FRR hardware-coordinator integration by advertising its complete mgmtd
   candidate transaction as one normal action. Commits now schedule the existing
   atomic apply/rollback callbacks instead of treating a zero-action plan as

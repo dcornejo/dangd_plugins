@@ -17,7 +17,8 @@ The source files are unmodified copies from the IETF YangModels RFC registry:
 The `dangd_rib_plugin` advertises the pinned model and implements the documented
 destination-prefix configuration slice. It claims ABI-v7 exclusive ownership
 of `routing`, so dangd rejects loading it together with the FRR provider. The
-portable `route-add` and `route-delete` RPCs are implemented; the other five RPCs and both
+portable `route-add`, `route-delete`, and prefix-selected `route-update` RPCs
+are implemented; the other four RPCs and both
 notifications remain incomplete. Operational reads enumerate host IPv4
 and IPv6 unicast routes through native kernel APIs and publish active and
 installed status as partial RFC 8431 state.
@@ -94,6 +95,12 @@ plugin calls fail with the attributed `/ietf-i2rs-rib:route-add` path.
 fresh native route inventory. A unique match is deleted with its observed
 gateway and interface, a missing route returns RFC error code 2, and an
 ambiguous multipath match fails closed with reserved code 0.
+
+`route-update` supports per-prefix replacement of a base nexthop or the complete
+portable route-attributes pair. It captures the matching observed route as the
+before-image, deletes it, installs the replacement, and restores that exact
+before-image if installation fails. Attribute-wide, nexthop-wide, and vendor
+selectors remain explicitly unsupported.
 
 Numeric names are an intentional temporary variance: RFC 8431 RIB names are
 arbitrary strings, while Linux policy tables and FreeBSD FIBs need an explicit

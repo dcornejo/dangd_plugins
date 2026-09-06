@@ -31,6 +31,13 @@ using RouteObserver =
     const CommandRunner& runner = RunNativeCommand,
     const RouteObserver& observer = {});
 
+/** Updates prefix-selected routes with a base nexthop or route attributes. */
+[[nodiscard]] bool InvokeRouteUpdate(
+    NativePlatform platform, const char* input_xml, std::string* output_xml,
+    std::string* error, std::string* error_path,
+    const CommandRunner& runner = RunNativeCommand,
+    const RouteObserver& observer = {});
+
 }  // namespace dang::rib
 
 #endif  // DANG_PLUGINS_RIB_RIB_RPC_H_
