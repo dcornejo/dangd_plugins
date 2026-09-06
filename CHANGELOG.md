@@ -24,6 +24,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   active/installed status and stable synthetic indexes, and reports attributed
   kernel-read failures. Native tests require an installed isolated route to
   appear in the plugin's operational XML before rollback.
+- Added the portable RFC 8431 `route-add` RPC with strict reuse of datastore
+  route parsing, independent batch-member execution, schema-shaped success and
+  failure counts, optional per-route error details, and attributed malformed
+  envelope errors. Native Linux namespace and FreeBSD VNET tests exercise the
+  RPC installation and transaction-backed cleanup without touching LAN routes.
 - Fixed FRR hardware-coordinator integration by advertising its complete mgmtd
   candidate transaction as one normal action. Commits now schedule the existing
   atomic apply/rollback callbacks instead of treating a zero-action plan as

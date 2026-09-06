@@ -66,6 +66,40 @@ int main(int argc, char** argv) {
       state.data_xml && std::string_view(state.data_xml).find(prefix) != std::string_view::npos &&
       api->v6.v5.v4.rollback_hardware_action(base.context, prepared,
                                              action.action_id, &error);
+  std::ostringstream rpc;
+  rpc << "<route-add xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\">"
+         "<return-failure-detail>true</return-failure-detail><rib-name>"
+      << argv[2] << "</rib-name><routes><route-list><route-index>1</route-index>"
+      << "<match><" << (ipv6 ? "ipv6><dest-ipv6-prefix>" : "ipv4><dest-ipv4-prefix>")
+      << prefix << (ipv6 ? "</dest-ipv6-prefix></ipv6>" : "</dest-ipv4-prefix></ipv4>")
+      << "</match><route-attributes><route-preference>10</route-preference>"
+         "<local-only>false</local-only></route-attributes><nexthop><nexthop-base>";
+  if (argc == 6)
+    rpc << '<' << (ipv6 ? "egress-interface-ipv6-address" : "egress-interface-ipv4-address")
+        << "><outgoing-interface>" << argv[4] << "</outgoing-interface><"
+        << (ipv6 ? "ipv6-address>" : "ipv4-address>") << argv[5] << "</"
+        << (ipv6 ? "ipv6-address>" : "ipv4-address>") << "</"
+        << (ipv6 ? "egress-interface-ipv6-address>" : "egress-interface-ipv4-address>");
+  else
+    rpc << "<outgoing-interface>" << argv[4] << "</outgoing-interface>";
+  rpc << "</nexthop-base></nexthop></route-list></routes></route-add>";
+  const std::string rpc_input = rpc.str();
+  DangOperationV1 operation{"ietf-i2rs-rib", "route-add", "/ietf-i2rs-rib:route-add",
+                            rpc_input.c_str()};
+  DangOperationResultV1 operation_result{};
+  ok = ok && api->v6.v5.v4.v3.v2.invoke(base.context, &operation,
+                                        &operation_result, &error) &&
+      operation_result.output_xml &&
+      std::string_view(operation_result.output_xml).find(">1</success-count>") !=
+          std::string_view::npos;
+  DangTransactionV1 cleanup_transaction{candidate.c_str(), before, "[]"};
+  void* cleanup = nullptr;
+  ok = ok && base.prepare(base.context, &cleanup_transaction, &cleanup, &error) &&
+      base.validate(base.context, cleanup, &error) &&
+      api->v6.v5.v4.hardware_action_at(base.context, cleanup, 0, &action, &error) &&
+      api->v6.v5.v4.apply_hardware_action(base.context, cleanup,
+                                          action.action_id, &error);
+  if (cleanup) base.release(base.context, cleanup);
   if (!ok)
     std::cerr << (error.message ? error.message : "RIB plugin lifecycle failed")
               << (error.instance_path ? std::string(" at ") + error.instance_path : "")

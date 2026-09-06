@@ -7,6 +7,7 @@
 #include "plugins/rib/src/platform_command.h"
 #include "plugins/rib/src/platform_executor.h"
 #include "plugins/rib/src/rib_config.h"
+#include "plugins/rib/src/rib_rpc.h"
 #include "plugins/rib/src/route_observer.h"
 #include "rib_model_sources.h"
 
@@ -32,6 +33,7 @@ struct Prepared { std::vector<Change> changes; bool applied = false; };
 thread_local std::string message;
 thread_local std::string path;
 thread_local std::string operational_xml;
+thread_local std::string rpc_output_xml;
 
 int Fail(DangPluginErrorV1* error, std::string text, std::string where = {}) {
   message = std::move(text); path = std::move(where);
@@ -93,6 +95,25 @@ int ApplyAction(void* context, void* raw, const char* id, DangPluginErrorV1* err
 int RollbackAction(void* context, void* raw, const char* id, DangPluginErrorV1* error) {
   return id && std::string_view(id) == "routes" ? Rollback(context, raw, error) : Fail(error, "RIB action ID is unknown");
 }
+int Invoke(void*, const DangOperationV1* operation,
+           DangOperationResultV1* result, DangPluginErrorV1* error) {
+  if (!operation || !operation->module_name || !operation->operation_name ||
+      !result)
+    return Fail(error, "RIB RPC input is incomplete", "/ietf-i2rs-rib:routing-instance");
+  if (std::string_view(operation->module_name) != "ietf-i2rs-rib")
+    return Fail(error, "RIB RPC module is not implemented", "/");
+  const std::string rpc_path = "/ietf-i2rs-rib:" +
+                               std::string(operation->operation_name);
+  if (std::string_view(operation->operation_name) != "route-add")
+    return Fail(error, "RFC 8431 operation is not implemented", rpc_path);
+  std::string why;
+  std::string where;
+  if (!InvokeRouteAdd(kPlatform, operation->input_xml, &rpc_output_xml, &why,
+                      &where))
+    return Fail(error, why, where.empty() ? rpc_path : where);
+  result->output_xml = rpc_output_xml.c_str();
+  return 1;
+}
 int Operational(void*, DangOperationalDataV2* out, DangPluginErrorV1* error) {
   if (!out) return Fail(error, "RIB operational output is missing");
   std::vector<ObservedRoute> routes;
@@ -111,7 +132,7 @@ const char* ResourceAt(void*, size_t index) { return index == 0 ? "routing" : nu
 const DangPluginV7 kPlugin{.v6 = {.v5 = {.v4 = {.v3 = {.v2 = {.v1 = {
   DANG_PLUGIN_ABI_V7, "dang-rib", nullptr, SourceCount, SourceAt,
   DependencyCount, DependencyAt, Prepare, Validate, Apply, Rollback, Release,
-  nullptr}, .invoke = nullptr}, .get_operational_data = nullptr},
+  nullptr}, .invoke = Invoke}, .get_operational_data = nullptr},
   .hardware_action_count = ActionCount, .hardware_action_at = ActionAt,
   .apply_hardware_action = ApplyAction, .rollback_hardware_action = RollbackAction},
   .get_operational_data_v2 = Operational}, .reconcile_applied_configuration = nullptr},

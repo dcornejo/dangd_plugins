@@ -129,7 +129,7 @@ set_target_properties(dangd_frr_plugin PROPERTIES PREFIX "")
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
   add_library(dangd_rib_plugin MODULE plugins/rib/src/rib_plugin.cc
     plugins/rib/src/rib_config.cc plugins/rib/src/platform_executor.cc
-    plugins/rib/src/route_observer.cc
+    plugins/rib/src/route_observer.cc plugins/rib/src/rib_rpc.cc
     plugins/rib/src/linux/platform_linux.cc
     plugins/rib/src/freebsd/platform_freebsd.cc)
   target_compile_features(dangd_rib_plugin PRIVATE cxx_std_20)
@@ -231,6 +231,7 @@ if(BUILD_TESTING)
   add_executable(rib_config_test
     tests/rib_config_test.cc
     plugins/rib/src/rib_config.cc
+    plugins/rib/src/rib_rpc.cc
     plugins/rib/src/route_observer.cc
     plugins/rib/src/platform_executor.cc
     plugins/rib/src/linux/platform_linux.cc

@@ -5,6 +5,7 @@
 #include "plugins/rib/src/platform_command.h"
 #include "plugins/rib/src/platform_executor.h"
 #include "plugins/rib/src/route_observer.h"
+#include "plugins/rib/src/rib_rpc.h"
 
 #include <gtest/gtest.h>
 
@@ -168,6 +169,42 @@ TEST(RibConfigTest, SerializesObservedRoutesAsRfc8431State) {
   EXPECT_NE(xml.find("<route-installed-state>installed</route-installed-state>"),
             std::string::npos);
   EXPECT_NE(xml.find("dummy&amp;0"), std::string::npos);
+}
+
+TEST(RibConfigTest, RouteAddReportsMixedBatchResults) {
+  constexpr char input[] = R"xml(<route-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib">
+    <return-failure-detail>true</return-failure-detail><rib-name>100</rib-name>
+    <routes>
+      <route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes><nexthop><nexthop-base><ipv4-address>198.51.100.1</ipv4-address></nexthop-base></nexthop></route-list>
+      <route-list><route-index>8</route-index><match><ipv4><dest-ipv4-prefix>198.51.100.0/24</dest-ipv4-prefix></ipv4></match><route-attributes><route-preference>20</route-preference><local-only>false</local-only></route-attributes><nexthop><nexthop-base><ipv4-address>192.0.2.1</ipv4-address></nexthop-base></nexthop></route-list>
+    </routes></route-add>)xml";
+  unsigned calls = 0;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRouteAdd(
+      NativePlatform::kLinux, input, &output, &error, &path,
+      [&](const NativeCommand&, std::string* command_error) {
+        ++calls;
+        if (calls == 1) return true;
+        *command_error = "injected failure";
+        return false;
+      })) << error;
+  EXPECT_NE(output.find("<success-count xmlns="), std::string::npos);
+  EXPECT_NE(output.find(">1</success-count>"), std::string::npos);
+  EXPECT_NE(output.find(">1</failed-count>"), std::string::npos);
+  EXPECT_NE(output.find("<route-index>8</route-index>"), std::string::npos);
+  EXPECT_NE(output.find("<error-code>0</error-code>"), std::string::npos);
+}
+
+TEST(RibConfigTest, RouteAddRejectsMalformedEnvelope) {
+  std::string output;
+  std::string error;
+  std::string path;
+  EXPECT_FALSE(InvokeRouteAdd(NativePlatform::kLinux, "<route-add/>", &output,
+                              &error, &path));
+  EXPECT_NE(error.find("RFC 8431"), std::string::npos);
+  EXPECT_EQ(path, "/ietf-i2rs-rib:route-add");
 }
 
 }  // namespace
