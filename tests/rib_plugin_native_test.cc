@@ -49,12 +49,24 @@ int main(int argc, char** argv) {
     return 1;
   }
   const DangPluginV1& base = api->v6.v5.v4.v3.v2.v1;
+  const std::string rib_add_input =
+      "<rib-add xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\"><name>" +
+      std::string(argv[2]) + "</name><address-family>" +
+      (ipv6 ? "ipv6" : "ipv4") + "</address-family></rib-add>";
+  DangOperationV1 rib_add{"ietf-i2rs-rib", "rib-add",
+                          "/ietf-i2rs-rib:rib-add", rib_add_input.c_str()};
+  DangOperationResultV1 rib_add_result{};
   const std::string candidate = proposed.str();
   constexpr char before[] = "<config/>";
   DangTransactionV1 transaction{before, candidate.c_str(), "[]"};
   DangPluginErrorV1 error{};
   void* prepared = nullptr;
-  bool ok = base.prepare(base.context, &transaction, &prepared, &error) &&
+  bool ok = api->v6.v5.v4.v3.v2.invoke(base.context, &rib_add,
+                                        &rib_add_result, &error) &&
+      rib_add_result.output_xml &&
+      std::string_view(rib_add_result.output_xml).find(">true</result>") !=
+          std::string_view::npos &&
+      base.prepare(base.context, &transaction, &prepared, &error) &&
       base.validate(base.context, prepared, &error);
   DangHardwareActionV1 action{};
   ok = ok && api->v6.v5.v4.hardware_action_at(base.context, prepared, 0,
@@ -118,13 +130,20 @@ int main(int argc, char** argv) {
            << prefix << (ipv6 ? "</dest-ipv6-prefix></ipv6>" : "</dest-ipv4-prefix></ipv4>")
            << "</match></route-list></routes></route-delete>";
   const std::string deletion_input = deletion.str();
-  operation = {"ietf-i2rs-rib", "route-delete",
-               "/ietf-i2rs-rib:route-delete", deletion_input.c_str()};
+  const bool may_empty_rib = std::string_view(argv[2]) != "0";
+  const std::string rib_delete_input =
+      "<rib-delete xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\"><name>" +
+      std::string(argv[2]) + "</name></rib-delete>";
+  operation = {"ietf-i2rs-rib", may_empty_rib ? "rib-delete" : "route-delete",
+               may_empty_rib ? "/ietf-i2rs-rib:rib-delete"
+                             : "/ietf-i2rs-rib:route-delete",
+               may_empty_rib ? rib_delete_input.c_str() : deletion_input.c_str()};
   operation_result = {};
   ok = ok && api->v6.v5.v4.v3.v2.invoke(base.context, &operation,
                                         &operation_result, &error) &&
       operation_result.output_xml &&
-      std::string_view(operation_result.output_xml).find(">1</success-count>") !=
+      std::string_view(operation_result.output_xml).find(
+          may_empty_rib ? ">true</result>" : ">1</success-count>") !=
           std::string_view::npos;
   if (!ok)
     std::cerr << (error.message ? error.message : "RIB plugin lifecycle failed")

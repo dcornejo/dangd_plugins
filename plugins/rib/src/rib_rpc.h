@@ -38,6 +38,18 @@ using RouteObserver =
     const CommandRunner& runner = RunNativeCommand,
     const RouteObserver& observer = {});
 
+/** Validates availability of a native RIB/FIB for the rib-add RPC. */
+[[nodiscard]] bool InvokeRibAdd(NativePlatform platform, const char* input_xml,
+                                std::string* output_xml, std::string* error,
+                                std::string* error_path);
+
+/** Atomically removes every observed route from the selected native RIB/FIB. */
+[[nodiscard]] bool InvokeRibDelete(
+    NativePlatform platform, const char* input_xml, std::string* output_xml,
+    std::string* error, std::string* error_path,
+    const CommandRunner& runner = RunNativeCommand,
+    const RouteObserver& observer = {});
+
 }  // namespace dang::rib
 
 #endif  // DANG_PLUGINS_RIB_RIB_RPC_H_

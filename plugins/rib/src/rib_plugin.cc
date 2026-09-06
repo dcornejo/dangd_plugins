@@ -116,6 +116,12 @@ int Invoke(void*, const DangOperationV1* operation,
   else if (std::string_view(operation->operation_name) == "route-update")
     invoked = InvokeRouteUpdate(kPlatform, operation->input_xml,
                                 &rpc_output_xml, &why, &where);
+  else if (std::string_view(operation->operation_name) == "rib-add")
+    invoked = InvokeRibAdd(kPlatform, operation->input_xml, &rpc_output_xml,
+                           &why, &where);
+  else if (std::string_view(operation->operation_name) == "rib-delete")
+    invoked = InvokeRibDelete(kPlatform, operation->input_xml, &rpc_output_xml,
+                              &why, &where);
   else
     return Fail(error, "RFC 8431 operation is not implemented", rpc_path);
   if (!invoked)

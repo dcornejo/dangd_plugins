@@ -308,5 +308,47 @@ TEST(RibConfigTest, RouteUpdateRestoresOriginalAfterInstallFailure) {
   EXPECT_NE(output.find(">1</failed-count>"), std::string::npos);
 }
 
+TEST(RibConfigTest, RibAddValidatesLogicalNamespaceAndRejectsRpf) {
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRibAdd(NativePlatform::kLinux,
+      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv4</address-family></rib-add>)",
+      &output, &error, &path));
+  EXPECT_NE(output.find(">true</result>"), std::string::npos);
+  ASSERT_TRUE(InvokeRibAdd(NativePlatform::kLinux,
+      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv4</address-family><ip-rpf-check>true</ip-rpf-check></rib-add>)",
+      &output, &error, &path));
+  EXPECT_NE(output.find(">false</result>"), std::string::npos);
+  EXPECT_NE(output.find("RPF"), std::string::npos);
+}
+
+TEST(RibConfigTest, RibDeleteRestoresEarlierRoutesAfterFailure) {
+  ObservedRoute first;
+  first.route = {.routing_instance = "default", .rib = "100",
+                 .address_family = "ipv4", .destination = "192.0.2.0/24",
+                 .gateway = "192.0.2.1", .interface = "dummy0"};
+  ObservedRoute second = first;
+  second.route.destination = "198.51.100.0/24";
+  unsigned calls = 0;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRibDelete(
+      NativePlatform::kLinux,
+      R"(<rib-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name></rib-delete>)",
+      &output, &error, &path,
+      [&](const NativeCommand&, std::string* command_error) {
+        ++calls;
+        if (calls != 2U) return true;
+        *command_error = "injected delete failure"; return false;
+      },
+      [&](std::vector<ObservedRoute>* routes, std::string*) {
+        *routes = {first, second}; return true;
+      }));
+  EXPECT_EQ(calls, 3U);
+  EXPECT_NE(output.find(">false</result>"), std::string::npos);
+}
+
 }  // namespace
 }  // namespace dang::rib

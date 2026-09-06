@@ -16,6 +16,10 @@
 #include <libxml/parser.h>
 #include <libxml/tree.h>
 
+#if defined(__FreeBSD__)
+#include <sys/sysctl.h>
+#endif
+
 #include "plugins/rib/src/rib_config.h"
 
 namespace dang::rib {
@@ -82,6 +86,40 @@ std::string Output(unsigned success,
     xml << "</failure-detail>";
   }
   return xml.str();
+}
+
+std::string BooleanOutput(bool result, std::string_view reason = {}) {
+  std::ostringstream xml;
+  xml << "<result xmlns=\"" << kNamespace << "\">"
+      << (result ? "true" : "false") << "</result>";
+  if (!reason.empty()) {
+    xml << "<reason xmlns=\"" << kNamespace << "\">";
+    for (const char character : reason) {
+      if (character == '&') xml << "&amp;";
+      else if (character == '<') xml << "&lt;";
+      else if (character == '>') xml << "&gt;";
+      else xml << character;
+    }
+    xml << "</reason>";
+  }
+  return xml.str();
+}
+
+bool NumericRib(std::string_view name, NativePlatform platform) {
+  std::uint32_t value = 0;
+  const auto parsed = std::from_chars(name.data(), name.data() + name.size(),
+                                      value);
+  if (parsed.ec != std::errc{} || parsed.ptr != name.data() + name.size())
+    return false;
+  if (platform == NativePlatform::kLinux) return value != 0U;
+#if defined(__FreeBSD__)
+  unsigned fib_count = 0;
+  size_t size = sizeof(fib_count);
+  return sysctlbyname("net.fibs", &fib_count, &size, nullptr, 0) == 0 &&
+         value < fib_count;
+#else
+  return true;  // FreeBSD behavior is exercised only in a FreeBSD build.
+#endif
 }
 
 }  // namespace
@@ -317,6 +355,89 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
     else failed.emplace_back(index, 0U);
   }
   *output_xml = Output(success, failed, details);
+  return true;
+}
+
+bool InvokeRibAdd(NativePlatform platform, const char* input_xml,
+                  std::string* output_xml, std::string* error,
+                  std::string* error_path) {
+  if (!input_xml || !output_xml || !error || !error_path) return false;
+  xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
+                                "rib-add.xml", nullptr,
+                                XML_PARSE_NONET | XML_PARSE_NOBLANKS |
+                                    XML_PARSE_NOERROR | XML_PARSE_NOWARNING);
+  std::unique_ptr<xmlDoc, decltype(&xmlFreeDoc)> input(raw, xmlFreeDoc);
+  xmlNodePtr root = input ? xmlDocGetRootElement(input.get()) : nullptr;
+  if (!Is(root, "rib-add")) {
+    *error = "rib-add input is not RFC 8431 XML";
+    *error_path = "/ietf-i2rs-rib:rib-add";
+    return false;
+  }
+  const std::string name = Text(Child(root, "name"));
+  const std::string family = Text(Child(root, "address-family"));
+  if (name.empty() || (family != "ipv4" && family != "ipv6")) {
+    *error = "rib-add requires a name and IPv4 or IPv6 address family";
+    *error_path = "/ietf-i2rs-rib:rib-add";
+    return false;
+  }
+  if (!NumericRib(name, platform)) {
+    *output_xml = BooleanOutput(false, "the platform requires a numeric RIB/FIB name");
+    return true;
+  }
+  if (Boolean(Child(root, "ip-rpf-check"))) {
+    *output_xml = BooleanOutput(false, "IP RPF checks are not implemented by this provider");
+    return true;
+  }
+  // Linux tables spring into existence with their first route. FreeBSD FIBs
+  // are boot-time objects. In both cases a successful reply means the numeric
+  // namespace is acceptable, not that a new kernel object was allocated.
+  *output_xml = BooleanOutput(true);
+  return true;
+}
+
+bool InvokeRibDelete(NativePlatform platform, const char* input_xml,
+                     std::string* output_xml, std::string* error,
+                     std::string* error_path, const CommandRunner& runner,
+                     const RouteObserver& observer) {
+  if (!input_xml || !output_xml || !error || !error_path) return false;
+  xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
+                                "rib-delete.xml", nullptr,
+                                XML_PARSE_NONET | XML_PARSE_NOBLANKS |
+                                    XML_PARSE_NOERROR | XML_PARSE_NOWARNING);
+  std::unique_ptr<xmlDoc, decltype(&xmlFreeDoc)> input(raw, xmlFreeDoc);
+  xmlNodePtr root = input ? xmlDocGetRootElement(input.get()) : nullptr;
+  if (!Is(root, "rib-delete")) {
+    *error = "rib-delete input is not RFC 8431 XML";
+    *error_path = "/ietf-i2rs-rib:rib-delete";
+    return false;
+  }
+  const std::string name = Text(Child(root, "name"));
+  if (name.empty()) {
+    *error = "rib-delete requires a RIB name";
+    *error_path = "/ietf-i2rs-rib:rib-delete/name";
+    return false;
+  }
+  if (!NumericRib(name, platform)) {
+    *output_xml = BooleanOutput(false, "the platform requires a numeric RIB/FIB name");
+    return true;
+  }
+  std::vector<ObservedRoute> observed;
+  std::string observe_error;
+  if (!Inventory(platform, observer, &observed, &observe_error)) {
+    *error = "cannot read host RIB: " + observe_error;
+    *error_path = "/ietf-i2rs-rib:rib-delete/name";
+    return false;
+  }
+  std::vector<Change> deletions;
+  for (const ObservedRoute& route : observed)
+    if (route.route.rib == name)
+      deletions.push_back({ChangeKind::kDelete, route.route});
+  const ExecutionResult result = ExecuteChanges(platform, deletions, runner);
+  if (!result.ok) {
+    *output_xml = BooleanOutput(false, result.error);
+    return true;
+  }
+  *output_xml = BooleanOutput(true);
   return true;
 }
 

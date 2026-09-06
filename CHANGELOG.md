@@ -44,6 +44,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   before-image and compensate a failed installation by restoring it. Portable
   tests inject the failure boundary, and native tests exercise add, update, and
   delete in Linux namespaces and FreeBSD VNET jails.
+- Added `rib-add` and `rib-delete`. RIB creation validates Linux logical table
+  identifiers or preallocated FreeBSD `net.fibs` entries and rejects unimplemented
+  RPF enforcement. RIB deletion empties the observed table as one compensated
+  plan, restoring completed deletions after a later failure. Linux native tests
+  exercise logical table validation and emptying; FreeBSD avoids emptying FIB 0.
 - Fixed FRR hardware-coordinator integration by advertising its complete mgmtd
   candidate transaction as one normal action. Commits now schedule the existing
   atomic apply/rollback callbacks instead of treating a zero-action plan as
