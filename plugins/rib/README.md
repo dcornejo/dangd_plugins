@@ -132,6 +132,13 @@ configuration snapshot. This makes restart restoration independent of prior
 process memory; prepare-time reservations cover the interval between validation
 and reconciliation.
 
+The persistence layer uses a versioned JSON sidecar containing reusable objects,
+the next allocation identifier, and imperative route bindings. Loading is
+bounded to 16 MiB and rejects non-regular, group/world-accessible, duplicate,
+or dangling-reference state. Saving uses a private temporary file, `fsync`,
+atomic rename, and parent-directory `fsync`. Wiring this codec into registry
+mutation acknowledgement remains the next step.
+
 Numeric names are an intentional temporary variance: RFC 8431 RIB names are
 arbitrary strings, while Linux policy tables and FreeBSD FIBs need an explicit
 platform mapping. A future plugin option must supply that mapping before this

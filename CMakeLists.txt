@@ -159,12 +159,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
   add_library(dangd_rib_plugin MODULE plugins/rib/src/rib_plugin.cc
     plugins/rib/src/rib_config.cc plugins/rib/src/platform_executor.cc
     plugins/rib/src/route_observer.cc plugins/rib/src/rib_rpc.cc
+    plugins/rib/src/rib_persistence.cc
     plugins/rib/src/linux/platform_linux.cc
     plugins/rib/src/freebsd/platform_freebsd.cc)
   target_compile_features(dangd_rib_plugin PRIVATE cxx_std_20)
   target_include_directories(dangd_rib_plugin PRIVATE "${DANGD_INCLUDE_DIR}"
     "${CMAKE_CURRENT_BINARY_DIR}/generated" "${CMAKE_CURRENT_SOURCE_DIR}")
-  target_link_libraries(dangd_rib_plugin PRIVATE LibXml2::LibXml2)
+  target_link_libraries(dangd_rib_plugin PRIVATE LibXml2::LibXml2
+    nlohmann_json::nlohmann_json)
   target_compile_options(dangd_rib_plugin PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   set_target_properties(dangd_rib_plugin PROPERTIES PREFIX "")
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -297,6 +299,7 @@ if(BUILD_TESTING)
     tests/rib_config_test.cc
     plugins/rib/src/rib_config.cc
     plugins/rib/src/rib_rpc.cc
+    plugins/rib/src/rib_persistence.cc
     plugins/rib/src/route_observer.cc
     plugins/rib/src/platform_executor.cc
     plugins/rib/src/linux/platform_linux.cc
@@ -304,7 +307,8 @@ if(BUILD_TESTING)
   target_compile_features(rib_config_test PRIVATE cxx_std_20)
   target_include_directories(rib_config_test PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}")
-  target_link_libraries(rib_config_test PRIVATE LibXml2::LibXml2 GTest::gtest_main)
+  target_link_libraries(rib_config_test PRIVATE LibXml2::LibXml2 GTest::gtest_main
+    nlohmann_json::nlohmann_json)
   target_compile_options(rib_config_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME rfc8431_configuration_planning COMMAND rib_config_test)

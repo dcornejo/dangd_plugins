@@ -37,6 +37,10 @@ All notable changes to the external dangd plugin collection are recorded here.
   configuration reconciliation callback. Restart and restored-snapshot paths
   now establish the exact active set instead of depending on pre-restart
   in-memory counts, while transaction reservations still close deletion races.
+- Added the durable registry sidecar foundation: a bounded, versioned JSON
+  codec validates unique nexthops and referentially intact imperative route
+  bindings, rejects non-private files, and writes through a mode-0600 temporary
+  file with file and parent-directory synchronization before acknowledgement.
 
 - Adopted the existing ABI-v4 RFC 8343/8344 IP-management provider from dangd,
   including its direct Linux rtnetlink and FreeBSD ioctl/route-netlink

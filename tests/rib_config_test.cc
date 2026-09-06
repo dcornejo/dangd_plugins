@@ -6,10 +6,13 @@
 #include "plugins/rib/src/platform_executor.h"
 #include "plugins/rib/src/route_observer.h"
 #include "plugins/rib/src/rib_rpc.h"
+#include "plugins/rib/src/rib_persistence.h"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <filesystem>
+#include <unistd.h>
 
 namespace dang::rib {
 namespace {
@@ -496,6 +499,27 @@ TEST(RibConfigTest, ReconcilesExactDatastoreReferenceSet) {
   ASSERT_TRUE(registry.ReplaceConfigurationReferences({}));
   EXPECT_EQ(registry.Remove("100", 1),
             NexthopRegistry::RemoveResult::kRemoved);
+}
+
+TEST(RibConfigTest, PersistsAndRestoresPrivateRegistryAtomically) {
+  const auto directory = std::filesystem::temp_directory_path() /
+      ("dang-rib-state-" + std::to_string(getpid()));
+  std::filesystem::create_directories(directory);
+  const auto state = directory / "registry.json";
+  PersistentRegistry expected;
+  expected.next_id = 8;
+  expected.nexthops.push_back({"100", 7, "192.0.2.1", "dummy0", "ipv4", true});
+  expected.bindings.push_back({"100", "ipv4", "198.51.100.0/24", 7});
+  std::string error;
+  ASSERT_TRUE(SaveRegistry(state, expected, &error)) << error;
+  EXPECT_EQ(std::filesystem::status(state).permissions() &
+                (std::filesystem::perms::group_all |
+                 std::filesystem::perms::others_all),
+            std::filesystem::perms::none);
+  PersistentRegistry restored;
+  ASSERT_TRUE(LoadRegistry(state, &restored, &error)) << error;
+  EXPECT_EQ(restored, expected);
+  std::filesystem::remove_all(directory);
 }
 
 TEST(RibConfigTest, NexthopAddRejectsUnsupportedCompositeForm) {
