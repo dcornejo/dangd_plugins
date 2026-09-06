@@ -7,6 +7,7 @@
 
 #include <cstring>
 #include <charconv>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string_view>
@@ -105,6 +106,37 @@ std::string BooleanOutput(bool result, std::string_view reason = {}) {
   return xml.str();
 }
 
+std::string NexthopOutput(std::uint32_t id) {
+  std::ostringstream xml;
+  xml << BooleanOutput(true) << "<nexthop-id xmlns=\"" << kNamespace
+      << "\">" << id << "</nexthop-id>";
+  return xml.str();
+}
+
+bool ParseBaseNexthop(xmlNodePtr root, NexthopRegistry::Entry* entry,
+                      std::string* reason) {
+  xmlNodePtr base = Child(root, "nexthop-base");
+  if (!base) { *reason = "only a base nexthop is supported"; return false; }
+  entry->gateway = Text(Child(base, "ipv4-address"));
+  if (entry->gateway->empty()) entry->gateway = Text(Child(base, "ipv6-address"));
+  entry->interface = Text(Child(base, "outgoing-interface"));
+  for (const std::string_view combined : {"egress-interface-ipv4-address",
+                                          "egress-interface-ipv6-address"}) {
+    if (xmlNodePtr pair = Child(base, combined)) {
+      entry->interface = Text(Child(pair, "outgoing-interface"));
+      entry->gateway = Text(Child(pair, combined == "egress-interface-ipv4-address"
+                                            ? "ipv4-address" : "ipv6-address"));
+    }
+  }
+  if (entry->gateway->empty()) entry->gateway.reset();
+  if (entry->interface->empty()) entry->interface.reset();
+  if (!entry->gateway && !entry->interface) {
+    *reason = "the base nexthop requires an IP address or outgoing interface";
+    return false;
+  }
+  return true;
+}
+
 bool NumericRib(std::string_view name, NativePlatform platform) {
   std::uint32_t value = 0;
   const auto parsed = std::from_chars(name.data(), name.data() + name.size(),
@@ -123,6 +155,22 @@ bool NumericRib(std::string_view name, NativePlatform platform) {
 }
 
 }  // namespace
+
+std::optional<std::uint32_t> NexthopRegistry::Add(Entry entry) {
+  std::lock_guard lock(mutex_);
+  for (std::uint64_t attempts = 0;
+       attempts < std::numeric_limits<std::uint32_t>::max(); ++attempts) {
+    const std::uint32_t id = next_id_++;
+    if (next_id_ == 0) next_id_ = 1;
+    if (entries_.emplace(std::make_pair(entry.rib, id), entry).second) return id;
+  }
+  return std::nullopt;
+}
+
+bool NexthopRegistry::Remove(const std::string& rib, std::uint32_t id) {
+  std::lock_guard lock(mutex_);
+  return entries_.erase({rib, id}) == 1;
+}
 
 bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
                     std::string* output_xml, std::string* error,
@@ -438,6 +486,79 @@ bool InvokeRibDelete(NativePlatform platform, const char* input_xml,
     return true;
   }
   *output_xml = BooleanOutput(true);
+  return true;
+}
+
+bool InvokeNexthopAdd(NexthopRegistry* registry, const char* input_xml,
+                       std::string* output_xml, std::string* error,
+                       std::string* error_path) {
+  if (!registry || !input_xml || !output_xml || !error || !error_path) return false;
+  xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
+                                "nh-add.xml", nullptr, XML_PARSE_NONET |
+                                XML_PARSE_NOBLANKS | XML_PARSE_NOERROR |
+                                XML_PARSE_NOWARNING);
+  std::unique_ptr<xmlDoc, decltype(&xmlFreeDoc)> input(raw, xmlFreeDoc);
+  xmlNodePtr root = input ? xmlDocGetRootElement(input.get()) : nullptr;
+  if (!Is(root, "nh-add")) {
+    *error = "nh-add input is not RFC 8431 XML";
+    *error_path = "/ietf-i2rs-rib:nh-add";
+    return false;
+  }
+  NexthopRegistry::Entry entry;
+  entry.rib = Text(Child(root, "rib-name"));
+  if (entry.rib.empty()) {
+    *error = "nh-add requires a RIB name";
+    *error_path = "/ietf-i2rs-rib:nh-add/rib-name";
+    return false;
+  }
+  if (Child(root, "nexthop-id")) {
+    *output_xml = BooleanOutput(false, "nexthop-id is allocated by nh-add");
+    return true;
+  }
+  const std::string sharing = Text(Child(root, "sharing-flag"));
+  if (!sharing.empty() && sharing != "true" && sharing != "1" &&
+      sharing != "false" && sharing != "0") {
+    *output_xml = BooleanOutput(false, "sharing-flag is not a boolean");
+    return true;
+  }
+  entry.sharable = sharing == "true" || sharing == "1";
+  std::string reason;
+  if (!ParseBaseNexthop(root, &entry, &reason)) {
+    *output_xml = BooleanOutput(false, reason);
+    return true;
+  }
+  const auto id = registry->Add(std::move(entry));
+  *output_xml = id ? NexthopOutput(*id)
+                   : BooleanOutput(false, "the nexthop identifier space is exhausted");
+  return true;
+}
+
+bool InvokeNexthopDelete(NexthopRegistry* registry, const char* input_xml,
+                          std::string* output_xml, std::string* error,
+                          std::string* error_path) {
+  if (!registry || !input_xml || !output_xml || !error || !error_path) return false;
+  xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
+                                "nh-delete.xml", nullptr, XML_PARSE_NONET |
+                                XML_PARSE_NOBLANKS | XML_PARSE_NOERROR |
+                                XML_PARSE_NOWARNING);
+  std::unique_ptr<xmlDoc, decltype(&xmlFreeDoc)> input(raw, xmlFreeDoc);
+  xmlNodePtr root = input ? xmlDocGetRootElement(input.get()) : nullptr;
+  if (!Is(root, "nh-delete")) {
+    *error = "nh-delete input is not RFC 8431 XML";
+    *error_path = "/ietf-i2rs-rib:nh-delete";
+    return false;
+  }
+  const std::string rib = Text(Child(root, "rib-name"));
+  std::uint32_t id = 0;
+  if (rib.empty() || !Unsigned(Child(root, "nexthop-id"), &id)) {
+    *error = "nh-delete requires a RIB name and nexthop identifier";
+    *error_path = "/ietf-i2rs-rib:nh-delete";
+    return false;
+  }
+  *output_xml = registry->Remove(rib, id)
+                    ? BooleanOutput(true)
+                    : BooleanOutput(false,
+                          "the nexthop identifier does not exist in this RIB");
   return true;
 }
 

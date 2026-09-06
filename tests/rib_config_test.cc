@@ -350,5 +350,49 @@ TEST(RibConfigTest, RibDeleteRestoresEarlierRoutesAfterFailure) {
   EXPECT_NE(output.find(">false</result>"), std::string::npos);
 }
 
+TEST(RibConfigTest, NexthopLifecycleAllocatesAndScopesIdentifiersByRib) {
+  NexthopRegistry registry;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeNexthopAdd(
+      &registry,
+      R"(<nh-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><sharing-flag>true</sharing-flag><nexthop-base><egress-interface-ipv4-address><outgoing-interface>dummy0</outgoing-interface><ipv4-address>192.0.2.1</ipv4-address></egress-interface-ipv4-address></nexthop-base></nh-add>)",
+      &output, &error, &path)) << error;
+  EXPECT_NE(output.find(">true</result>"), std::string::npos);
+  EXPECT_NE(output.find(">1</nexthop-id>"), std::string::npos);
+
+  ASSERT_TRUE(InvokeNexthopDelete(
+      &registry,
+      R"(<nh-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>200</rib-name><nexthop-id>1</nexthop-id></nh-delete>)",
+      &output, &error, &path));
+  EXPECT_NE(output.find(">false</result>"), std::string::npos);
+  EXPECT_NE(output.find("does not exist"), std::string::npos);
+
+  ASSERT_TRUE(InvokeNexthopDelete(
+      &registry,
+      R"(<nh-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-id>1</nexthop-id></nh-delete>)",
+      &output, &error, &path));
+  EXPECT_NE(output.find(">true</result>"), std::string::npos);
+  ASSERT_TRUE(InvokeNexthopDelete(
+      &registry,
+      R"(<nh-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-id>1</nexthop-id></nh-delete>)",
+      &output, &error, &path));
+  EXPECT_NE(output.find(">false</result>"), std::string::npos);
+}
+
+TEST(RibConfigTest, NexthopAddRejectsUnsupportedCompositeForm) {
+  NexthopRegistry registry;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeNexthopAdd(
+      &registry,
+      R"(<nh-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-chain/></nh-add>)",
+      &output, &error, &path));
+  EXPECT_NE(output.find(">false</result>"), std::string::npos);
+  EXPECT_NE(output.find("only a base nexthop"), std::string::npos);
+}
+
 }  // namespace
 }  // namespace dang::rib

@@ -68,6 +68,30 @@ int main(int argc, char** argv) {
           std::string_view::npos &&
       base.prepare(base.context, &transaction, &prepared, &error) &&
       base.validate(base.context, prepared, &error);
+  const std::string nh_add_input =
+      "<nh-add xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\"><rib-name>" +
+      std::string(argv[2]) + "</rib-name><nexthop-base><outgoing-interface>" +
+      argv[4] + "</outgoing-interface></nexthop-base></nh-add>";
+  DangOperationV1 nh_operation{"ietf-i2rs-rib", "nh-add",
+                               "/ietf-i2rs-rib:nh-add", nh_add_input.c_str()};
+  DangOperationResultV1 nh_result{};
+  ok = ok && api->v6.v5.v4.v3.v2.invoke(base.context, &nh_operation,
+                                        &nh_result, &error) &&
+      nh_result.output_xml &&
+      std::string_view(nh_result.output_xml).find(">1</nexthop-id>") !=
+          std::string_view::npos;
+  const std::string nh_delete_input =
+      "<nh-delete xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\"><rib-name>" +
+      std::string(argv[2]) +
+      "</rib-name><nexthop-id>1</nexthop-id></nh-delete>";
+  nh_operation = {"ietf-i2rs-rib", "nh-delete", "/ietf-i2rs-rib:nh-delete",
+                  nh_delete_input.c_str()};
+  nh_result = {};
+  ok = ok && api->v6.v5.v4.v3.v2.invoke(base.context, &nh_operation,
+                                        &nh_result, &error) &&
+      nh_result.output_xml &&
+      std::string_view(nh_result.output_xml).find(">true</result>") !=
+          std::string_view::npos;
   DangHardwareActionV1 action{};
   ok = ok && api->v6.v5.v4.hardware_action_at(base.context, prepared, 0,
                                                &action, &error) &&

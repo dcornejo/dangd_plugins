@@ -18,7 +18,7 @@ The `dangd_rib_plugin` advertises the pinned model and implements the documented
 destination-prefix configuration slice. It claims ABI-v7 exclusive ownership
 of `routing`, so dangd rejects loading it together with the FRR provider. The
 portable `route-add`, `route-delete`, prefix-selected `route-update`, `rib-add`,
-and `rib-delete` RPCs are implemented; the two nexthop RPCs and both
+`rib-delete`, `nh-add`, and `nh-delete` RPCs are implemented; both
 notifications remain incomplete. Operational reads enumerate host IPv4
 and IPv6 unicast routes through native kernel APIs and publish active and
 installed status as partial RFC 8431 state.
@@ -108,6 +108,15 @@ synthetic kernel object is created. Requests for `ip-rpf-check=true` return a
 modeled failure because RPF enforcement is not implemented. `rib-delete`
 removes every observed route in the selected namespace as one compensated
 plan, restoring earlier deletions if a later native operation fails.
+
+`nh-add` allocates an identifier for a base IP-address, outgoing-interface, or
+combined nexthop and retains it in a mutex-protected registry scoped by RIB.
+`nh-delete` removes exactly that RIB/identifier pair and reports a modeled
+failure for an unknown pair. This portable registry is intentionally owned by
+the plugin because Linux and FreeBSD do not expose equivalent standalone
+nexthop objects. It is currently volatile, is not yet emitted in operational
+state, and route `nexthop-ref` resolution is not implemented; consequently the
+RPC plumbing is complete but reusable-nexthop semantics are not yet compliant.
 
 Numeric names are an intentional temporary variance: RFC 8431 RIB names are
 arbitrary strings, while Linux policy tables and FreeBSD FIBs need an explicit

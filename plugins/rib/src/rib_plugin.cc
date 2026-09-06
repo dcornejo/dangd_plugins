@@ -30,6 +30,8 @@ constexpr NativePlatform kPlatform = NativePlatform::kFreeBsd;
 #endif
 
 struct Prepared { std::vector<Change> changes; bool applied = false; };
+struct Context { NexthopRegistry nexthops; };
+Context plugin_context;
 thread_local std::string message;
 thread_local std::string path;
 thread_local std::string operational_xml;
@@ -95,7 +97,7 @@ int ApplyAction(void* context, void* raw, const char* id, DangPluginErrorV1* err
 int RollbackAction(void* context, void* raw, const char* id, DangPluginErrorV1* error) {
   return id && std::string_view(id) == "routes" ? Rollback(context, raw, error) : Fail(error, "RIB action ID is unknown");
 }
-int Invoke(void*, const DangOperationV1* operation,
+int Invoke(void* raw_context, const DangOperationV1* operation,
            DangOperationResultV1* result, DangPluginErrorV1* error) {
   if (!operation || !operation->module_name || !operation->operation_name ||
       !result)
@@ -122,6 +124,14 @@ int Invoke(void*, const DangOperationV1* operation,
   else if (std::string_view(operation->operation_name) == "rib-delete")
     invoked = InvokeRibDelete(kPlatform, operation->input_xml, &rpc_output_xml,
                               &why, &where);
+  else if (std::string_view(operation->operation_name) == "nh-add")
+    invoked = InvokeNexthopAdd(
+        &static_cast<Context*>(raw_context)->nexthops, operation->input_xml,
+        &rpc_output_xml, &why, &where);
+  else if (std::string_view(operation->operation_name) == "nh-delete")
+    invoked = InvokeNexthopDelete(
+        &static_cast<Context*>(raw_context)->nexthops, operation->input_xml,
+        &rpc_output_xml, &why, &where);
   else
     return Fail(error, "RFC 8431 operation is not implemented", rpc_path);
   if (!invoked)
@@ -145,7 +155,7 @@ size_t ResourceCount(void*) { return 1; }
 const char* ResourceAt(void*, size_t index) { return index == 0 ? "routing" : nullptr; }
 
 const DangPluginV7 kPlugin{.v6 = {.v5 = {.v4 = {.v3 = {.v2 = {.v1 = {
-  DANG_PLUGIN_ABI_V7, "dang-rib", nullptr, SourceCount, SourceAt,
+  DANG_PLUGIN_ABI_V7, "dang-rib", &plugin_context, SourceCount, SourceAt,
   DependencyCount, DependencyAt, Prepare, Validate, Apply, Rollback, Release,
   nullptr}, .invoke = Invoke}, .get_operational_data = nullptr},
   .hardware_action_count = ActionCount, .hardware_action_at = ActionAt,

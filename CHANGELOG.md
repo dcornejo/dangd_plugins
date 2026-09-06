@@ -9,6 +9,13 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Implemented RFC 8431 `nh-add` and `nh-delete` with thread-safe, per-RIB
+  nexthop identifier allocation, strict portable base-nexthop validation, and
+  modeled failures for unknown identifiers and unsupported forms. Added
+  lifecycle, RIB-isolation, repeated-delete, and unsupported-composite tests,
+  and documented the remaining persistence, operational-state, and
+  route-reference gaps for reusable nexthops.
+
 - Adopted the existing ABI-v4 RFC 8343/8344 IP-management provider from dangd,
   including its direct Linux rtnetlink and FreeBSD ioctl/route-netlink
   backends, pinned `ietf-ip` model, parser and native tests, documentation, and
