@@ -24,6 +24,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   MAC, and vendor/device match and reject unknown, default-route, and current
   management-session interfaces with an attributed model path. Portable policy
   tests and read-only live validation pass on both Linux hosts.
+- Added an API-only, reversible VPP loopback transaction seam with immediate
+  compensation for partial creation failures and retained recovery identity
+  when compensation fails. Failure-injected tests pass on both Linux hosts;
+  live VAPI testing remains deferred because FD.io does not publish an Ubuntu
+  26.04 repository for the current test systems.
 
 - Implemented RFC 8431 `nh-add` and `nh-delete` with thread-safe, per-RIB
   nexthop identifier allocation, strict portable base-nexthop validation, and

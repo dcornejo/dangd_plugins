@@ -53,3 +53,18 @@ by a loadable dangd plugin. The next implementation steps are VPP package and
 binary-API discovery, then VPP-created loopback transactions before any
 physical-device ownership work. Bridge, bond, VLAN-parent, and required-route
 evidence plus the recovery watchdog remain prerequisites for physical claims.
+
+The provider now also has a narrow C++ client seam for VPP loopback creation,
+administrative state, and deletion. Its API-only transaction retains the VPP
+software index, restores absence on rollback, immediately compensates a failed
+administrative-up request, and preserves the handle for later recovery if that
+compensation fails. Focused tests use an in-memory client; they do not pretend
+to establish daemon interoperability.
+
+Both test hosts currently run Ubuntu 26.04. FD.io's release repository publishes
+VPP 26.06 packages for Ubuntu 24.04 and Debian 12, but not Ubuntu 26.04. No
+unsupported repository or mismatched package was installed. Production code
+will target the generated C++ VAPI headers from `vpp-dev`; live loopback
+validation needs either an officially supported test OS or an isolated build
+whose complete dependencies and runtime are kept outside the host package
+database.
