@@ -195,4 +195,16 @@ TEST(FrrSchemaInventoryTest, RejectsRuntimeSubmoduleSkew) {
   EXPECT_NE(error.find("submodule frr-bgp-neighbor"), std::string::npos);
 }
 
+TEST(FrrSchemaInventoryTest, DistinguishesImplementedFromImportOnlyModules) {
+  std::string error;
+  auto modules = dang::plugins::frr::RuntimeImplementedModules(
+      R"(<yang-library xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-library">
+           <module-set><module><name>frr-ripd</name></module>
+             <import-only-module><name>ietf-inet-types</name></import-only-module>
+           </module-set></yang-library>)",
+      &error);
+  ASSERT_TRUE(modules) << error;
+  EXPECT_EQ(*modules, std::set<std::string>({"frr-ripd"}));
+}
+
 }  // namespace

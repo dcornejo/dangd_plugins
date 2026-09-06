@@ -40,6 +40,10 @@ int main(int argc, char** argv) {
   Write(directory / "frr-zebra.yang",
         "module frr-zebra { namespace \"http://frrouting.org/yang/zebra\";"
         " prefix zebra; revision 2019-06-01; container zebra {} }");
+  Write(directory / "frr-ripd.yang",
+        "module frr-ripd { namespace \"http://frrouting.org/yang/ripd\";"
+        " prefix ripd; revision 2020-02-14;"
+        " notification authentication-failure { leaf reason { type string; } } }");
   const auto library_path = directory / "yang-library.xml";
   Write(library_path, R"(<yang-library xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-library"><module-set>
     <module><name>frr-routing</name><revision>2019-08-15</revision>
@@ -49,6 +53,8 @@ int main(int argc, char** argv) {
     <module><name>frr-zebra</name><revision>2019-06-01</revision>
       <namespace>http://frrouting.org/yang/zebra</namespace>
       <feature>ipv6-router-advertisements</feature></module>
+    <module><name>frr-ripd</name><revision>2020-02-14</revision>
+      <namespace>http://frrouting.org/yang/ripd</namespace></module>
   </module-set></yang-library>)");
   setenv("DANG_FRR_YANG_DIR", directory.c_str(), 1);
   setenv("DANG_FRR_YANG_LIBRARY_FILE", library_path.c_str(), 1);
@@ -87,8 +93,8 @@ int main(int argc, char** argv) {
         found_runtime_feature = true;
     }
     valid = valid && found_runtime_feature && implemented ==
-        std::set<std::string>({"dang-frr-monitoring", "frr-routing",
-                               "frr-staticd", "frr-zebra"});
+        std::set<std::string>({"dang-frr-monitoring", "frr-ripd",
+                               "frr-routing", "frr-staticd", "frr-zebra"});
     DangNotificationV1 event{};
     DangPluginErrorV1 notification_error{};
     valid = valid && plugin->next_notification(base.context, &event,

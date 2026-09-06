@@ -83,7 +83,9 @@ std::vector<std::byte> SessionCreate(std::uint64_t client_id,
   auto output = Message(Code::kSessionRequest, 0, client_id, 0,
                         8 + client_name.size() + 1);
   if (output.empty()) return {};
-  output[32] = std::byte{2};  // JSON notifications.
+  // Request XML so unsolicited notification bodies can pass directly through
+  // the same schema-validation boundary as every other dangd plugin event.
+  output[32] = std::byte{1};
   AppendString(&output, 40, client_name);
   return output;
 }

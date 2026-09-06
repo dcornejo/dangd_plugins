@@ -30,6 +30,7 @@ TEST(FrrMgmtdWireTest, EncodesSessionLockEditAndCommitLayouts) {
   EXPECT_EQ(Load<std::uint16_t>(session, 8),
             static_cast<std::uint16_t>(Code::kSessionRequest));
   EXPECT_EQ(Load<std::uint64_t>(session, 24), 41);
+  EXPECT_EQ(session[32], std::byte{1});
   EXPECT_STREQ(reinterpret_cast<const char*>(session.data() + 40), "dangd-frr");
 
   const auto lock = Lock(82, 3, Datastore::kCandidate, true);

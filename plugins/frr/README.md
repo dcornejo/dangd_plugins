@@ -95,12 +95,24 @@ XML `NOTIFY` frames. Datastore replace/delete/patch synchronization messages
 are deliberately rejected by that decoder so they cannot be mislabeled as
 RFC 5277 events. The installed FRR 10.7 model set declares notifications only
 in `frr-isisd` and `frr-ripd`; neither module is advertised by this plugin yet.
-The session and transport layers now support a dedicated long-lived connection:
-they send the selector without waiting for a success reply, distinguish a safe
-idle timeout before any frame bytes are consumed, resume on later input, and
-require each unsolicited event to belong to the selected session. Live-module
-checks, the plugin-owned reader thread, and schema-validated forwarding must
-still be completed before those events can be exposed through dangd.
+The provider now starts a dedicated long-lived notification connection when
+FRR's live RFC 8525 module-set advertises `frr-ripd` or `frr-isisd`. Installed
+source files alone do not enable either module. The matching complete schema
+closure is then published as implemented, its configuration augments remain
+inside the existing atomic `/frr-routing:routing` transaction, and its native
+RPCs use the same mgmtd dispatch path. The session explicitly negotiates XML,
+selects only the enabled module prefixes, distinguishes safe idle timeouts,
+checks session and module identity, places at most 1,024 events in the
+nonblocking ABI-v8 queue, and reconnects after mgmtd restarts. Dangd performs
+the final schema validation, subscription filtering, and NACM authorization.
+Captured YANG-library fixtures deliberately disable the reader so discovery
+tests cannot contact a production socket.
+
+Successful live notification generation remains to be demonstrated. The four
+current validation hosts install the RIP and IS-IS source files, but their live
+FRR service enables only mgmtd, zebra, and staticd, so neither protocol module
+appears in the running library yet. Protocol tests must use isolated interfaces
+and must not attach a host LAN interface.
 
 After every successful apply, ABI-v6 reconciliation reads
 `/frr-routing:routing` and `/frr-zebra:zebra` back from FRR's running datastore.

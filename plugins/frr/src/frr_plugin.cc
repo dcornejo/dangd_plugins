@@ -18,6 +18,7 @@
 #include "mgmtd_transport.h"
 #include "schema_inventory.h"
 
+#include <algorithm>
 #include <atomic>
 #include <charconv>
 #include <chrono>
@@ -39,6 +40,7 @@ constexpr std::string_view kRoutingNamespace =
     "http://frrouting.org/yang/routing";
 constexpr std::string_view kZebraNamespace =
     "http://frrouting.org/yang/zebra";
+constexpr std::size_t kMaximumPendingNotifications = 1024;
 constexpr char kMonitoringModel[] = R"yang(module dang-frr-monitoring {
   yang-version 1.1;
   namespace "urn:dang:plugins:frr:monitoring";
@@ -55,9 +57,17 @@ constexpr char kMonitoringModel[] = R"yang(module dang-frr-monitoring {
   }
 })yang";
 
+struct PendingNotification {
+  std::string module;
+  std::string name;
+  std::string xml;
+};
+
 struct Context {
   std::vector<dang::plugins::frr::YangSchema> sources;
   std::vector<std::string> source_uris;
+  std::set<std::string> implemented_modules;
+  std::vector<std::string> notification_modules;
   std::string socket_path = "/var/run/frr/mgmtd_fe.sock";
   std::chrono::milliseconds timeout{2000};
   std::atomic<std::uint64_t> next_client{1};
@@ -65,11 +75,12 @@ struct Context {
   std::optional<std::vector<std::optional<std::string>>> expected_running;
   std::chrono::milliseconds drift_poll_interval{1000};
   std::mutex notification_mutex;
-  std::deque<std::string> pending_drift_paths;
+  std::deque<PendingNotification> pending_notifications;
   std::set<std::string> reported_drift_paths;
   // Declared after every object used by the thread so destruction joins it
   // before those objects are released.
   std::jthread drift_watcher;
+  std::jthread notification_reader;
   std::string initialization_error;
 
   Context() {
@@ -112,29 +123,11 @@ struct Context {
     auto inventory =
         dang::plugins::frr::DiscoverSchemaInventory(options, &initialization_error);
     if (!inventory) return;
-    auto closure = dang::plugins::frr::ResolveImportClosure(
-        *inventory, {"frr-routing", "frr-zebra", "frr-staticd"},
-        &initialization_error);
-    if (!closure) return;
-    for (const std::size_t index : *closure) {
-      source_uris.push_back((*inventory)[index].path.string());
-      sources.push_back(std::move((*inventory)[index]));
-    }
-    const auto namespace_for = [&](std::string_view module) -> std::string_view {
-      for (const auto& source : sources)
-        if (source.module_name == module) return source.namespace_uri;
-      return {};
-    };
-    if (namespace_for("frr-routing") != kRoutingNamespace ||
-        namespace_for("frr-zebra") != kZebraNamespace) {
-      initialization_error = "installed FRR roots have unexpected namespaces";
-      sources.clear();
-      source_uris.clear();
-      return;
-    }
     std::optional<std::string> library_xml;
+    bool library_is_fixture = false;
     if (const char* path = std::getenv("DANG_FRR_YANG_LIBRARY_FILE");
         path && *path) {
+      library_is_fixture = true;
       std::error_code size_error;
       const auto bytes = std::filesystem::file_size(path, size_error);
       if (size_error || bytes == 0 || bytes > options.maximum_total_bytes) {
@@ -165,9 +158,44 @@ struct Context {
         initialization_error = std::move(close_error);
       if (!library_xml || !initialization_error.empty()) return;
     }
+    auto runtime_modules = dang::plugins::frr::RuntimeImplementedModules(
+        *library_xml, &initialization_error);
+    if (!runtime_modules) return;
+    std::vector<std::string> roots{"frr-routing", "frr-zebra", "frr-staticd"};
+    // RIP and IS-IS are the only FRR 10.7 native modules that declare modeled
+    // notifications. Load either complete closure only when the running daemon
+    // advertises it as implemented; installed source alone is insufficient.
+    for (const std::string_view module : {"frr-ripd", "frr-isisd"}) {
+      if (!runtime_modules->contains(std::string(module))) continue;
+      roots.emplace_back(module);
+      notification_modules.emplace_back(module);
+    }
+    auto closure = dang::plugins::frr::ResolveImportClosure(
+        *inventory, roots, &initialization_error);
+    if (!closure) return;
+    for (const std::size_t index : *closure) {
+      source_uris.push_back((*inventory)[index].path.string());
+      sources.push_back(std::move((*inventory)[index]));
+    }
+    const auto namespace_for = [&](std::string_view module) -> std::string_view {
+      for (const auto& source : sources)
+        if (source.module_name == module) return source.namespace_uri;
+      return {};
+    };
+    if (namespace_for("frr-routing") != kRoutingNamespace ||
+        namespace_for("frr-zebra") != kZebraNamespace) {
+      initialization_error = "installed FRR roots have unexpected namespaces";
+      sources.clear();
+      source_uris.clear();
+      return;
+    }
     if (!dang::plugins::frr::ApplyRuntimeYangLibrary(
             *library_xml, &sources, &initialization_error))
       return;
+    implemented_modules = {"dang-frr-monitoring", "frr-routing", "frr-zebra",
+                           "frr-staticd"};
+    implemented_modules.insert(notification_modules.begin(),
+                               notification_modules.end());
     source_uris.emplace_back("embedded:dang-frr-monitoring");
     sources.push_back({.module_name = "dang-frr-monitoring",
                        .revision = "2026-09-04",
@@ -179,6 +207,9 @@ struct Context {
                        .is_submodule = false,
                        .source = kMonitoringModel,
                        .path = {}});
+    // A captured library is an explicit discovery-test seam. Never let loading
+    // a fixture start background network activity against the production path.
+    if (library_is_fixture) notification_modules.clear();
   }
 };
 
@@ -227,14 +258,12 @@ int SourceAt(void* raw, std::size_t index, DangYangSourceV1* output,
   callback_features.clear();
   for (const std::string& feature : source.enabled_features)
     callback_features.push_back(feature.c_str());
-  static const std::set<std::string> implemented{
-      "dang-frr-monitoring", "frr-routing", "frr-zebra", "frr-staticd"};
   *output = {.module_name = source.module_name.c_str(),
              .revision = source.revision.c_str(),
              .source = source.source.data(),
              .source_size = source.source.size(),
              .source_uri = owner->source_uris[index].c_str(),
-             .role = implemented.contains(source.module_name)
+             .role = owner->implemented_modules.contains(source.module_name)
                  ? DANG_YANG_IMPLEMENTED_V1
                  : DANG_YANG_IMPORT_ONLY_V1,
              .enabled_features = callback_features.empty()
@@ -261,6 +290,65 @@ std::unique_ptr<dang::plugins::frr::mgmtd::Session> OpenConcreteSession(
 std::unique_ptr<dang::plugins::frr::mgmtd::SessionOperations> OpenSession(
     Context* owner, std::string* error) {
   return OpenConcreteSession(owner, error);
+}
+
+bool QueueNotification(Context* owner, PendingNotification event) {
+  std::lock_guard lock(owner->notification_mutex);
+  if (owner->pending_notifications.size() >= kMaximumPendingNotifications)
+    return false;
+  owner->pending_notifications.push_back(std::move(event));
+  return true;
+}
+
+std::optional<std::pair<std::string, std::string>> NotificationIdentity(
+    std::string_view xpath) {
+  if (xpath.empty() || xpath.front() != '/' || xpath.find('/', 1) != xpath.npos)
+    return std::nullopt;
+  const std::size_t colon = xpath.find(':', 1);
+  if (colon == xpath.npos || colon == 1 || colon + 1 == xpath.size())
+    return std::nullopt;
+  return std::pair{std::string(xpath.substr(1, colon - 1)),
+                   std::string(xpath.substr(colon + 1))};
+}
+
+void StartNotificationReader(Context* owner) {
+  if (owner->notification_reader.joinable() ||
+      owner->notification_modules.empty())
+    return;
+  owner->notification_reader = std::jthread([owner](std::stop_token stop) {
+    std::vector<std::string> selector_storage;
+    std::vector<std::string_view> selectors;
+    for (const std::string& module : owner->notification_modules)
+      selector_storage.push_back("/" + module + ":");
+    for (const std::string& selector : selector_storage)
+      selectors.push_back(selector);
+    while (!stop.stop_requested()) {
+      std::string ignored_error;
+      auto session = OpenConcreteSession(owner, &ignored_error);
+      if (session && session->SelectNotifications(selectors, &ignored_error)) {
+        while (!stop.stop_requested()) {
+          bool timed_out = false;
+          auto event = session->NextNotification(&timed_out, &ignored_error);
+          if (timed_out) continue;
+          if (!event) break;
+          auto identity = NotificationIdentity(event->xpath);
+          if (!identity ||
+              !owner->implemented_modules.contains(identity->first) ||
+              std::ranges::find(owner->notification_modules,
+                                identity->first) ==
+                  owner->notification_modules.end())
+            continue;
+          (void)QueueNotification(owner, {.module = std::move(identity->first),
+                                          .name = std::move(identity->second),
+                                          .xml = std::move(event->xml)});
+        }
+      }
+      // Retry daemon startup/restart without making plugin destruction wait a
+      // full reconnect delay.
+      for (int pause = 0; pause < 10 && !stop.stop_requested(); ++pause)
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+  });
 }
 
 std::optional<std::vector<std::optional<std::string>>> ReadRunningRoots(
@@ -299,9 +387,22 @@ void StartDriftWatcher(Context* owner) {
             (*expected)[index], (*observed)[index], &ignored_error);
         if (!equivalent || *equivalent) continue;
         const std::string& path = RootDescriptors()[index].xpath;
-        std::lock_guard lock(owner->notification_mutex);
-        if (owner->reported_drift_paths.insert(path).second)
-          owner->pending_drift_paths.push_back(path);
+        bool newly_reported = false;
+        {
+          std::lock_guard lock(owner->notification_mutex);
+          newly_reported = owner->reported_drift_paths.insert(path).second;
+        }
+        if (newly_reported &&
+            !QueueNotification(owner,
+              {.module = "dang-frr-monitoring",
+               .name = "configuration-drift",
+               .xml = "<configuration-drift xmlns=\"urn:dang:plugins:frr:monitoring\">"
+                      "<datastore-path>" + path + "</datastore-path>"
+                      "<reason>FRR running configuration changed outside dangd</reason>"
+                      "</configuration-drift>"})) {
+          std::lock_guard lock(owner->notification_mutex);
+          owner->reported_drift_paths.erase(path);
+        }
       }
     }
   });
@@ -449,7 +550,9 @@ int Reconcile(void* raw, void* prepared_raw, const char* current_xml,
   owner->expected_running = std::move(*observed);
   {
     std::lock_guard notification_lock(owner->notification_mutex);
-    owner->pending_drift_paths.clear();
+    std::erase_if(owner->pending_notifications, [](const auto& event) {
+      return event.module == "dang-frr-monitoring";
+    });
     owner->reported_drift_paths.clear();
   }
   StartDriftWatcher(owner);
@@ -466,10 +569,12 @@ int Invoke(void* raw, const DangOperationV1* operation,
   if (!operation || !operation->module_name || !operation->operation_name ||
       !result)
     return Fail(error, "FRR RPC input is incomplete", "/");
-  if (std::string_view(operation->module_name) != "frr-zebra")
+  const std::string module(operation->module_name);
+  if (module != "frr-zebra" &&
+      std::ranges::find(owner->notification_modules, module) ==
+          owner->notification_modules.end())
     return Fail(error, "FRR RPC module is not implemented", "/");
-  const std::string xpath = "/frr-zebra:" +
-      std::string(operation->operation_name);
+  const std::string xpath = "/" + module + ":" + operation->operation_name;
   auto session = OpenConcreteSession(owner, &callback_error);
   if (!session) return Fail(error, callback_error, xpath);
   auto output = session->InvokeRpc(
@@ -524,17 +629,15 @@ int NextNotification(void* raw, DangNotificationV1* event,
   auto* owner = static_cast<Context*>(raw);
   if (!event) return Fail(error, "FRR notification output is missing", "/");
   std::lock_guard lock(owner->notification_mutex);
-  if (owner->pending_drift_paths.empty()) return 0;
-  callback_path = std::move(owner->pending_drift_paths.front());
-  owner->pending_drift_paths.pop_front();
-  operational_xml =
-      "<configuration-drift xmlns=\"urn:dang:plugins:frr:monitoring\">"
-      "<datastore-path>" + callback_path + "</datastore-path>"
-      "<reason>FRR running configuration changed outside dangd</reason>"
-      "</configuration-drift>";
+  if (owner->pending_notifications.empty()) return 0;
+  PendingNotification pending = std::move(owner->pending_notifications.front());
+  owner->pending_notifications.pop_front();
+  callback_path = std::move(pending.module);
+  callback_error = std::move(pending.name);
+  operational_xml = std::move(pending.xml);
   *event = {.stream_name = "NETCONF",
-            .module_name = "dang-frr-monitoring",
-            .notification_name = "configuration-drift",
+            .module_name = callback_path.c_str(),
+            .notification_name = callback_error.c_str(),
             .content_xml = operational_xml.c_str(),
             .instance_path = "",
             .default_deny_all = 0};
@@ -571,5 +674,7 @@ const DangPluginV8 kPlugin{
 }  // namespace
 
 extern "C" const DangPluginV8* dang_plugin_init_v8() {
-  return context.initialization_error.empty() ? &kPlugin : nullptr;
+  if (!context.initialization_error.empty()) return nullptr;
+  StartNotificationReader(&context);
+  return &kPlugin;
 }

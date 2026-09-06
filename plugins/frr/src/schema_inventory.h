@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -61,6 +62,10 @@ std::optional<std::vector<std::size_t>> ResolveImportClosure(
 bool ApplyRuntimeYangLibrary(std::string_view xml,
                              std::vector<YangSchema>* schemas,
                              std::string* error);
+
+/** Returns module entries implemented by the running RFC 8525 module-set. */
+std::optional<std::set<std::string>> RuntimeImplementedModules(
+    std::string_view xml, std::string* error);
 
 }  // namespace dang::plugins::frr
 

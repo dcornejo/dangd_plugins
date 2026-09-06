@@ -20,6 +20,12 @@ All notable changes to the external dangd plugin collection are recorded here.
   idle receive timeouts preserve the stream, and unsolicited frames must carry
   the selected session identifier before modeled notification decoding. Tests
   cover idle-and-resume behavior and a complete select/receive/close exchange.
+- Added the FRR plugin-owned notification reader and runtime-gated RIP/IS-IS
+  model loading. Installed sources become implemented only when FRR's live RFC
+  8525 module-set includes the module; the reader negotiates XML, selects only
+  those module prefixes, checks event/session/module identity, bounds its queue,
+  and reconnects after daemon restarts. Native protocol RPCs follow the same
+  live-module gate. Captured-library tests never start background I/O.
 - Added the Linux-only VPP provider architecture and its physical-interface
   ownership safety boundary. Documented stable PCI identity, empty-by-default
   allowlisting, trusted management-path denial, independent recovery, and the

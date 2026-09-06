@@ -368,4 +368,46 @@ bool ApplyRuntimeYangLibrary(std::string_view xml,
   return true;
 }
 
+std::optional<std::set<std::string>> RuntimeImplementedModules(
+    std::string_view xml, std::string* error) {
+  if (xml.empty() ||
+      xml.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    if (error) *error = "invalid FRR YANG Library document";
+    return std::nullopt;
+  }
+  Document document(xmlReadMemory(
+      xml.data(), static_cast<int>(xml.size()), "frr-yang-library.xml", nullptr,
+      XML_PARSE_NONET | XML_PARSE_NOBLANKS | XML_PARSE_NOERROR |
+          XML_PARSE_NOWARNING),
+                    xmlFreeDoc);
+  const xmlNode* root = document ? xmlDocGetRootElement(document.get()) : nullptr;
+  if (!root || std::string_view(reinterpret_cast<const char*>(root->name)) !=
+                   "yang-library" ||
+      !root->ns || !root->ns->href ||
+      std::string_view(reinterpret_cast<const char*>(root->ns->href)) !=
+          "urn:ietf:params:xml:ns:yang:ietf-yang-library") {
+    if (error) *error = "FRR returned an invalid YANG Library root";
+    return std::nullopt;
+  }
+  const xmlNode* module_set = Child(root, "module-set");
+  if (!module_set) {
+    if (error) *error = "FRR YANG Library has no module-set";
+    return std::nullopt;
+  }
+  std::set<std::string> modules;
+  for (const xmlNode* node = module_set->children; node; node = node->next) {
+    if (node->type != XML_ELEMENT_NODE ||
+        std::string_view(reinterpret_cast<const char*>(node->name)) != "module")
+      continue;
+    const std::string name = Text(Child(node, "name"));
+    if (name.empty() || !modules.insert(name).second) {
+      if (error) *error = name.empty()
+          ? "FRR YANG Library has an unnamed implemented module"
+          : "FRR YANG Library repeats an implemented module name";
+      return std::nullopt;
+    }
+  }
+  return modules;
+}
+
 }  // namespace dang::plugins::frr
