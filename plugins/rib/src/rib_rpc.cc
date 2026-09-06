@@ -134,6 +134,9 @@ bool ParseBaseNexthop(xmlNodePtr root, NexthopRegistry::Entry* entry,
     *reason = "the base nexthop requires an IP address or outgoing interface";
     return false;
   }
+  if (entry->gateway)
+    entry->address_family = entry->gateway->find(':') == std::string::npos
+                                ? "ipv4" : "ipv6";
   return true;
 }
 
@@ -233,6 +236,16 @@ std::optional<std::uint32_t> NexthopRegistry::RouteReference(
       std::make_tuple(route.rib, route.address_family, route.destination));
   return found == route_references_.end()
              ? std::nullopt : std::optional<std::uint32_t>(found->second);
+}
+
+std::vector<std::tuple<std::string, std::string, std::uint32_t>>
+NexthopRegistry::Snapshot() {
+  std::lock_guard lock(mutex_);
+  std::vector<std::tuple<std::string, std::string, std::uint32_t>> result;
+  result.reserve(entries_.size());
+  for (const auto& [key, entry] : entries_)
+    result.emplace_back(key.first, entry.address_family.value_or(""), key.second);
+  return result;
 }
 
 bool NexthopRegistry::Resolve(const std::string& rib, std::uint32_t id,

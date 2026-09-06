@@ -208,7 +208,7 @@ int Invoke(void* raw_context, const DangOperationV1* operation,
   result->output_xml = rpc_output_xml.c_str();
   return 1;
 }
-int Operational(void*, DangOperationalDataV2* out, DangPluginErrorV1* error) {
+int Operational(void* raw_context, DangOperationalDataV2* out, DangPluginErrorV1* error) {
   if (!out) return Fail(error, "RIB operational output is missing");
   std::vector<ObservedRoute> routes;
   std::string why;
@@ -217,7 +217,8 @@ int Operational(void*, DangOperationalDataV2* out, DangPluginErrorV1* error) {
                       : ObserveFreeBsdRoutes(&routes, &why);
   if (!ok) return Fail(error, "cannot read host RIB: " + why,
                        "/ietf-i2rs-rib:routing-instance/rib-list");
-  operational_xml = SerializeOperationalRoutes(routes);
+  operational_xml = SerializeOperationalRoutes(
+      routes, static_cast<Context*>(raw_context)->nexthops.Snapshot());
   *out = {operational_xml.c_str(), 0}; return 1;
 }
 size_t ResourceCount(void*) { return 1; }

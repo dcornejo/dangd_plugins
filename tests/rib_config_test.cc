@@ -172,6 +172,26 @@ TEST(RibConfigTest, SerializesObservedRoutesAsRfc8431State) {
   EXPECT_NE(xml.find("dummy&amp;0"), std::string::npos);
 }
 
+TEST(RibConfigTest, SerializesRegisteredNexthopsWithAndWithoutRoutes) {
+  const std::vector<std::tuple<std::string, std::string, std::uint32_t>> refs{
+      {"100", "ipv4", 7}, {"200", "ipv6", 9}};
+  const std::string xml = SerializeOperationalRoutes({}, refs);
+  EXPECT_NE(xml.find("<name>100</name><address-family>ipv4</address-family>"),
+            std::string::npos);
+  EXPECT_NE(xml.find("<nexthop-member-id>7</nexthop-member-id>"),
+            std::string::npos);
+  EXPECT_NE(xml.find("<name>200</name><address-family>ipv6</address-family>"),
+            std::string::npos);
+  EXPECT_NE(xml.find("<nexthop-member-id>9</nexthop-member-id>"),
+            std::string::npos);
+}
+
+TEST(RibConfigTest, OmitsFamilyUnknownNexthopWithoutContainingRib) {
+  const std::string xml = SerializeOperationalRoutes({}, {{"100", "", 7}});
+  EXPECT_EQ(xml.find("<nexthop-member-id>7</nexthop-member-id>"),
+            std::string::npos);
+}
+
 TEST(RibConfigTest, RouteAddReportsMixedBatchResults) {
   constexpr char input[] = R"xml(<route-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib">
     <return-failure-detail>true</return-failure-detail><rib-name>100</rib-name>
@@ -316,7 +336,8 @@ TEST(RibConfigTest, RouteUpdateRestoresOriginalAfterInstallFailure) {
 TEST(RibConfigTest, RouteUpdateResolvesRegisteredNexthop) {
   NexthopRegistry registry;
   ASSERT_EQ(registry.Add({.rib = "100", .gateway = "192.0.2.44",
-                          .interface = "dummy44"}), 1U);
+                          .interface = "dummy44", .address_family = "ipv4",
+                          .sharable = false}), 1U);
   ObservedRoute observed;
   observed.route = {.routing_instance = "default", .rib = "100",
                     .address_family = "ipv4", .destination = "192.0.2.0/24",
@@ -448,7 +469,8 @@ TEST(RibConfigTest, NexthopLifecycleAllocatesAndScopesIdentifiersByRib) {
 TEST(RibConfigTest, NexthopDeleteRejectsRetainedReferenceUntilRelease) {
   NexthopRegistry registry;
   ASSERT_EQ(registry.Add({.rib = "100", .gateway = "192.0.2.1",
-                          .interface = std::nullopt}), 1U);
+                          .interface = std::nullopt, .address_family = "ipv4",
+                          .sharable = false}), 1U);
   ASSERT_TRUE(registry.Retain("100", 1));
   std::string output;
   std::string error;
@@ -521,7 +543,9 @@ TEST(RibConfigTest, RejectsMissingOrCrossRibNexthopReference) {
 TEST(RibConfigTest, RouteAddExecutesResolvedRegisteredNexthop) {
   NexthopRegistry registry;
   const auto id = registry.Add({.rib = "100", .gateway = "192.0.2.9",
-                                .interface = "dummy9"});
+                                .interface = "dummy9",
+                                .address_family = "ipv4",
+                                .sharable = false});
   ASSERT_EQ(id, 1U);
   std::vector<NativeCommand> commands;
   std::string output;

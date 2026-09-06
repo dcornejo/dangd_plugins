@@ -122,8 +122,10 @@ lifetime is enforced for prepared and active datastore configurations, and
 `nh-delete` reports a modeled failure while such a route retains the object.
 Imperative `route-add` and `route-update` operations retain the same bindings;
 successful `route-delete` and `rib-delete` release them. Registry persistence
-and operational publication remain before reusable-nexthop semantics are
-compliant.
+remains before reusable-nexthop semantics are compliant. Operational reads
+publish registered identifiers under their containing RIB. Gateway nexthops
+provide their family directly; interface-only entries require an unambiguous
+observed RIB family and are omitted until one is available.
 
 Numeric names are an intentional temporary variance: RFC 8431 RIB names are
 arbitrary strings, while Linux policy tables and FreeBSD FIBs need an explicit

@@ -29,6 +29,10 @@ All notable changes to the external dangd plugin collection are recorded here.
   add/update binds the route key to its retained nexthop, delete/RIB deletion
   releases bindings, failed native mutations release reservations, and a new
   lifecycle test caught and fixed moved-from route-key cleanup.
+- Published live reusable-nexthop identifiers in RFC 8431 operational RIB
+  state from a consistent registry snapshot, including gateway-typed RIBs with
+  no observed routes. Family-ambiguous interface-only entries fail closed by
+  remaining absent until their containing RIB establishes a family.
 
 - Adopted the existing ABI-v4 RFC 8343/8344 IP-management provider from dangd,
   including its direct Linux rtnetlink and FreeBSD ioctl/route-netlink

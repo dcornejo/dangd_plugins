@@ -6,6 +6,8 @@
 #include "plugins/rib/src/route_observer.h"
 
 #include <algorithm>
+#include <map>
+#include <set>
 #include <sstream>
 #include <tuple>
 
@@ -29,7 +31,10 @@ std::string Escape(std::string_view value) {
 
 }  // namespace
 
-std::string SerializeOperationalRoutes(const std::vector<ObservedRoute>& input) {
+std::string SerializeOperationalRoutes(
+    const std::vector<ObservedRoute>& input,
+    const std::vector<std::tuple<std::string, std::string, std::uint32_t>>&
+        nexthops) {
   std::vector<ObservedRoute> routes = input;
   std::ranges::sort(routes, {}, [](const ObservedRoute& value) {
     return std::tie(value.route.routing_instance, value.route.rib,
@@ -41,10 +46,36 @@ std::string SerializeOperationalRoutes(const std::vector<ObservedRoute>& input) 
          "<name>default</name>";
   std::string current_rib;
   std::string current_family;
+  using RibKey = std::pair<std::string, std::string>;
+  std::map<RibKey, std::vector<std::uint32_t>> ids;
+  for (const auto& [rib, supplied_family, id] : nexthops) {
+    std::string family = supplied_family;
+    if (family.empty()) {
+      for (const ObservedRoute& observed : routes)
+        if (observed.route.rib == rib) {
+          if (family.empty()) family = observed.route.address_family;
+          else if (family != observed.route.address_family) { family.clear(); break; }
+        }
+    }
+    // An interface-only nexthop has no intrinsic family. Publish it only when
+    // the containing native RIB supplies one unambiguous family.
+    if (!family.empty()) ids[{rib, family}].push_back(id);
+  }
+  std::set<RibKey> emitted;
+  const auto emit_ids = [&](const RibKey& key) {
+    if (const auto found = ids.find(key); found != ids.end())
+      for (const std::uint32_t id : found->second)
+        xml << "<nexthop-list><nexthop-member-id>" << id
+            << "</nexthop-member-id></nexthop-list>";
+    emitted.insert(key);
+  };
   for (const ObservedRoute& observed : routes) {
     const Route& route = observed.route;
     if (route.rib != current_rib || route.address_family != current_family) {
-      if (!current_rib.empty()) xml << "</rib-list>";
+      if (!current_rib.empty()) {
+        emit_ids({current_rib, current_family});
+        xml << "</rib-list>";
+      }
       current_rib = route.rib;
       current_family = route.address_family;
       xml << "<rib-list><name>" << Escape(route.rib)
@@ -72,7 +103,19 @@ std::string SerializeOperationalRoutes(const std::vector<ObservedRoute>& input) 
         << "<local-only>" << (route.local_only ? "true" : "false")
         << "</local-only></route-attributes></route-list>";
   }
-  if (!current_rib.empty()) xml << "</rib-list>";
+  if (!current_rib.empty()) {
+    emit_ids({current_rib, current_family});
+    xml << "</rib-list>";
+  }
+  for (const auto& [key, values] : ids) {
+    if (emitted.contains(key)) continue;
+    xml << "<rib-list><name>" << Escape(key.first)
+        << "</name><address-family>" << key.second << "</address-family>";
+    for (const std::uint32_t id : values)
+      xml << "<nexthop-list><nexthop-member-id>" << id
+          << "</nexthop-member-id></nexthop-list>";
+    xml << "</rib-list>";
+  }
   xml << "</routing-instance></data>";
   return xml.str();
 }

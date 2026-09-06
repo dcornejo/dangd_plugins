@@ -25,6 +25,7 @@ class NexthopRegistry {
     std::string rib;
     std::optional<std::string> gateway;
     std::optional<std::string> interface;
+    std::optional<std::string> address_family;
     bool sharable = false;
   };
   [[nodiscard]] std::optional<std::uint32_t> Add(Entry entry);
@@ -40,6 +41,9 @@ class NexthopRegistry {
   void ForgetRib(const std::string& rib);
   [[nodiscard]] std::optional<std::uint32_t> RouteReference(
       const Route& route);
+  /** Returns a consistent RIB/family/identifier view for operational output. */
+  [[nodiscard]] std::vector<std::tuple<std::string, std::string, std::uint32_t>>
+  Snapshot();
   [[nodiscard]] bool Resolve(const std::string& rib, std::uint32_t id,
                              std::optional<std::string>* gateway,
                              std::optional<std::string>* interface);

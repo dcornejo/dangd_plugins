@@ -5,6 +5,7 @@
 #define DANG_PLUGINS_RIB_ROUTE_OBSERVER_H_
 
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "plugins/rib/src/rib_config.h"
@@ -27,7 +28,9 @@ struct ObservedRoute {
 
 /** Serializes a partial RFC 8431 operational-data subtree. */
 [[nodiscard]] std::string SerializeOperationalRoutes(
-    const std::vector<ObservedRoute>& routes);
+    const std::vector<ObservedRoute>& routes,
+    const std::vector<std::tuple<std::string, std::string, std::uint32_t>>&
+        nexthops = {});
 
 }  // namespace dang::rib
 

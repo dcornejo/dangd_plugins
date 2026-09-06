@@ -44,6 +44,12 @@ int main(int argc, char** argv) {
       operation_result.output_xml &&
       std::string_view(operation_result.output_xml).find(">1</nexthop-id>") !=
           std::string_view::npos;
+  state = {};
+  valid = valid && api->v6.v5.get_operational_data_v2(
+      base.context, &state, &error) && state.data_xml &&
+      std::string_view(state.data_xml).find(
+          "<nexthop-member-id>1</nexthop-member-id>") !=
+          std::string_view::npos;
   constexpr char referenced[] = R"(<config><routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>default</name><rib-list><name>100</name><address-family>ipv4</address-family><route-list><route-index>8</route-index><match><ipv4><dest-ipv4-prefix>198.18.1.0/24</dest-ipv4-prefix></ipv4></match><nexthop><nexthop-base><nexthop-ref>1</nexthop-ref></nexthop-base></nexthop><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes></route-list></rib-list></routing-instance></config>)";
   DangTransactionV1 referenced_transaction{before, referenced, "[]"};
   void* referenced_prepared = nullptr;
