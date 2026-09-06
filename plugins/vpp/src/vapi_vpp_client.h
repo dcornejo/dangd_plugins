@@ -27,6 +27,8 @@ class VapiVppClient final : public VppClient {
                                      std::string* error) override;
   [[nodiscard]] bool FindLoopback(uint32_t instance, CreatedInterface* found,
                                    std::string* error) override;
+  [[nodiscard]] bool ListLoopbacks(std::vector<CreatedInterface>* loopbacks,
+                                    std::string* error) override;
   [[nodiscard]] bool SetAdminState(uint32_t software_index, bool up,
                                     std::string* error) override;
   [[nodiscard]] bool DeleteLoopback(uint32_t software_index,

@@ -11,11 +11,15 @@
 #include "vpp_model_sources.h"
 
 #include <cstdlib>
+#include <charconv>
 #include <cstring>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include <libxml/parser.h>
+#include <libxml/tree.h>
 
 namespace {
 using dang::vpp::LoopbackOperation;
@@ -29,6 +33,8 @@ struct Prepared {
 
 thread_local std::string callback_error;
 thread_local std::string callback_path;
+thread_local std::string operational_xml;
+thread_local std::string reconciled_xml;
 
 int Fail(DangPluginErrorV1* error, std::string message,
          std::string path = "/") {
@@ -44,6 +50,109 @@ int Fail(DangPluginErrorV1* error, std::string message,
 std::string SocketPath() {
   const char* configured = std::getenv("DANG_VPP_API_SOCKET");
   return configured && *configured ? configured : "/run/vpp/api.sock";
+}
+
+bool Observe(std::vector<dang::vpp::LoopbackConfiguration>* observed,
+             std::string* error) {
+  auto client = dang::vpp::VapiVppClient::Connect(SocketPath(), error);
+  if (!client) return false;
+  std::vector<dang::vpp::CreatedInterface> live;
+  if (!client->ListLoopbacks(&live, error)) return false;
+  observed->clear();
+  for (const auto& item : live) {
+    if (!item.name.starts_with("loop")) continue;
+    uint32_t instance = 0;
+    const std::string_view suffix(item.name.data() + 4, item.name.size() - 4);
+    const auto parsed = std::from_chars(suffix.data(),
+                                        suffix.data() + suffix.size(), instance);
+    if (suffix.empty() || parsed.ec != std::errc{} ||
+        parsed.ptr != suffix.data() + suffix.size()) {
+      *error = "VPP returned a malformed loopback name: " + item.name;
+      return false;
+    }
+    observed->push_back({.instance = instance, .enabled = item.admin_up});
+  }
+  return true;
+}
+
+std::string Render(const std::vector<dang::vpp::LoopbackConfiguration>& values) {
+  std::string xml = "<vpp-interfaces xmlns=\"urn:dang:vpp:interfaces\">";
+  for (const auto& value : values)
+    xml += "<loopback><instance>" + std::to_string(value.instance) +
+           "</instance><enabled>" + (value.enabled ? "true" : "false") +
+           "</enabled></loopback>";
+  return xml + "</vpp-interfaces>";
+}
+
+int Operational(void*, DangOperationalDataV1* result,
+                DangPluginErrorV1* error) {
+  if (!result) return Fail(error, "VPP operational result is missing");
+  std::vector<dang::vpp::LoopbackConfiguration> observed;
+  if (!Observe(&observed, &callback_error)) return Fail(error, callback_error);
+  operational_xml = Render(observed);
+  result->data_xml = operational_xml.c_str();
+  return 1;
+}
+
+int OperationalV2(void*, DangOperationalDataV2* result,
+                  DangPluginErrorV1* error) {
+  if (!result) return Fail(error, "VPP operational result is missing");
+  DangOperationalDataV1 legacy{};
+  if (!Operational(nullptr, &legacy, error)) return 0;
+  *result = {.data_xml = legacy.data_xml, .complete = 1};
+  return 1;
+}
+
+int Reconcile(void*, void*, const char* current_xml,
+              DangAppliedConfigurationV1* result, DangPluginErrorV1* error) {
+  if (!current_xml || !result)
+    return Fail(error, "VPP reconciliation input is incomplete");
+  std::vector<dang::vpp::LoopbackConfiguration> observed;
+  if (!Observe(&observed, &callback_error)) return Fail(error, callback_error);
+  xmlDocPtr document = xmlReadMemory(current_xml,
+      static_cast<int>(std::strlen(current_xml)), "vpp-applied.xml", nullptr,
+      XML_PARSE_NONET | XML_PARSE_NOBLANKS | XML_PARSE_NOERROR |
+      XML_PARSE_NOWARNING);
+  if (!document) return Fail(error, "cannot parse applied configuration");
+  xmlNodePtr root = xmlDocGetRootElement(document);
+  if (!root) {
+    xmlFreeDoc(document);
+    return Fail(error, "applied configuration has no document element");
+  }
+  for (xmlNodePtr node = root ? root->children : nullptr; node;) {
+    xmlNodePtr next = node->next;
+    if (node->type == XML_ELEMENT_NODE && node->ns && node->ns->href &&
+        std::string_view(reinterpret_cast<const char*>(node->ns->href)) ==
+            "urn:dang:vpp:interfaces") {
+      xmlUnlinkNode(node);
+      xmlFreeNode(node);
+    }
+    node = next;
+  }
+  xmlNodePtr subtree = xmlNewChild(root, nullptr,
+      reinterpret_cast<const xmlChar*>("vpp-interfaces"), nullptr);
+  xmlNsPtr ns = xmlNewNs(subtree,
+      reinterpret_cast<const xmlChar*>("urn:dang:vpp:interfaces"), nullptr);
+  xmlSetNs(subtree, ns);
+  for (const auto& value : observed) {
+    xmlNodePtr loopback = xmlNewChild(subtree, ns,
+        reinterpret_cast<const xmlChar*>("loopback"), nullptr);
+    xmlNewChild(loopback, ns, reinterpret_cast<const xmlChar*>("instance"),
+        reinterpret_cast<const xmlChar*>(std::to_string(value.instance).c_str()));
+    xmlNewChild(loopback, ns, reinterpret_cast<const xmlChar*>("enabled"),
+        reinterpret_cast<const xmlChar*>(value.enabled ? "true" : "false"));
+  }
+  xmlChar* buffer = nullptr;
+  int size = 0;
+  xmlDocDumpMemoryEnc(document, &buffer, &size, "UTF-8");
+  if (!buffer) { xmlFreeDoc(document); return Fail(error, "cannot serialize applied configuration"); }
+  reconciled_xml.assign(reinterpret_cast<const char*>(buffer),
+                        static_cast<std::size_t>(size));
+  xmlFree(buffer);
+  xmlFreeDoc(document);
+  *result = {.applied_xml = reconciled_xml.c_str(), .outcomes = nullptr,
+             .outcome_count = 0};
+  return 1;
 }
 
 std::size_t SourceCount(void*) { return 2; }
@@ -197,12 +306,12 @@ const DangPluginV7 kPlugin{
         .yang_source_at = SourceAt, .dependency_count = DependencyCount,
         .dependency_at = DependencyAt, .prepare = Prepare, .validate = Validate,
         .apply = Apply, .rollback = Rollback, .release = Release,
-        .destroy = nullptr}, .invoke = nullptr}, .get_operational_data = nullptr},
+        .destroy = nullptr}, .invoke = nullptr}, .get_operational_data = Operational},
         .hardware_action_count = ActionCount, .hardware_action_at = ActionAt,
         .apply_hardware_action = ApplyAction,
         .rollback_hardware_action = RollbackAction},
-        .get_operational_data_v2 = nullptr},
-        .reconcile_applied_configuration = nullptr},
+        .get_operational_data_v2 = OperationalV2},
+        .reconcile_applied_configuration = Reconcile},
     .resource_domain_count = ResourceCount, .resource_domain_at = ResourceAt};
 }  // namespace
 

@@ -80,6 +80,13 @@ not depend on cached software indexes. Physical `owner vpp` requests remain
 explicitly rejected after live identity and management-path validation; the
 model is visible for forward compatibility, not an unsafe claim of support.
 
+The provider publishes all live `loopN` objects and their administrative state
+as complete ABI-v5 operational data. After a commit, ABI-v6 reconciliation
+replaces only the `dang-vpp-interfaces` subtree in dangd's complete applied
+snapshot with that observed state; unrelated module data is retained. The live
+contract test verifies publication while `loop73` exists, preservation of an
+unrelated node during reconciliation, and disappearance after rollback.
+
 ## VAPI build and isolated validation
 
 The optional VAPI target is enabled when CMake finds `vapi/vapi.hpp` and

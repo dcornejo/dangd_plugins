@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace dang::vpp {
 
@@ -13,6 +14,7 @@ namespace dang::vpp {
 struct CreatedInterface {
   uint32_t software_index = 0;
   std::string name;
+  bool admin_up = false;
 };
 
 /**
@@ -33,6 +35,9 @@ class VppClient {
   [[nodiscard]] virtual bool FindLoopback(uint32_t instance,
                                            CreatedInterface* found,
                                            std::string* error) = 0;
+  /** Returns every VPP loopback with live index and administrative state. */
+  [[nodiscard]] virtual bool ListLoopbacks(
+      std::vector<CreatedInterface>* loopbacks, std::string* error) = 0;
   [[nodiscard]] virtual bool SetAdminState(uint32_t software_index, bool up,
                                             std::string* error) = 0;
   [[nodiscard]] virtual bool DeleteLoopback(uint32_t software_index,

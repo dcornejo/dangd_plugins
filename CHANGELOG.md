@@ -46,6 +46,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   compensated software-interface hardware action. Real provider-level
   create/enable and rollback-to-absence interactions pass on both Linux hosts;
   physical ownership remains deliberately fail-closed.
+- Added complete live loopback operational publication and ABI-v6 applied-state
+  reconciliation. A single bounded interface dump supplies stable instances and
+  administrative state; reconciliation replaces only the VPP subtree and
+  preserves unrelated configuration. Both hosts verify presence after apply
+  and absence after rollback through the exported provider ABI.
 
 - Implemented RFC 8431 `nh-add` and `nh-delete` with thread-safe, per-RIB
   nexthop identifier allocation, strict portable base-nexthop validation, and

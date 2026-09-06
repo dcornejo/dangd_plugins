@@ -42,12 +42,40 @@ int main(int argc, char** argv) {
     return 1;
   }
   std::cout << "provider created and enabled loop73\n";
+  DangOperationalDataV2 operational{};
+  if (!plugin->v6.v5.get_operational_data_v2(
+          api.context, &operational, &error) || !operational.complete ||
+      !operational.data_xml ||
+      std::string(operational.data_xml).find("<instance>73</instance>") ==
+          std::string::npos) {
+    std::cerr << "live loop73 was not published as complete state\n";
+    return 1;
+  }
+  DangAppliedConfigurationV1 reconciled{};
+  constexpr char kCurrent[] =
+      "<config><unrelated xmlns=\"urn:test\">keep</unrelated></config>";
+  if (!plugin->v6.reconcile_applied_configuration(
+          api.context, prepared, kCurrent, &reconciled, &error) ||
+      !reconciled.applied_xml ||
+      std::string(reconciled.applied_xml).find("keep") == std::string::npos ||
+      std::string(reconciled.applied_xml).find("<instance>73</instance>") ==
+          std::string::npos) {
+    std::cerr << "VPP applied-state reconciliation failed\n";
+    return 1;
+  }
   if (!plugin->v6.v5.v4.rollback_hardware_action(
           api.context, prepared, "software-interfaces", &error)) {
     std::cerr << (error.message ? error.message : "rollback failed") << '\n';
     return 1;
   }
   std::cout << "provider restored loop73 absence\n";
+  if (!plugin->v6.v5.get_operational_data_v2(
+          api.context, &operational, &error) ||
+      std::string(operational.data_xml).find("<instance>73</instance>") !=
+          std::string::npos) {
+    std::cerr << "rolled-back loop73 remains in operational state\n";
+    return 1;
+  }
   api.release(api.context, prepared);
   dlclose(library);
 }

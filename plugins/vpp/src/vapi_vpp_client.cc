@@ -114,6 +114,22 @@ bool VapiVppClient::CreateLoopback(uint32_t instance,
 bool VapiVppClient::FindLoopback(uint32_t instance, CreatedInterface* found,
                                   std::string* error) {
   if (!found || !error) return false;
+  std::vector<CreatedInterface> loopbacks;
+  if (!ListLoopbacks(&loopbacks, error)) return false;
+  const std::string expected = "loop" + std::to_string(instance);
+  const auto match = std::ranges::find(loopbacks, expected,
+                                       &CreatedInterface::name);
+  if (match != loopbacks.end()) {
+    *found = *match;
+    return true;
+  }
+  *error = "VPP loopback " + expected + " does not exist";
+  return false;
+}
+
+bool VapiVppClient::ListLoopbacks(std::vector<CreatedInterface>* loopbacks,
+                                   std::string* error) {
+  if (!loopbacks || !error) return false;
   error->clear();
   if (!RequireMessage(&impl_->connection, vapi_msg_id_sw_interface_dump,
                       "sw_interface_dump", error))
@@ -125,17 +141,18 @@ bool VapiVppClient::FindLoopback(uint32_t instance, CreatedInterface* found,
   payload.name_filter.length = 0;
   if (!Execute(&impl_->connection, &request, "sw_interface_dump", error))
     return false;
-  const std::string expected = "loop" + std::to_string(instance);
+  loopbacks->clear();
   for (const auto& response : request.get_result_set()) {
     const auto& detail = response.get_payload();
     const char* name = reinterpret_cast<const char*>(detail.interface_name);
     const std::string actual(name, strnlen(name, sizeof(detail.interface_name)));
-    if (actual != expected) continue;
-    *found = {.software_index = detail.sw_if_index, .name = actual};
-    return true;
+    if (!actual.starts_with("loop")) continue;
+    loopbacks->push_back({.software_index = detail.sw_if_index,
+                          .name = actual,
+                          .admin_up = (detail.flags &
+                              IF_STATUS_API_FLAG_ADMIN_UP) != 0});
   }
-  *error = "VPP loopback " + expected + " does not exist";
-  return false;
+  return true;
 }
 
 bool VapiVppClient::SetAdminState(uint32_t software_index, bool up,

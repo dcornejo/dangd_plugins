@@ -24,13 +24,19 @@ class FakeVppClient final : public VppClient {
                       std::string* error) override {
     calls.push_back("create:" + std::to_string(instance));
     if (!create_ok) { *error = "injected create failure"; return false; }
-    *created = {.software_index = 17, .name = created_name};
+    *created = {.software_index = 17, .name = created_name, .admin_up = false};
     return true;
   }
   bool FindLoopback(uint32_t instance, CreatedInterface* found,
                     std::string*) override {
     calls.push_back("find:" + std::to_string(instance));
-    *found = {.software_index = 17, .name = "loop" + std::to_string(instance)};
+    *found = {.software_index = 17,
+              .name = "loop" + std::to_string(instance), .admin_up = false};
+    return true;
+  }
+  bool ListLoopbacks(std::vector<CreatedInterface>* loopbacks,
+                     std::string*) override {
+    *loopbacks = {{.software_index = 17, .name = "loop0", .admin_up = true}};
     return true;
   }
   bool SetAdminState(uint32_t index, bool up, std::string* error) override {
