@@ -64,6 +64,13 @@ an absent daemon fails promptly and stale shared-memory segments cannot hang a
 worker. Focused tests use an in-memory client, while the live probe performs the
 same complete lifecycle against a real daemon.
 
+The `dang-vpp-interfaces` model now provides deterministic software-loopback
+intent. Each entry is keyed by VPP's persistent user instance, yielding native
+name `loopN`; `sw_if_index` remains only the live mutation handle. The snapshot
+planner emits all creates before activation, and deactivates an enabled
+loopback before deletion. This ordering is covered independently of the daemon
+and is ready to be surfaced as ABI-v7 hardware actions.
+
 ## VAPI build and isolated validation
 
 The optional VAPI target is enabled when CMake finds `vapi/vapi.hpp` and
@@ -81,7 +88,7 @@ its binary API socket, CLI, statistics socket, runtime data, and log below
 exact daemon process afterward. A successful interaction is:
 
 ```text
-created and enabled sw_if_index:1
+created and enabled loop0
 restored pre-test state
 ```
 

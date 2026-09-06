@@ -81,21 +81,24 @@ std::unique_ptr<VapiVppClient> VapiVppClient::Connect(
       new VapiVppClient(std::move(impl)));
 }
 
-bool VapiVppClient::CreateLoopback(CreatedInterface* created,
+bool VapiVppClient::CreateLoopback(uint32_t instance,
+                                    CreatedInterface* created,
                                     std::string* error) {
   if (!created || !error) return false;
   error->clear();
-  if (!RequireMessage(&impl_->connection, vapi_msg_id_create_loopback,
-                      "create_loopback", error))
+  if (!RequireMessage(&impl_->connection, vapi_msg_id_create_loopback_instance,
+                      "create_loopback_instance", error))
     return false;
-  vapi::Create_loopback request(impl_->connection);
+  vapi::Create_loopback_instance request(impl_->connection);
   auto& payload = request.get_request().get_payload();
   std::ranges::fill(payload.mac_address, 0);
-  if (!Execute(&impl_->connection, &request, "create_loopback", error))
+  payload.is_specified = true;
+  payload.user_instance = instance;
+  if (!Execute(&impl_->connection, &request, "create_loopback_instance", error))
     return false;
   const auto& reply = request.get_response().get_payload();
   if (reply.retval != 0) {
-    *error = "create_loopback was rejected by VPP with retval " +
+    *error = "create_loopback_instance was rejected by VPP with retval " +
              std::to_string(reply.retval);
     return false;
   }
@@ -103,7 +106,7 @@ bool VapiVppClient::CreateLoopback(CreatedInterface* created,
   // The software index is the authoritative handle. Resolving VPP's cosmetic
   // interface name requires a separate dump and is intentionally not part of
   // the mutation's success boundary.
-  created->name = "sw_if_index:" + std::to_string(reply.sw_if_index);
+  created->name = "loop" + std::to_string(instance);
   return true;
 }
 

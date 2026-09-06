@@ -20,8 +20,9 @@ class FakeVppClient final : public VppClient {
   std::string created_name = "loop0";
   std::vector<std::string> calls;
 
-  bool CreateLoopback(CreatedInterface* created, std::string* error) override {
-    calls.push_back("create");
+  bool CreateLoopback(uint32_t instance, CreatedInterface* created,
+                      std::string* error) override {
+    calls.push_back("create:" + std::to_string(instance));
     if (!create_ok) { *error = "injected create failure"; return false; }
     *created = {.software_index = 17, .name = created_name};
     return true;
@@ -43,7 +44,7 @@ class FakeVppClient final : public VppClient {
 
 TEST(VppLoopbackTransaction, AppliesAndRestoresAbsence) {
   FakeVppClient client;
-  LoopbackTransaction transaction(&client);
+  LoopbackTransaction transaction(&client, 42);
   std::string error;
   ASSERT_TRUE(transaction.Apply(&error)) << error;
   ASSERT_TRUE(transaction.created());
@@ -51,7 +52,7 @@ TEST(VppLoopbackTransaction, AppliesAndRestoresAbsence) {
   ASSERT_TRUE(transaction.Rollback(&error)) << error;
   EXPECT_FALSE(transaction.created());
   EXPECT_EQ(client.calls, (std::vector<std::string>{
-      "create", "up:17", "down:17", "delete:17"}));
+      "create:42", "up:17", "down:17", "delete:17"}));
 }
 
 TEST(VppLoopbackTransaction, CompensatesAdminUpFailure) {
@@ -62,7 +63,7 @@ TEST(VppLoopbackTransaction, CompensatesAdminUpFailure) {
   EXPECT_FALSE(transaction.Apply(&error));
   EXPECT_FALSE(transaction.created());
   EXPECT_EQ(client.calls, (std::vector<std::string>{
-      "create", "up:17", "delete:17"}));
+      "create:0", "up:17", "delete:17"}));
 }
 
 TEST(VppLoopbackTransaction, RetainsHandleWhenCompensationFails) {

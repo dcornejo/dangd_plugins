@@ -15,7 +15,7 @@ bool LoopbackTransaction::Apply(std::string* error) {
     return false;
   }
   CreatedInterface candidate;
-  if (!client_->CreateLoopback(&candidate, error)) return false;
+  if (!client_->CreateLoopback(instance_, &candidate, error)) return false;
   if (candidate.name.empty()) {
     std::string compensation_error;
     if (!client_->DeleteLoopback(candidate.software_index,

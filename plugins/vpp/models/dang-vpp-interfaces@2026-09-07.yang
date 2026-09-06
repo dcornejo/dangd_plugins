@@ -1,0 +1,35 @@
+// Copyright 2026 David Cornejo
+// SPDX-License-Identifier: Apache-2.0
+
+module dang-vpp-interfaces {
+  yang-version 1.1;
+  namespace "urn:dang:vpp:interfaces";
+  prefix dvi;
+
+  organization "dang project";
+  description
+    "Configuration of software interfaces owned entirely by VPP. Physical
+     device ownership is intentionally modeled in a separate module.";
+
+  revision 2026-09-07 {
+    description "Initial deterministic loopback configuration.";
+  }
+
+  container vpp-interfaces {
+    list loopback {
+      key "instance";
+      description
+        "A VPP loopback with stable user instance N and native name loopN.";
+      leaf instance {
+        type uint32;
+        description
+          "Stable VPP loopback user instance, independent of sw_if_index.";
+      }
+      leaf enabled {
+        type boolean;
+        default false;
+        description "Desired administrative state.";
+      }
+    }
+  }
+}

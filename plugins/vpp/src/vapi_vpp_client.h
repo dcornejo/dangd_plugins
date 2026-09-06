@@ -22,7 +22,8 @@ class VapiVppClient final : public VppClient {
   VapiVppClient(const VapiVppClient&) = delete;
   VapiVppClient& operator=(const VapiVppClient&) = delete;
 
-  [[nodiscard]] bool CreateLoopback(CreatedInterface* created,
+  [[nodiscard]] bool CreateLoopback(uint32_t instance,
+                                     CreatedInterface* created,
                                      std::string* error) override;
   [[nodiscard]] bool SetAdminState(uint32_t software_index, bool up,
                                     std::string* error) override;

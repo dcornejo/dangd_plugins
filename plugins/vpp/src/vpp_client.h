@@ -26,7 +26,8 @@ struct CreatedInterface {
 class VppClient {
  public:
   virtual ~VppClient() = default;
-  [[nodiscard]] virtual bool CreateLoopback(CreatedInterface* created,
+  [[nodiscard]] virtual bool CreateLoopback(uint32_t instance,
+                                             CreatedInterface* created,
                                              std::string* error) = 0;
   [[nodiscard]] virtual bool SetAdminState(uint32_t software_index, bool up,
                                             std::string* error) = 0;

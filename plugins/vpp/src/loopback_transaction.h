@@ -14,7 +14,8 @@ namespace dang::vpp {
 /** Retained before-image for one VPP-created loopback transaction. */
 class LoopbackTransaction {
  public:
-  explicit LoopbackTransaction(VppClient* client) : client_(client) {}
+  explicit LoopbackTransaction(VppClient* client, uint32_t instance = 0)
+      : client_(client), instance_(instance) {}
 
   /** Creates the loopback and brings it up, compensating partial failure. */
   [[nodiscard]] bool Apply(std::string* error);
@@ -28,6 +29,7 @@ class LoopbackTransaction {
 
  private:
   VppClient* client_;
+  uint32_t instance_;
   std::optional<CreatedInterface> created_;
 };
 

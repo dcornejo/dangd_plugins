@@ -36,6 +36,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   isolated, plugin-free VPP 26.06 lifecycle now passes on both Ubuntu 26.04
   hosts using unpacked Ubuntu 24.04 packages without changing their package
   databases or exposing PCI devices.
+- Added the `dang-vpp-interfaces` model and deterministic loopback planner.
+  Configured identity now uses VPP's stable loopback user instance instead of
+  ephemeral `sw_if_index`; safe plans create before activation and deactivate
+  before deletion. Schema, parser, ordering, and live `loop0` rollback tests
+  pass on both Linux hosts.
 
 - Implemented RFC 8431 `nh-add` and `nh-delete` with thread-safe, per-RIB
   nexthop identifier allocation, strict portable base-nexthop validation, and

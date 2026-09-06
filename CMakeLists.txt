@@ -274,6 +274,17 @@ if(BUILD_TESTING)
       -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
     add_test(NAME vpp_loopback_transaction
       COMMAND vpp_loopback_transaction_test)
+    add_executable(vpp_loopback_plan_test
+      tests/vpp_loopback_plan_test.cc
+      plugins/vpp/src/loopback_plan.cc)
+    target_compile_features(vpp_loopback_plan_test PRIVATE cxx_std_20)
+    target_include_directories(vpp_loopback_plan_test PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(vpp_loopback_plan_test PRIVATE
+      GTest::gtest_main LibXml2::LibXml2)
+    target_compile_options(vpp_loopback_plan_test PRIVATE
+      -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    add_test(NAME vpp_loopback_plan COMMAND vpp_loopback_plan_test)
   endif()
   add_executable(plugin_loader_smoke_test tests/plugin_loader_smoke_test.cc)
   target_compile_features(plugin_loader_smoke_test PRIVATE cxx_std_20)
@@ -358,6 +369,9 @@ if(BUILD_TESTING)
     add_test(NAME vpp_ownership_schema
       COMMAND "${DANG_YANGLINT_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/plugins/vpp/models/dang-vpp-interface-ownership@2026-09-06.yang")
+    add_test(NAME vpp_interfaces_schema
+      COMMAND "${DANG_YANGLINT_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/plugins/vpp/models/dang-vpp-interfaces@2026-09-07.yang")
     add_test(NAME rfc8431_schema_interoperability
       COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_rfc8431_yanglint.sh"
         "${DANG_YANGLINT_EXECUTABLE}"
