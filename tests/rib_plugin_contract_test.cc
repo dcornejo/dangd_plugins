@@ -64,8 +64,21 @@ int main(int argc, char** argv) {
       operation_result.output_xml &&
       std::string_view(operation_result.output_xml).find("referenced by a route") !=
           std::string_view::npos;
+  DangAppliedConfigurationV1 applied{};
+  valid = valid && api->v6.reconcile_applied_configuration(
+      base.context, referenced_prepared, referenced, &applied, &error) &&
+      applied.applied_xml == referenced;
   if (referenced_prepared)
     base.release(base.context, referenced_prepared);
+  operation_result = {};
+  valid = valid && api->v6.v5.v4.v3.v2.invoke(
+      base.context, &operation, &operation_result, &error) &&
+      operation_result.output_xml &&
+      std::string_view(operation_result.output_xml).find("referenced by a route") !=
+          std::string_view::npos;
+  applied = {};
+  valid = valid && api->v6.reconcile_applied_configuration(
+      base.context, nullptr, before, &applied, &error);
   operation_result = {};
   valid = valid && api->v6.v5.v4.v3.v2.invoke(
       base.context, &operation, &operation_result, &error) &&

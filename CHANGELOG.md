@@ -33,6 +33,10 @@ All notable changes to the external dangd plugin collection are recorded here.
   state from a consistent registry snapshot, including gateway-typed RIBs with
   no observed routes. Family-ambiguous interface-only entries fail closed by
   remaining absent until their containing RIB establishes a family.
+- Rebuilt datastore-owned nexthop reference counts from the ABI-v6 applied
+  configuration reconciliation callback. Restart and restored-snapshot paths
+  now establish the exact active set instead of depending on pre-restart
+  in-memory counts, while transaction reservations still close deletion races.
 
 - Adopted the existing ABI-v4 RFC 8343/8344 IP-management provider from dangd,
   including its direct Linux rtnetlink and FreeBSD ioctl/route-netlink

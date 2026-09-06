@@ -485,6 +485,19 @@ TEST(RibConfigTest, NexthopDeleteRejectsRetainedReferenceUntilRelease) {
   EXPECT_NE(output.find(">true</result>"), std::string::npos);
 }
 
+TEST(RibConfigTest, ReconcilesExactDatastoreReferenceSet) {
+  NexthopRegistry registry;
+  ASSERT_EQ(registry.Add({.rib = "100", .gateway = "192.0.2.1",
+                          .interface = std::nullopt,
+                          .address_family = "ipv4", .sharable = false}), 1U);
+  ASSERT_TRUE(registry.ReplaceConfigurationReferences({{"100", 1}}));
+  EXPECT_EQ(registry.Remove("100", 1),
+            NexthopRegistry::RemoveResult::kInUse);
+  ASSERT_TRUE(registry.ReplaceConfigurationReferences({}));
+  EXPECT_EQ(registry.Remove("100", 1),
+            NexthopRegistry::RemoveResult::kRemoved);
+}
+
 TEST(RibConfigTest, NexthopAddRejectsUnsupportedCompositeForm) {
   NexthopRegistry registry;
   std::string output;

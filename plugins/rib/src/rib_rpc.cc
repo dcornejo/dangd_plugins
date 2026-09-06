@@ -238,6 +238,26 @@ std::optional<std::uint32_t> NexthopRegistry::RouteReference(
              ? std::nullopt : std::optional<std::uint32_t>(found->second);
 }
 
+bool NexthopRegistry::ReplaceConfigurationReferences(
+    const std::vector<std::pair<std::string, std::uint32_t>>& requested) {
+  std::lock_guard lock(mutex_);
+  std::map<std::pair<std::string, std::uint32_t>, std::size_t> replacement;
+  for (const auto& reference : requested) {
+    if (!entries_.contains(reference)) return false;
+    ++replacement[reference];
+  }
+  for (const auto& [reference, count] : configuration_references_) {
+    auto total = references_.find(reference);
+    if (total == references_.end() || total->second < count) return false;
+    total->second -= count;
+    if (total->second == 0) references_.erase(total);
+  }
+  for (const auto& [reference, count] : replacement)
+    references_[reference] += count;
+  configuration_references_ = std::move(replacement);
+  return true;
+}
+
 std::vector<std::tuple<std::string, std::string, std::uint32_t>>
 NexthopRegistry::Snapshot() {
   std::lock_guard lock(mutex_);

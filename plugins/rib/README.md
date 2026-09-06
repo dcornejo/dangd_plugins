@@ -114,8 +114,8 @@ combined nexthop and retains it in a mutex-protected registry scoped by RIB.
 `nh-delete` removes exactly that RIB/identifier pair and reports a modeled
 failure for an unknown pair. This portable registry is intentionally owned by
 the plugin because Linux and FreeBSD do not expose equivalent standalone
-nexthop objects. It is currently volatile and is not yet emitted in operational
-state. Configuration commits, `route-add`, and prefix-selected `route-update`
+nexthop objects. It is currently volatile. Configuration commits, `route-add`,
+and prefix-selected `route-update`
 resolve `nexthop-ref` against the
 containing RIB and fail closed for absent or cross-RIB identifiers. Reference
 lifetime is enforced for prepared and active datastore configurations, and
@@ -126,6 +126,11 @@ remains before reusable-nexthop semantics are compliant. Operational reads
 publish registered identifiers under their containing RIB. Gateway nexthops
 provide their family directly; interface-only entries require an unambiguous
 observed RIB family and are omitted until one is available.
+
+Applied datastore reference counts are rebuilt from dangd's reconciled
+configuration snapshot. This makes restart restoration independent of prior
+process memory; prepare-time reservations cover the interval between validation
+and reconciliation.
 
 Numeric names are an intentional temporary variance: RFC 8431 RIB names are
 arbitrary strings, while Linux policy tables and FreeBSD FIBs need an explicit

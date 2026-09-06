@@ -122,9 +122,6 @@ int Apply(void*, void* raw, DangPluginErrorV1* error) {
   if (prepared->applied) return 1;
   auto result = ExecuteChanges(kPlatform, prepared->changes);
   if (!result.ok) return Fail(error, result.error, result.error_path);
-  if (!RetainAll(prepared->registry, prepared->proposed_references))
-    return Fail(error, "reserved nexthop disappeared during apply");
-  ReleaseAll(prepared->registry, prepared->before_references);
   prepared->applied = true; return 1;
 }
 int Rollback(void*, void* raw, DangPluginErrorV1* error) {
@@ -135,9 +132,9 @@ int Rollback(void*, void* raw, DangPluginErrorV1* error) {
     inverse.push_back({i->kind == ChangeKind::kDelete ? ChangeKind::kInstall : ChangeKind::kDelete, i->route});
   auto result = ExecuteChanges(kPlatform, inverse);
   if (!result.ok) return Fail(error, result.error, result.error_path);
-  if (!RetainAll(prepared->registry, prepared->before_references))
-    return Fail(error, "reserved nexthop disappeared during rollback");
-  ReleaseAll(prepared->registry, prepared->proposed_references);
+  if (!prepared->registry->ReplaceConfigurationReferences(
+          prepared->before_references))
+    return Fail(error, "cannot restore datastore nexthop references");
   prepared->applied = false; return 1;
 }
 void Release(void*, void* raw) {
@@ -221,6 +218,22 @@ int Operational(void* raw_context, DangOperationalDataV2* out, DangPluginErrorV1
       routes, static_cast<Context*>(raw_context)->nexthops.Snapshot());
   *out = {operational_xml.c_str(), 0}; return 1;
 }
+int Reconcile(void* raw_context, void*, const char* current_xml,
+              DangAppliedConfigurationV1* result, DangPluginErrorV1* error) {
+  if (!raw_context || !current_xml || !result)
+    return Fail(error, "RIB reconciliation input is incomplete");
+  Config current;
+  std::string why;
+  std::string where;
+  auto* owner = static_cast<Context*>(raw_context);
+  if (!ParseConfig(current_xml, &current, &why, &where, Resolver(owner)))
+    return Fail(error, why, where);
+  if (!owner->nexthops.ReplaceConfigurationReferences(References(current)))
+    return Fail(error, "cannot establish applied nexthop references",
+                "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop");
+  *result = {current_xml, nullptr, 0};
+  return 1;
+}
 size_t ResourceCount(void*) { return 1; }
 const char* ResourceAt(void*, size_t index) { return index == 0 ? "routing" : nullptr; }
 
@@ -230,7 +243,7 @@ const DangPluginV7 kPlugin{.v6 = {.v5 = {.v4 = {.v3 = {.v2 = {.v1 = {
   nullptr}, .invoke = Invoke}, .get_operational_data = nullptr},
   .hardware_action_count = ActionCount, .hardware_action_at = ActionAt,
   .apply_hardware_action = ApplyAction, .rollback_hardware_action = RollbackAction},
-  .get_operational_data_v2 = Operational}, .reconcile_applied_configuration = nullptr},
+  .get_operational_data_v2 = Operational}, .reconcile_applied_configuration = Reconcile},
   .resource_domain_count = ResourceCount, .resource_domain_at = ResourceAt};
 }
 

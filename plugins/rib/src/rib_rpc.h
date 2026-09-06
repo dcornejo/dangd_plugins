@@ -41,6 +41,9 @@ class NexthopRegistry {
   void ForgetRib(const std::string& rib);
   [[nodiscard]] std::optional<std::uint32_t> RouteReference(
       const Route& route);
+  /** Atomically replaces reference counts owned by the applied datastore. */
+  [[nodiscard]] bool ReplaceConfigurationReferences(
+      const std::vector<std::pair<std::string, std::uint32_t>>& references);
   /** Returns a consistent RIB/family/identifier view for operational output. */
   [[nodiscard]] std::vector<std::tuple<std::string, std::string, std::uint32_t>>
   Snapshot();
@@ -52,6 +55,8 @@ class NexthopRegistry {
   std::mutex mutex_;
   std::map<std::pair<std::string, std::uint32_t>, Entry> entries_;
   std::map<std::pair<std::string, std::uint32_t>, std::size_t> references_;
+  std::map<std::pair<std::string, std::uint32_t>, std::size_t>
+      configuration_references_;
   std::map<std::tuple<std::string, std::string, std::string>, std::uint32_t>
       route_references_;
   std::uint32_t next_id_ = 1;
