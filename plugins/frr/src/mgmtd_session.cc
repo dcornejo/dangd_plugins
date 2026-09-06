@@ -253,6 +253,47 @@ std::optional<std::string> Session::InvokeRpc(std::string_view xpath,
   return RpcReply({reply->header, reply->body}, error);
 }
 
+bool Session::SelectNotifications(
+    std::span<const std::string_view> selectors, std::string* error) {
+  if (candidate_locked_) {
+    if (error) *error = "cannot select mgmtd notifications while candidate is locked";
+    return false;
+  }
+  auto request = NextRequest(error);
+  if (!request) return false;
+  const auto message = NotifySelect(session_id_, *request, true,
+                                    NotifyMode::kOnChange, 0, selectors);
+  if (message.empty()) {
+    if (error) *error = "mgmtd notification selectors are invalid";
+    return false;
+  }
+  return transport_->Send(message, error);
+}
+
+std::optional<NotifyResult> Session::NextNotification(bool* timed_out,
+                                                       std::string* error) {
+  if (candidate_locked_) {
+    if (error) *error = "cannot receive mgmtd notifications while candidate is locked";
+    return std::nullopt;
+  }
+  auto reply = transport_->Receive(timed_out, error);
+  if (!reply) return std::nullopt;
+  if (reply->header.reference != session_id_) {
+    if (error) *error = "mgmtd notification belongs to another session";
+    return std::nullopt;
+  }
+  DecodedFrame frame{reply->header, reply->body};
+  if (reply->header.code == Code::kError) {
+    std::string decode_error;
+    auto message = ErrorText(frame, &decode_error);
+    if (error)
+      *error = message ? "mgmtd rejected notification selection: " + *message
+                       : "invalid mgmtd notification error: " + decode_error;
+    return std::nullopt;
+  }
+  return Notify(frame, error);
+}
+
 std::optional<std::string> Session::GetData(Datastore datastore,
                                             bool include_state,
                                             bool include_config,

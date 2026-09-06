@@ -197,6 +197,82 @@ std::optional<Reply> Transport::Exchange(std::span<const std::byte> request,
     Disconnect();
     return std::nullopt;
   }
+  auto reply = ReceiveUntil(deadline, false, nullptr, error);
+  if (!reply) return std::nullopt;
+  DecodedFrame decoded{reply->header, reply->body};
+  if (decoded.header.request != decoded_request->header.request ||
+      (!allow_new_session_reference &&
+       decoded.header.reference != decoded_request->header.reference)) {
+    if (error) *error = "mgmtd reply does not correlate to its request";
+    Disconnect();
+    return std::nullopt;
+  }
+  if (decoded.header.code != expected_reply &&
+      decoded.header.code != Code::kError) {
+    if (error) *error = "mgmtd returned an unexpected reply type";
+    Disconnect();
+    return std::nullopt;
+  }
+  if (decoded.header.code == Code::kError) {
+    auto message = ErrorText(decoded, &decode_error);
+    if (error)
+      *error = message ? "mgmtd rejected request: " + *message
+                       : "invalid mgmtd error reply: " + decode_error;
+    Disconnect();
+    return std::nullopt;
+  }
+  return reply;
+}
+
+bool Transport::Send(std::span<const std::byte> request, std::string* error) {
+  std::string decode_error;
+  if (!Decode(request, &decode_error)) {
+    if (error) *error = "invalid outgoing request: " + decode_error;
+    return false;
+  }
+  const auto deadline = std::chrono::steady_clock::now() + timeout_;
+  std::vector<std::byte> outbound(request.begin(), request.end());
+  if (Transfer(true, outbound, deadline, error)) return true;
+  Disconnect();
+  return false;
+}
+
+std::optional<Reply> Transport::Receive(bool* timed_out, std::string* error) {
+  return ReceiveUntil(std::chrono::steady_clock::now() + timeout_, true,
+                      timed_out, error);
+}
+
+std::optional<Reply> Transport::ReceiveUntil(
+    std::chrono::steady_clock::time_point deadline, bool idle_timeout_ok,
+    bool* timed_out, std::string* error) {
+  if (timed_out) *timed_out = false;
+  if (socket_ < 0) {
+    if (error) *error = "mgmtd session is disconnected";
+    return std::nullopt;
+  }
+  // Poll before consuming the frame header. A timeout here leaves framing
+  // untouched and is therefore safe for long-lived notification sessions.
+  pollfd descriptor{socket_, POLLIN, 0};
+  int polled = 0;
+  do {
+    polled = poll(&descriptor, 1, RemainingMilliseconds(deadline));
+  } while (polled < 0 && errno == EINTR);
+  if (polled == 0 && idle_timeout_ok) {
+    if (timed_out) *timed_out = true;
+    return std::nullopt;
+  }
+  if (polled <= 0) {
+    if (error)
+      *error = polled == 0 ? "mgmtd read timed out"
+                           : SystemError("cannot poll mgmtd UNIX socket");
+    Disconnect();
+    return std::nullopt;
+  }
+  if (descriptor.revents & (POLLERR | POLLNVAL)) {
+    if (error) *error = "mgmtd UNIX socket reported an error";
+    Disconnect();
+    return std::nullopt;
+  }
   std::vector<std::byte> frame(kFrameHeaderBytes);
   if (!Transfer(false, frame, deadline, error)) {
     Disconnect();
@@ -220,30 +296,10 @@ std::optional<Reply> Transport::Exchange(std::span<const std::byte> request,
     Disconnect();
     return std::nullopt;
   }
+  std::string decode_error;
   auto decoded = Decode(frame, &decode_error);
   if (!decoded) {
     if (error) *error = "invalid mgmtd reply: " + decode_error;
-    Disconnect();
-    return std::nullopt;
-  }
-  if (decoded->header.request != decoded_request->header.request ||
-      (!allow_new_session_reference &&
-       decoded->header.reference != decoded_request->header.reference)) {
-    if (error) *error = "mgmtd reply does not correlate to its request";
-    Disconnect();
-    return std::nullopt;
-  }
-  if (decoded->header.code != expected_reply &&
-      decoded->header.code != Code::kError) {
-    if (error) *error = "mgmtd returned an unexpected reply type";
-    Disconnect();
-    return std::nullopt;
-  }
-  if (decoded->header.code == Code::kError) {
-    auto message = ErrorText(*decoded, &decode_error);
-    if (error)
-      *error = message ? "mgmtd rejected request: " + *message
-                       : "invalid mgmtd error reply: " + decode_error;
     Disconnect();
     return std::nullopt;
   }

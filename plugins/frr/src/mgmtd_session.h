@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace dang::plugins::frr::mgmtd {
 
@@ -59,6 +60,12 @@ class Session : public SessionOperations {
   std::optional<std::string> InvokeRpc(std::string_view xpath,
                                       std::string_view input_xml,
                                       std::string* error);
+  /** Installs on-change XPath-prefix selectors for asynchronous events. */
+  bool SelectNotifications(std::span<const std::string_view> selectors,
+                           std::string* error);
+  /** Returns one modeled event, or no value on a non-error idle timeout. */
+  std::optional<NotifyResult> NextNotification(bool* timed_out,
+                                                std::string* error);
   bool Close(std::string* error) override;
 
   std::uint64_t id() const { return session_id_; }

@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <chrono>
 #include <cstring>
 #include <thread>
@@ -205,6 +206,81 @@ TEST(FrrMgmtdSessionTest, InvokesModeledRpcAndReturnsXml) {
   server.join();
   EXPECT_EQ(requests,
             std::vector<Code>({Code::kSessionRequest, Code::kRpc,
+                               Code::kSessionRequest}));
+}
+
+TEST(FrrMgmtdSessionTest, SelectsAndReceivesModeledNotifications) {
+  int sockets[2]{-1, -1};
+  ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), 0);
+  std::vector<Code> requests;
+  std::thread server([&] {
+    auto create = ReceiveFrame(sockets[1]);
+    ASSERT_FALSE(create.empty());
+    requests.push_back(Code::kSessionRequest);
+    create.resize(kFrameHeaderBytes + kFixedMessageBytes);
+    Store(&create, 4, static_cast<std::uint32_t>(create.size()));
+    Store(&create, 8, static_cast<std::uint16_t>(Code::kSessionReply));
+    Store(&create, 16, std::uint64_t{601});
+    create[32] = std::byte{1};
+    ASSERT_TRUE(TransferAll(sockets[1], create.data(), create.size(), true));
+
+    auto selection = ReceiveFrame(sockets[1]);
+    ASSERT_FALSE(selection.empty());
+    std::string decode_error;
+    auto selected = Decode(selection, &decode_error);
+    ASSERT_TRUE(selected) << decode_error;
+    requests.push_back(selected->header.code);
+    EXPECT_EQ(selected->header.code, Code::kNotifySelect);
+    EXPECT_STREQ(reinterpret_cast<const char*>(selection.data() + 40),
+                 "/frr-ripd:*");
+
+    const std::string xpath = "/frr-ripd:authentication-failure";
+    const std::string xml =
+        "<authentication-failure xmlns=\"http://frrouting.org/yang/ripd\">"
+        "<interface-name>test0</interface-name></authentication-failure>";
+    auto event = NotifySelect(601, 1, true, NotifyMode::kOnChange, 0,
+                              std::array<std::string_view, 1>{"/frr-ripd:*"});
+    // Reuse the public fixed layout, then model mgmtd's unsolicited header.
+    Store(&event, 8, static_cast<std::uint16_t>(Code::kNotify));
+    Store(&event, 24, std::uint64_t{0});
+    Store(&event, 12, static_cast<std::uint32_t>(xpath.size() + 1));
+    event.resize(40 + xpath.size() + 1 + xml.size() + 1);
+    Store(&event, 4, static_cast<std::uint32_t>(event.size()));
+    event[32] = std::byte{1};
+    event[33] = std::byte{0};
+    std::memcpy(event.data() + 40, xpath.c_str(), xpath.size() + 1);
+    std::memcpy(event.data() + 40 + xpath.size() + 1, xml.c_str(),
+                xml.size() + 1);
+    ASSERT_TRUE(TransferAll(sockets[1], event.data(), event.size(), true));
+
+    auto destroy = ReceiveFrame(sockets[1]);
+    ASSERT_FALSE(destroy.empty());
+    requests.push_back(Code::kSessionRequest);
+    Store(&destroy, 8, static_cast<std::uint16_t>(Code::kSessionReply));
+    destroy[32] = std::byte{0};
+    ASSERT_TRUE(TransferAll(sockets[1], destroy.data(), destroy.size(), true));
+    close(sockets[1]);
+  });
+
+  std::string error;
+  auto transport = Transport::AdoptConnectedSocket(
+      sockets[0], std::chrono::seconds(1), &error);
+  auto session = Session::Open(std::move(transport), 81, "dangd-frr-events",
+                               &error);
+  ASSERT_TRUE(session) << error;
+  const std::string_view selectors[]{"/frr-ripd:*"};
+  ASSERT_TRUE(session->SelectNotifications(selectors, &error)) << error;
+  bool timed_out = false;
+  auto event = session->NextNotification(&timed_out, &error);
+  ASSERT_TRUE(event) << error;
+  EXPECT_FALSE(timed_out);
+  EXPECT_EQ(event->xpath, "/frr-ripd:authentication-failure");
+  EXPECT_NE(event->xml.find("<interface-name>test0</interface-name>"),
+            std::string::npos);
+  EXPECT_TRUE(session->Close(&error)) << error;
+  server.join();
+  EXPECT_EQ(requests,
+            std::vector<Code>({Code::kSessionRequest, Code::kNotifySelect,
                                Code::kSessionRequest}));
 }
 

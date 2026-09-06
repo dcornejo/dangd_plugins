@@ -48,6 +48,15 @@ class Transport {
                                 bool allow_new_session_reference,
                                 std::string* error);
 
+  /** Sends a one-way request such as NOTIFY_SELECT. */
+  bool Send(std::span<const std::byte> request, std::string* error);
+
+  /**
+   * Receives one unsolicited frame. An idle timeout is not a transport error:
+   * it returns no frame and sets @p timed_out, leaving the stream connected.
+   */
+  std::optional<Reply> Receive(bool* timed_out, std::string* error);
+
  private:
   Transport(int socket, std::chrono::milliseconds timeout)
       : socket_(socket), timeout_(timeout) {}
@@ -55,6 +64,9 @@ class Transport {
   bool Transfer(bool write, std::span<std::byte> bytes,
                 std::chrono::steady_clock::time_point deadline,
                 std::string* error);
+  std::optional<Reply> ReceiveUntil(
+      std::chrono::steady_clock::time_point deadline, bool idle_timeout_ok,
+      bool* timed_out, std::string* error);
 
   int socket_ = -1;
   std::chrono::milliseconds timeout_;

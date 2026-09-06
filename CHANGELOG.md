@@ -15,6 +15,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   invalid XPath splits, embedded NULs, empty payloads, and non-XML formats.
   Portable tests use the real public mgmtd structure layout; a long-lived
   asynchronous session and end-to-end IS-IS/RIP delivery remain follow-up work.
+- Added the long-lived mgmtd session primitives needed by the FRR event reader.
+  One-way selector transmission is separated from correlated RPC exchanges,
+  idle receive timeouts preserve the stream, and unsolicited frames must carry
+  the selected session identifier before modeled notification decoding. Tests
+  cover idle-and-resume behavior and a complete select/receive/close exchange.
 - Added the Linux-only VPP provider architecture and its physical-interface
   ownership safety boundary. Documented stable PCI identity, empty-by-default
   allowlisting, trusted management-path denial, independent recovery, and the

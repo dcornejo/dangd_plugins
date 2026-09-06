@@ -135,4 +135,26 @@ TEST(FrrMgmtdTransportTest, TimesOutWhenPeerDoesNotReply) {
   EXPECT_NE(error.find("timed out"), std::string::npos);
 }
 
+TEST(FrrMgmtdTransportTest, IdleReceiveTimeoutPreservesStream) {
+  int sockets[2]{-1, -1};
+  ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), 0);
+  std::string error;
+  auto transport = Transport::AdoptConnectedSocket(
+      sockets[0], std::chrono::milliseconds(20), &error);
+  ASSERT_TRUE(transport) << error;
+  bool timed_out = false;
+  EXPECT_FALSE(transport->Receive(&timed_out, &error));
+  EXPECT_TRUE(timed_out);
+
+  auto frame = Lock(12, 4, Datastore::kCandidate, true);
+  Store(&frame, 8, static_cast<std::uint16_t>(Code::kLockReply));
+  ASSERT_TRUE(TransferAll(sockets[1], frame.data(), frame.size(), true));
+  timed_out = false;
+  auto received = transport->Receive(&timed_out, &error);
+  ASSERT_TRUE(received) << error;
+  EXPECT_FALSE(timed_out);
+  EXPECT_EQ(received->header.code, Code::kLockReply);
+  close(sockets[1]);
+}
+
 }  // namespace
