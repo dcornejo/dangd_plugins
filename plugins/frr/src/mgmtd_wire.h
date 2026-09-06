@@ -26,16 +26,30 @@ enum class Code : std::uint16_t {
   kError = 0,
   kTreeData = 2,
   kGetData = 3,
+  kNotify = 4,
   kEdit = 5,
   kEditReply = 6,
   kRpc = 7,
   kRpcReply = 8,
+  kNotifySelect = 9,
   kSessionRequest = 10,
   kSessionReply = 11,
   kLock = 19,
   kLockReply = 20,
   kCommit = 21,
   kCommitReply = 22,
+};
+
+/** Delivery behavior supported by FRR's native notification selector. */
+enum class NotifyMode : std::uint8_t {
+  kOnChange = 0,
+  kPeriodic = 1,
+};
+
+/** Validated native YANG notification carried as XML. */
+struct NotifyResult {
+  std::string xpath;
+  std::string xml;
 };
 
 /** RFC 6243 default-reporting modes accepted by FRR GET_DATA. */
@@ -114,6 +128,11 @@ std::vector<std::byte> GetData(std::uint64_t session_id,
 /** Invokes a modeled RPC or action with XML input data. */
 std::vector<std::byte> Rpc(std::uint64_t session_id, std::uint64_t request_id,
                            std::string_view xpath, std::string_view xml);
+/** Replaces or extends the notification XPath-prefix selection for a session. */
+std::vector<std::byte> NotifySelect(
+    std::uint64_t session_id, std::uint64_t request_id, bool replace,
+    NotifyMode mode, std::uint32_t interval_milliseconds,
+    std::span<const std::string_view> selectors);
 
 // Decodes exactly one complete frame. FRR's native local protocol uses host
 // byte order and natural C layout; it is therefore intentionally limited to a
@@ -128,6 +147,9 @@ std::optional<TreeDataResult> TreeData(const DecodedFrame& frame,
 /** Decodes a successful XML RPC reply body. */
 std::optional<std::string> RpcReply(const DecodedFrame& frame,
                                     std::string* error);
+/** Decodes a modeled notification; datastore change-stream frames are rejected. */
+std::optional<NotifyResult> Notify(const DecodedFrame& frame,
+                                   std::string* error);
 
 }  // namespace dang::plugins::frr::mgmtd
 

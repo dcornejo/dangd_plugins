@@ -9,6 +9,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added the native FRR notification wire foundation. The codec now constructs
+  bounded on-change and periodic `NOTIFY_SELECT` requests and decodes only
+  modeled XML `NOTIFY` events, rejecting datastore synchronization operations,
+  invalid XPath splits, embedded NULs, empty payloads, and non-XML formats.
+  Portable tests use the real public mgmtd structure layout; a long-lived
+  asynchronous session and end-to-end IS-IS/RIP delivery remain follow-up work.
 - Added the Linux-only VPP provider architecture and its physical-interface
   ownership safety boundary. Documented stable PCI identity, empty-by-default
   allowlisting, trusted management-path denial, independent recovery, and the

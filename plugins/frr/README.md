@@ -88,6 +88,17 @@ health telemetry rather than an alteration of FRR's native models.
 The operational callback publishes FRR's observed tree; it does not substitute
 requested configuration for observed state.
 
+The public native mgmtd notification framing is now implemented as the first
+protocol-notification layer. It can construct `NOTIFY_SELECT` requests for
+on-change or periodic XPath-prefix subscriptions and strictly decode modeled
+XML `NOTIFY` frames. Datastore replace/delete/patch synchronization messages
+are deliberately rejected by that decoder so they cannot be mislabeled as
+RFC 5277 events. The installed FRR 10.7 model set declares notifications only
+in `frr-isisd` and `frr-ripd`; neither module is advertised by this plugin yet.
+A dedicated long-lived mgmtd session, asynchronous frame handling, live-module
+checks, and schema-validated forwarding must be completed before those events
+can be exposed through dangd.
+
 After every successful apply, ABI-v6 reconciliation reads
 `/frr-routing:routing` and `/frr-zebra:zebra` back from FRR's running datastore.
 Those observed roots replace only the corresponding roots in dangd's complete

@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstring>
 
 namespace {
@@ -156,6 +157,67 @@ TEST(FrrMgmtdWireTest, DecodesNativeXmlRpcReply) {
   decoded = Decode(frame, &error);
   ASSERT_TRUE(decoded);
   EXPECT_FALSE(RpcReply(*decoded, &error));
+}
+
+TEST(FrrMgmtdWireTest, EncodesNotificationSelection) {
+  const std::string_view selectors[]{"/frr-isisd:*", "/frr-ripd:*"};
+  const auto request = NotifySelect(82, 11, true, NotifyMode::kOnChange, 0,
+                                    selectors);
+  ASSERT_FALSE(request.empty());
+  EXPECT_EQ(Load<std::uint16_t>(request, 8),
+            static_cast<std::uint16_t>(Code::kNotifySelect));
+  EXPECT_EQ(Load<std::uint64_t>(request, 16), 82);
+  EXPECT_EQ(Load<std::uint64_t>(request, 24), 11);
+  EXPECT_EQ(request[32], std::byte{1});
+  EXPECT_EQ(request[35], std::byte{0});
+  EXPECT_EQ(Load<std::uint32_t>(request, 36), 0);
+  EXPECT_STREQ(reinterpret_cast<const char*>(request.data() + 40),
+               "/frr-isisd:*");
+  EXPECT_STREQ(reinterpret_cast<const char*>(request.data() + 40 +
+                                                selectors[0].size() + 1),
+               "/frr-ripd:*");
+
+  EXPECT_TRUE(NotifySelect(82, 11, true, NotifyMode::kOnChange, 1, selectors)
+                  .empty());
+  EXPECT_TRUE(NotifySelect(82, 11, true, NotifyMode::kPeriodic, 0, selectors)
+                  .empty());
+  EXPECT_TRUE(NotifySelect(82, 11, true, NotifyMode::kOnChange, 0, {}).empty());
+}
+
+TEST(FrrMgmtdWireTest, DecodesModeledXmlNotification) {
+  const std::string xpath = "/frr-ripd:authentication-failure";
+  const std::string xml =
+      "<authentication-failure xmlns=\"http://frrouting.org/yang/ripd\"/>";
+  auto frame = NotifySelect(82, 11, true, NotifyMode::kOnChange, 0,
+                            std::array<std::string_view, 1>{"/frr-ripd:*"});
+  Store(&frame, 8, static_cast<std::uint16_t>(Code::kNotify));
+  Store(&frame, 12, static_cast<std::uint32_t>(xpath.size() + 1));
+  frame.resize(40 + xpath.size() + 1 + xml.size() + 1);
+  Store(&frame, 4, static_cast<std::uint32_t>(frame.size()));
+  frame[32] = std::byte{1};
+  frame[33] = std::byte{0};
+  std::memcpy(frame.data() + 40, xpath.c_str(), xpath.size() + 1);
+  std::memcpy(frame.data() + 40 + xpath.size() + 1, xml.c_str(), xml.size() + 1);
+  std::string error;
+  auto decoded = Decode(frame, &error);
+  ASSERT_TRUE(decoded) << error;
+  const auto notification = Notify(*decoded, &error);
+  ASSERT_TRUE(notification) << error;
+  EXPECT_EQ(notification->xpath, xpath);
+  EXPECT_EQ(notification->xml, xml);
+
+  frame[33] = std::byte{1};
+  decoded = Decode(frame, &error);
+  ASSERT_TRUE(decoded);
+  EXPECT_FALSE(Notify(*decoded, &error));
+  EXPECT_NE(error.find("not a modeled"), std::string::npos);
+  frame[33] = std::byte{0};
+
+  Store(&frame, 12, static_cast<std::uint32_t>(xpath.size()));
+  decoded = Decode(frame, &error);
+  ASSERT_TRUE(decoded);
+  EXPECT_FALSE(Notify(*decoded, &error));
+  EXPECT_NE(error.find("XPath framing"), std::string::npos);
 }
 
 TEST(FrrMgmtdWireTest, RejectsUnterminatedErrorText) {

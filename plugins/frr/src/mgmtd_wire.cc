@@ -58,10 +58,12 @@ bool KnownCode(Code code) {
     case Code::kError:
     case Code::kTreeData:
     case Code::kGetData:
+    case Code::kNotify:
     case Code::kEdit:
     case Code::kEditReply:
     case Code::kRpc:
     case Code::kRpcReply:
+    case Code::kNotifySelect:
     case Code::kSessionRequest:
     case Code::kSessionReply:
     case Code::kLock:
@@ -185,6 +187,37 @@ std::vector<std::byte> Rpc(std::uint64_t session_id, std::uint64_t request_id,
   return output;
 }
 
+std::vector<std::byte> NotifySelect(
+    std::uint64_t session_id, std::uint64_t request_id, bool replace,
+    NotifyMode mode, std::uint32_t interval_milliseconds,
+    std::span<const std::string_view> selectors) {
+  if (session_id == 0 || request_id == 0 || selectors.empty() ||
+      (mode == NotifyMode::kOnChange && interval_milliseconds != 0) ||
+      (mode == NotifyMode::kPeriodic && interval_milliseconds == 0))
+    return {};
+  std::size_t selector_bytes = 0;
+  for (const std::string_view selector : selectors) {
+    if (selector.empty() || !ValidString(selector) ||
+        selector.size() >= kMaximumFrameBytes - selector_bytes)
+      return {};
+    selector_bytes += selector.size() + 1;
+  }
+  auto output = Message(Code::kNotifySelect, session_id, request_id, 0,
+                        8 + selector_bytes);
+  if (output.empty()) return {};
+  output[32] = static_cast<std::byte>(replace ? 1 : 0);
+  output[33] = std::byte{0};  // get_only is reserved for backend clients.
+  output[34] = std::byte{0};  // subscribing is assigned internally by mgmtd.
+  output[35] = static_cast<std::byte>(mode);
+  Store(&output, 36, interval_milliseconds);
+  std::size_t offset = 40;
+  for (const std::string_view selector : selectors) {
+    AppendString(&output, offset, selector);
+    offset += selector.size() + 1;
+  }
+  return output;
+}
+
 std::optional<DecodedFrame> Decode(std::span<const std::byte> frame,
                                    std::string* error) {
   if (frame.size() < kFrameHeaderBytes + kFixedMessageBytes) {
@@ -284,6 +317,46 @@ std::optional<std::string> RpcReply(const DecodedFrame& frame,
     return std::nullopt;
   }
   return std::string(data, size);
+}
+
+std::optional<NotifyResult> Notify(const DecodedFrame& frame,
+                                   std::string* error) {
+  if (frame.header.code != Code::kNotify || frame.body.size() < 10) {
+    if (error) *error = "mgmtd notification has an invalid fixed body";
+    return std::nullopt;
+  }
+  if (frame.body[0] != std::byte{1}) {
+    if (error) *error = "mgmtd notification is not XML";
+    return std::nullopt;
+  }
+  // Operation zero is a modeled YANG notification. The remaining operation
+  // values describe datastore synchronization and must not be mislabeled as
+  // RFC 5277 events by the dangd provider.
+  if (frame.body[1] != std::byte{0}) {
+    if (error) *error = "mgmtd frame is not a modeled notification";
+    return std::nullopt;
+  }
+  const std::size_t split = frame.header.split;
+  const std::size_t variable_bytes = frame.body.size() - 8;
+  if (split == 0 || split >= variable_bytes ||
+      frame.body[8 + split - 1] != std::byte{0}) {
+    if (error) *error = "mgmtd notification XPath framing is invalid";
+    return std::nullopt;
+  }
+  const auto* variable = reinterpret_cast<const char*>(frame.body.data() + 8);
+  if (std::memchr(variable, '\0', split - 1) != nullptr) {
+    if (error) *error = "mgmtd notification XPath contains an embedded NUL";
+    return std::nullopt;
+  }
+  const char* data = variable + split;
+  std::size_t size = variable_bytes - split;
+  if (size > 0 && data[size - 1] == '\0') --size;
+  if (size == 0 || std::memchr(data, '\0', size) != nullptr) {
+    if (error) *error = "mgmtd notification XML is empty or contains an embedded NUL";
+    return std::nullopt;
+  }
+  return NotifyResult{std::string(variable, split - 1),
+                      std::string(data, size)};
 }
 
 }  // namespace dang::plugins::frr::mgmtd
