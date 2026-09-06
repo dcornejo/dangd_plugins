@@ -5,6 +5,7 @@
 #define DANG_PLUGINS_RIB_CONFIG_H_
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -39,6 +40,11 @@ struct Config {
   std::vector<Route> routes;
 };
 
+/** Resolves a reusable RFC 8431 nexthop identifier within its containing RIB. */
+using NexthopResolver = std::function<bool(
+    const std::string&, std::uint32_t, std::optional<std::string>*,
+    std::optional<std::string>*)>;
+
 /** Native operation required to transform the before-image into the proposal. */
 enum class ChangeKind { kDelete, kInstall };
 
@@ -50,7 +56,8 @@ struct Change {
 
 /** Extracts the supported RFC 8431 subtree from a complete datastore. */
 [[nodiscard]] bool ParseConfig(const char* xml, Config* config,
-                               std::string* error, std::string* error_path);
+                               std::string* error, std::string* error_path,
+                               const NexthopResolver& resolver = {});
 
 /**
  * Produces a stable replacement plan. Deletions precede installations so a

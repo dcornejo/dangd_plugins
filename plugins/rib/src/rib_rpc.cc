@@ -172,9 +172,22 @@ bool NexthopRegistry::Remove(const std::string& rib, std::uint32_t id) {
   return entries_.erase({rib, id}) == 1;
 }
 
+bool NexthopRegistry::Resolve(const std::string& rib, std::uint32_t id,
+                              std::optional<std::string>* gateway,
+                              std::optional<std::string>* interface) {
+  if (!gateway || !interface) return false;
+  std::lock_guard lock(mutex_);
+  const auto found = entries_.find({rib, id});
+  if (found == entries_.end()) return false;
+  *gateway = found->second.gateway;
+  *interface = found->second.interface;
+  return true;
+}
+
 bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
                     std::string* output_xml, std::string* error,
-                    std::string* error_path, const CommandRunner& runner) {
+                    std::string* error_path, const CommandRunner& runner,
+                    const NexthopResolver& resolver) {
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "route-add.xml", nullptr,
@@ -224,7 +237,7 @@ bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
     std::string parse_path;
     const bool parsed = serialized && ParseConfig(
         reinterpret_cast<const char*>(serialized), &config, &parse_error,
-        &parse_path);
+        &parse_path, resolver);
     if (serialized) xmlFree(serialized);
     std::uint64_t index = 0;
     const std::string index_text = Text(Child(node, "route-index"));

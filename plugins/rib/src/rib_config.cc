@@ -105,7 +105,7 @@ auto Key(const Route& route) {
 }  // namespace
 
 bool ParseConfig(const char* xml, Config* config, std::string* error,
-                 std::string* error_path) {
+                 std::string* error_path, const NexthopResolver& resolver) {
   if (!xml || !config || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(xml, static_cast<int>(std::strlen(xml)),
                                 "datastore.xml", nullptr,
@@ -167,6 +167,15 @@ bool ParseConfig(const char* xml, Config* config, std::string* error,
         route.gateway = Text(Child(combined, family == "ipv4" ? "ipv4-address"
                                                               : "ipv6-address"));
         route.interface = Text(Child(combined, "outgoing-interface"));
+      }
+      if (xmlNodePtr reference = Child(base, "nexthop-ref")) {
+        std::uint64_t id = 0;
+        if (!resolver || !ParseUnsigned(reference, &id) || id > UINT32_MAX ||
+            !resolver(rib_name, static_cast<std::uint32_t>(id), &route.gateway,
+                      &route.interface))
+          return Fail("nexthop-ref does not identify a registered nexthop in this RIB",
+                      "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/nexthop-base/nexthop-ref",
+                      error, error_path);
       }
       if (!route.gateway && !route.interface)
         return Fail("base nexthop requires an IP gateway or outgoing interface",

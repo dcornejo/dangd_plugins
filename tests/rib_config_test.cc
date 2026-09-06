@@ -394,5 +394,77 @@ TEST(RibConfigTest, NexthopAddRejectsUnsupportedCompositeForm) {
   EXPECT_NE(output.find("only a base nexthop"), std::string::npos);
 }
 
+TEST(RibConfigTest, ResolvesRegisteredNexthopReferenceInConfiguration) {
+  std::string xml(kBefore);
+  const auto begin = xml.find("<egress-interface-ipv4-address>");
+  const auto end = xml.find("</egress-interface-ipv4-address>");
+  ASSERT_NE(begin, std::string::npos);
+  ASSERT_NE(end, std::string::npos);
+  xml.replace(begin, end + std::string("</egress-interface-ipv4-address>").size() - begin,
+              "<nexthop-ref>23</nexthop-ref>");
+  Config config;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(ParseConfig(
+      xml.c_str(), &config, &error, &path,
+      [](const std::string& rib, std::uint32_t id,
+         std::optional<std::string>* gateway,
+         std::optional<std::string>* interface) {
+        if (rib != "100" || id != 23) return false;
+        *gateway = "198.51.100.9";
+        *interface = "dummy23";
+        return true;
+      })) << error;
+  ASSERT_EQ(config.routes.size(), 1U);
+  EXPECT_EQ(config.routes.front().gateway, "198.51.100.9");
+  EXPECT_EQ(config.routes.front().interface, "dummy23");
+}
+
+TEST(RibConfigTest, RejectsMissingOrCrossRibNexthopReference) {
+  std::string xml(kBefore);
+  const auto begin = xml.find("<egress-interface-ipv4-address>");
+  const auto end = xml.find("</egress-interface-ipv4-address>");
+  ASSERT_NE(begin, std::string::npos);
+  ASSERT_NE(end, std::string::npos);
+  xml.replace(begin, end + std::string("</egress-interface-ipv4-address>").size() - begin,
+              "<nexthop-ref>23</nexthop-ref>");
+  Config config;
+  std::string error;
+  std::string path;
+  EXPECT_FALSE(ParseConfig(xml.c_str(), &config, &error, &path));
+  EXPECT_NE(error.find("registered nexthop"), std::string::npos);
+  EXPECT_NE(path.find("nexthop-ref"), std::string::npos);
+}
+
+TEST(RibConfigTest, RouteAddExecutesResolvedRegisteredNexthop) {
+  NexthopRegistry registry;
+  const auto id = registry.Add({.rib = "100", .gateway = "192.0.2.9",
+                                .interface = "dummy9"});
+  ASSERT_EQ(id, 1U);
+  std::vector<NativeCommand> commands;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRouteAdd(
+      NativePlatform::kLinux,
+      R"(<route-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><routes><route-list><route-index>9</route-index><match><ipv4><dest-ipv4-prefix>198.51.100.0/24</dest-ipv4-prefix></ipv4></match><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes><nexthop><nexthop-base><nexthop-ref>1</nexthop-ref></nexthop-base></nexthop></route-list></routes></route-add>)",
+      &output, &error, &path,
+      [&](const NativeCommand& command, std::string*) {
+        commands.push_back(command);
+        return true;
+      },
+      [&](const std::string& rib, std::uint32_t reference,
+          std::optional<std::string>* gateway,
+          std::optional<std::string>* interface) {
+        return registry.Resolve(rib, reference, gateway, interface);
+      })) << error;
+  ASSERT_EQ(commands.size(), 1U);
+  EXPECT_NE(std::ranges::find(commands.front().arguments, "192.0.2.9"),
+            commands.front().arguments.end());
+  EXPECT_NE(std::ranges::find(commands.front().arguments, "dummy9"),
+            commands.front().arguments.end());
+  EXPECT_NE(output.find(">1</success-count>"), std::string::npos);
+}
+
 }  // namespace
 }  // namespace dang::rib

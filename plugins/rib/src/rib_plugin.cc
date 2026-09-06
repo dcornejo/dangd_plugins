@@ -32,6 +32,13 @@ constexpr NativePlatform kPlatform = NativePlatform::kFreeBsd;
 struct Prepared { std::vector<Change> changes; bool applied = false; };
 struct Context { NexthopRegistry nexthops; };
 Context plugin_context;
+NexthopResolver Resolver(Context* owner) {
+  return [owner](const std::string& rib, std::uint32_t id,
+                 std::optional<std::string>* gateway,
+                 std::optional<std::string>* interface) {
+    return owner->nexthops.Resolve(rib, id, gateway, interface);
+  };
+}
 thread_local std::string message;
 thread_local std::string path;
 thread_local std::string operational_xml;
@@ -53,11 +60,12 @@ int SourceAt(void*, size_t index, DangYangSourceV1* out, DangPluginErrorV1* erro
 size_t DependencyCount(void*) { return 0; }
 const char* DependencyAt(void*, size_t) { return nullptr; }
 
-int Prepare(void*, const DangTransactionV1* tx, void** out, DangPluginErrorV1* error) {
+int Prepare(void* raw_context, const DangTransactionV1* tx, void** out, DangPluginErrorV1* error) {
   if (!tx || !tx->before_xml || !tx->proposed_xml || !out) return Fail(error, "RIB transaction input is incomplete");
   Config before, proposed; std::string why, where;
-  if (!ParseConfig(tx->before_xml, &before, &why, &where)) return Fail(error, why, where);
-  if (!ParseConfig(tx->proposed_xml, &proposed, &why, &where)) return Fail(error, why, where);
+  const auto resolver = Resolver(static_cast<Context*>(raw_context));
+  if (!ParseConfig(tx->before_xml, &before, &why, &where, resolver)) return Fail(error, why, where);
+  if (!ParseConfig(tx->proposed_xml, &proposed, &why, &where, resolver)) return Fail(error, why, where);
   auto* prepared = new (std::nothrow) Prepared{PlanChanges(before, proposed)};
   if (!prepared) return Fail(error, "cannot retain RIB transaction plan");
   *out = prepared; return 1;
@@ -111,7 +119,8 @@ int Invoke(void* raw_context, const DangOperationV1* operation,
   bool invoked = false;
   if (std::string_view(operation->operation_name) == "route-add")
     invoked = InvokeRouteAdd(kPlatform, operation->input_xml, &rpc_output_xml,
-                             &why, &where);
+                             &why, &where, RunNativeCommand,
+                             Resolver(static_cast<Context*>(raw_context)));
   else if (std::string_view(operation->operation_name) == "route-delete")
     invoked = InvokeRouteDelete(kPlatform, operation->input_xml,
                                 &rpc_output_xml, &why, &where);

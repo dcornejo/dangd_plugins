@@ -27,6 +27,9 @@ class NexthopRegistry {
   };
   [[nodiscard]] std::optional<std::uint32_t> Add(Entry entry);
   [[nodiscard]] bool Remove(const std::string& rib, std::uint32_t id);
+  [[nodiscard]] bool Resolve(const std::string& rib, std::uint32_t id,
+                             std::optional<std::string>* gateway,
+                             std::optional<std::string>* interface);
 
  private:
   std::mutex mutex_;
@@ -40,7 +43,8 @@ class NexthopRegistry {
                                   std::string* output_xml,
                                   std::string* error,
                                   std::string* error_path,
-                                  const CommandRunner& runner = RunNativeCommand);
+                                  const CommandRunner& runner = RunNativeCommand,
+                                  const NexthopResolver& resolver = {});
 
 /** Injectable route inventory used to resolve route-delete prefix requests. */
 using RouteObserver =
