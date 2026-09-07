@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added isolated RIP and RIPng instance transaction tests for Linux and
+  FreeBSD. Each live backend validates and commits an interface-free `default`
+  instance, returns the accepted running XML, and restores the exact empty
+  before-image without creating addresses, routes, neighbors, or packets. Both
+  interactions pass independently on all four validation hosts.
 - Added cross-platform, profile-only BFD transaction evidence and hardened all
   FRR commits with post-commit running-datastore verification in a fresh mgmtd
   session. A commit that FRR acknowledges but silently drops now fails at the

@@ -555,6 +555,12 @@ if(BUILD_TESTING)
           $<TARGET_FILE:frr-mgmtd-session-check>)
       set_tests_properties(frr_isolated_bfd_transaction PROPERTIES
         SKIP_RETURN_CODE 77)
+      add_test(NAME frr_isolated_rip_transactions
+        COMMAND /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_frr_rip_native.sh"
+          $<TARGET_FILE:frr-mgmtd-mutation-check>
+          $<TARGET_FILE:frr-mgmtd-session-check>)
+      set_tests_properties(frr_isolated_rip_transactions PROPERTIES
+        SKIP_RETURN_CODE 77)
     elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
       add_test(NAME frr_isolated_native_mutation
         COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_frr_freebsd_native.sh"
@@ -570,6 +576,12 @@ if(BUILD_TESTING)
           $<TARGET_FILE:frr-mgmtd-mutation-check>
           $<TARGET_FILE:frr-mgmtd-session-check>)
       set_tests_properties(frr_isolated_bfd_transaction PROPERTIES
+        SKIP_RETURN_CODE 77)
+      add_test(NAME frr_isolated_rip_transactions
+        COMMAND /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_frr_rip_native.sh"
+          $<TARGET_FILE:frr-mgmtd-mutation-check>
+          $<TARGET_FILE:frr-mgmtd-session-check>)
+      set_tests_properties(frr_isolated_rip_transactions PROPERTIES
         SKIP_RETURN_CODE 77)
     endif()
   endif()
