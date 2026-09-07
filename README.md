@@ -89,7 +89,7 @@ transaction, and worker-recovery contract.
 
 A deployment must have exactly one runtime owner for each implemented module.
 Separate provider packages make that choice explicit and allow two competing
-backends—such as the native RIB provider and a future FRR provider—to conflict
+backends—such as the native RIB and FRR providers—to conflict
 only with one another. Packaging does not weaken dangd's duplicate-owner check.
 
 ## Included plugins
@@ -106,10 +106,11 @@ only with one another. Packaging does not weaken dangd's duplicate-owner check.
   maintained in `plugins/system/README.md`.
 - `pam_dangd` is packaged independently. Follow `pam/README.md`, including its
   recovery-first SSH/PAM procedure.
-- `frr` is the top-priority routing provider. It implements the initial native
-  routing, zebra, and staticd configuration scope through `mgmtd`, with
-  disposable validation, before-image rollback, operational state, and
-  deduplicated unsolicited drift notification. See `plugins/frr/README.md`.
+- `frr` is the top-priority routing provider. It implements native routing,
+  zebra, staticd, live interface/VRF parents, and runtime-gated protocol models
+  through `mgmtd`, with disposable validation, before-image rollback,
+  reconciliation, operational state, native RPC plumbing, and deduplicated
+  unsolicited events. See `plugins/frr/README.md` for the tested limitations.
 - `rib` provides the initial ABI-v7 RFC 8431 configuration provider, claims the
   `routing` resource against FRR, and applies its supported route slice on Linux
   and FreeBSD. RPC, notification, and operational work remains in progress.

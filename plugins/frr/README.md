@@ -27,15 +27,17 @@ unavailable, a required module is absent, or its revision or namespace differs
 from the installed source. `DANG_FRR_YANG_LIBRARY_FILE` is a test-only seam for
 supplying a captured library document without a daemon.
 
-The loadable `dangd_frr_plugin` currently implements the `frr-routing`,
-`frr-staticd`, and `frr-zebra` configuration modules. It publishes their exact
-installed import-and-include closure and claims ABI-v8 resource
-domain `routing`, so dangd will reject simultaneous use of another routing
-provider. Staticd augments the `frr-routing:routing` root; its nodes are
-retained inside that atomic edit. The separate `frr-zebra:zebra` root
-participates in the same candidate transaction. Installed submodules are
-matched to their owning module and revision in FRR's live RFC 8525 library;
-missing or mismatched submodules make discovery fail closed.
+The loadable `dangd_frr_plugin` requires and implements the live `frr-routing`,
+`frr-staticd`, and `frr-zebra` modules. It conditionally adds
+live parent and protocol modules described below. The plugin publishes each
+selected module's exact installed import-and-include closure and uses ABI v8,
+including the ABI-v7 `routing` resource domain, so dangd rejects simultaneous
+use of another routing provider. Staticd augments the
+`frr-routing:routing` root; its nodes are retained inside that atomic edit. The
+separate `frr-zebra:zebra` root participates in the same candidate transaction.
+Installed submodules are matched to their owning module and revision in FRR's
+live RFC 8525 library; missing or mismatched submodules make discovery fail
+closed.
 
 The transport foundation encodes FRR's public native frontend session, lock,
 XML edit, validate, apply, abort, and unlock messages without requiring FRR's
@@ -58,16 +60,17 @@ by root or leaf: mgmtd's validated candidate commit is the native atomicity and
 rollback boundary, and the single descriptor ensures dangd schedules the
 provider apply.
 
-The provider retrieves the implemented top-level `/frr-zebra:zebra` state and
-zebra augments below `/frr-interface:lib` and `/frr-vrf:lib` from FRR's
-operational datastore with native `GET_DATA`. For augmented lists it retains
-only the parent keys needed to identify each instance and children in the
-`frr-zebra` namespace; base interface and VRF state remains owned by those
-modules. It deliberately avoids a broad `/*` request, which also returns mgmtd
-and YANG-library trees owned by other providers. Message type, request and
-session correlation, XML format, partial-error status, and continuation state
-are checked before any bytes reach dangd. A partial result fails the retrieval
-rather than presenting an incomplete tree as authoritative.
+The provider retrieves every implemented standalone root and its live
+`/frr-interface:lib` and `/frr-vrf:lib` parents from FRR's operational
+datastore with native `GET_DATA`. When a parent module is implemented, its
+complete base state and loaded protocol augments are returned. For older
+runtimes that expose zebra augments without implementing the parent, the
+compatibility filter retains only identifying list keys and `frr-zebra`
+children. The provider deliberately avoids a broad `/*` request, which also
+returns mgmtd and YANG-library trees outside its ownership. Message type,
+request and session correlation, XML format, partial-error status, and
+continuation state are checked before any bytes reach dangd. A partial result
+fails the retrieval rather than presenting an incomplete tree as authoritative.
 
 All top-level RPCs declared by the installed `frr-zebra` module are dispatched
 through mgmtd's public native RPC request/reply API. Dangd validates input and
@@ -148,12 +151,12 @@ successful interoperability evidence.
 
 After every successful apply, ABI-v6 reconciliation reads every managed root
 back from FRR's running datastore. This always includes
-`/frr-routing:routing` and `/frr-zebra:zebra`, and conditionally includes the
-live interface, VRF, RIP, and IS-IS roots. Those observed roots replace only
-their corresponding roots in dangd's complete applied snapshot. An absent FRR
-root removes the requested root, a wrong namespace or malformed reply fails
-closed, and configuration belonging to other plugins is preserved
-byte-for-tree rather than reconstructed from FRR.
+`/frr-routing:routing` and `/frr-zebra:zebra`, and conditionally includes live
+interface, VRF, and standalone protocol roots. Those observed roots replace
+only their corresponding roots in dangd's complete applied snapshot. An absent
+FRR root removes the requested root, a wrong namespace or malformed reply fails
+closed, and configuration belonging to other plugins is preserved byte-for-tree
+rather than reconstructed from FRR.
 
 The reconciled roots become the provider's expected running state. Each later
 operational retrieval reads those roots again and compares XML element names,
@@ -205,6 +208,23 @@ mgmtd=yes
 staticd=yes
 ```
 
+Enable only protocols the deployment intends dangd to manage. Their daemon
+switches and conditional YANG modules are:
+
+- `bfdd=yes` for `frr-bfdd`;
+- `eigrpd=yes` for `frr-eigrpd`;
+- `isisd=yes` for `frr-isisd`;
+- `ospfd=yes` for `frr-ospfd`;
+- `pathd=yes` for `frr-pathd`;
+- `pimd=yes` for `frr-pim`;
+- `ripd=yes` for `frr-ripd`;
+- `ripngd=yes` for `frr-ripngd`; and
+- `vrrpd=yes` for `frr-vrrpd`.
+
+Starting a process is not sufficient by itself. After restart, its module must
+appear as implemented in FRR's live YANG Library or this plugin will correctly
+omit it.
+
 Then restart FRR and verify that the installed package comes from the FRR
 repository, the service is running, and mgmtd has created its frontend socket:
 
@@ -225,6 +245,35 @@ Before changing repository series or upgrading an existing FRR deployment,
 back up `/etc/frr` and review FRR's release notes. Package installation normally
 preserves locally modified configuration, but the daemon restart activates the
 new binaries and should be scheduled like any routing-service maintenance.
+
+### Installing FRR on FreeBSD
+
+FreeBSD's official ports collection provides FRR 10 as `net/frr10`. Install the
+binary package, enable the service, and select the minimum baseline daemons in
+dependency order:
+
+```sh
+sudo pkg install frr10
+sudo sysrc frr_enable=YES
+sudo sysrc 'frr_daemons=mgmtd zebra staticd'
+sudo install -d -o frr -g frr -m 0750 /var/lib/frr
+sudo service frr start
+sudo vtysh -c 'show mgmt backend-adapter all'
+sudo test -S /var/run/frr/mgmtd_fe.sock
+```
+
+The current FreeBSD rc script requires `mgmtd` first and `zebra` second. Add
+only installed, required protocol daemons to the space-separated `frr_daemons`
+value, using the same daemon names shown in the Linux list. Confirm the backend
+adapter and live YANG Library after every change. The optional
+`frr10-pythontools` package is useful for FRR configuration reload tooling but
+is not required by the dangd plugin, which speaks directly to mgmtd.
+
+Consult the official
+[FreeBSD `net/frr10` port](https://cgit.freebsd.org/ports/tree/net/frr10) and
+[its rc script](https://cgit.freebsd.org/ports/tree/net/frr10/files/frr.in)
+for package-version options and current service variables. Do not replace the
+package's service account or relax mgmtd socket permissions.
 
 ### Installing the dangd plugin
 
@@ -285,12 +334,27 @@ sudo ctest --test-dir build -R frr_isolated_native_mutation \
   --output-on-failure
 ```
 
-The mutation diagnostic refuses sockets whose path does not contain
-`dangd-test`. The fixture starts only mgmtd and does not create, attach, or
-modify any network interface or route.
+The mutation diagnostic requires its explicit `--allow-isolated-test` argument
+and refuses a socket outside a `dangd-test-*` pathspace. The fixture starts only
+mgmtd and does not create, attach, or modify any network interface or route.
 
-Inspect the installed model closure that will back the first zebra/static
-routing milestone with:
+Linux additionally has an isolated notification interaction. It creates two
+network namespaces joined by a disposable veth, configures RIP only on that
+veth, and removes all resources afterward:
+
+```sh
+sudo ctest --test-dir build -R frr_isolated_native_notification \
+  --output-on-failure
+```
+
+Its configuration helper accepts only a real `mgmtd_fe.sock` below a
+non-symlinked `dang-notify-*` directory in FRR's runtime directory. On FRR
+10.7.1 the interaction returns CTest skip code 77 only after matching the known
+mgmtd notification-encoding assertion documented above; another failure is an
+ordinary failed test. There is not yet an equivalent FreeBSD notification
+interaction.
+
+Inspect an installed candidate model closure with:
 
 ```sh
 ./build/frr-schema-inventory /usr/share/yang \
@@ -298,7 +362,9 @@ routing milestone with:
 ```
 
 Use `/usr/local/share/yang` on FreeBSD. A missing imported module is a hard
-failure rather than a partially advertised YANG library.
+failure rather than a partially advertised YANG library. This command checks
+installed files only; plugin discovery still consults the live YANG Library and
+will not advertise BGP merely because `frr-bgp.yang` is installed.
 
 Verify local frontend protocol compatibility without locking or changing any
 FRR datastore:
@@ -323,9 +389,9 @@ sudo ./build/frr-mgmtd-session-check /var/run/frr/mgmtd_fe.sock \
   --running /frr-routing:routing
 ```
 
-On FreeBSD, ensure the package's runtime state directory exists before starting
-`mgmtd`; a missing directory produces an FRR startup warning and can prevent
-later persistence work:
+On FreeBSD, if package installation did not create the runtime state directory,
+create it before starting `mgmtd`; a missing directory produces an FRR startup
+warning and can prevent later persistence work:
 
 ```sh
 sudo install -d -o frr -g frr -m 0750 /var/lib/frr

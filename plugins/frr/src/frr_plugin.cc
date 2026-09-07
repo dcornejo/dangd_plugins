@@ -193,6 +193,14 @@ struct Context {
     auto runtime_modules = dang::plugins::frr::RuntimeImplementedModules(
         *library_xml, &initialization_error);
     if (!runtime_modules) return;
+    for (const std::string_view required :
+         {"frr-routing", "frr-zebra", "frr-staticd"}) {
+      if (runtime_modules->contains(std::string(required))) continue;
+      initialization_error =
+          "running FRR does not implement required YANG module " +
+          std::string(required);
+      return;
+    }
     std::vector<std::string> schema_roots{
         "frr-routing", "frr-zebra", "frr-staticd"};
     // Interface and VRF are real configuration roots, not merely type-only

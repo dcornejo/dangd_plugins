@@ -9,6 +9,13 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Audited the FRR operator guide and collection overview against the ABI-v8
+  implementation. Corrected stale module scope, operational ownership,
+  notification selector, reconciliation, isolated-test safety, and installed
+  versus live-schema descriptions. Discovery now enforces the documented
+  contract that routing, zebra, and staticd appear as implemented—not merely
+  import-only—in FRR's live module-set.
+
 - Added the native FRR notification wire foundation. The codec now constructs
   bounded on-change and periodic `NOTIFY_SELECT` requests and decodes only
   modeled XML `NOTIFY` events, rejecting datastore synchronization operations,
