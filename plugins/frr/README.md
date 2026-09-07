@@ -306,6 +306,11 @@ The timeout must be 1 through 60000 milliseconds. Dangd must run as a user able
 to open FRR's mode-0600 frontend socket. Do not broaden the socket permissions;
 use a narrowly privileged service identity.
 
+The native FRR package and the RFC 8431 RIB package are mutually exclusive.
+Debian records that relationship explicitly; FreeBSD enforces it because both
+packages own the routing resource-domain marker. Dangd independently rejects a
+second `routing` owner when plugins are installed outside the package manager.
+
 ## Development dependencies
 
 - A C++20 compiler and CMake 3.24 or later

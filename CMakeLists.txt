@@ -527,6 +527,12 @@ if(BUILD_TESTING)
   add_test(NAME frr_abi_v8_plugin_discovery
     COMMAND frr_plugin_discovery_test $<TARGET_FILE:dangd_frr_plugin>)
 
+  add_test(NAME routing_package_exclusivity
+    COMMAND "${CMAKE_COMMAND}"
+      -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+      -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/packaging_contract_test.cmake")
+
   if(DANG_FRR_NATIVE_TESTS)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       add_test(NAME frr_isolated_native_mutation
@@ -617,6 +623,12 @@ install(TARGETS dangd_ip_management_plugin
 install(TARGETS dangd_frr_plugin
   LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/dangd/plugins"
   COMPONENT frr)
+install(FILES packaging/resource-domains/routing
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/dangd/resource-domains"
+  COMPONENT frr)
+install(FILES packaging/resource-domains/routing
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/dangd/resource-domains"
+  COMPONENT rib)
 install(FILES plugins/example/models/dang-plugins-example.yang
   DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules"
   COMPONENT example)

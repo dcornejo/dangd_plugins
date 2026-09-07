@@ -9,6 +9,13 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Enforced FRR/RFC 8431 routing-provider package exclusivity. Debian retains
+  symmetric package conflicts, while both components now install the same
+  routing-domain ownership marker so FreeBSD `pkg` rejects co-installation even
+  though CPack cannot emit the native FreeBSD conflicts field. A portable test
+  stages both components and verifies the marker and Debian metadata contract.
+- Corrected the FreeBSD packaging guide's component count and included the
+  previously omitted IP-management package in its all-component build loop.
 - Audited the FRR operator guide and collection overview against the ABI-v8
   implementation. Corrected stale module scope, operational ownership,
   notification selector, reconciliation, isolated-test safety, and installed
