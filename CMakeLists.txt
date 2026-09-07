@@ -541,7 +541,12 @@ if(BUILD_TESTING)
       add_test(NAME frr_isolated_native_notification
         COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_frr_linux_notification.sh"
           $<TARGET_FILE:frr-mgmtd-session-check>)
+      add_test(NAME frr_isolated_protocol_inventory
+        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_frr_linux_protocol_inventory.sh"
+          $<TARGET_FILE:frr-mgmtd-session-check>)
       set_tests_properties(frr_isolated_native_notification PROPERTIES
+        SKIP_RETURN_CODE 77)
+      set_tests_properties(frr_isolated_protocol_inventory PROPERTIES
         SKIP_RETURN_CODE 77)
     elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
       add_test(NAME frr_isolated_native_mutation

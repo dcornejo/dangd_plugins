@@ -359,6 +359,24 @@ mgmtd notification-encoding assertion documented above; another failure is an
 ordinary failed test. There is not yet an equivalent FreeBSD notification
 interaction.
 
+Linux also provides a read-only optional-daemon inventory. For each installed
+protocol daemon it creates a fresh FRR pathspace, starts mgmtd, zebra, and that
+daemon, and reports whether the expected module appears in the live RFC 8525
+YANG Library. It creates no interface, address, or route and never contacts the
+production FRR socket:
+
+```sh
+sudo ctest --test-dir build -R frr_isolated_protocol_inventory \
+  --output-on-failure
+```
+
+`ADVERTISED` means the running backend registered the expected module.
+`UNSUPPORTED` means the daemon ran but mgmtd did not publish that module;
+`UNAVAILABLE` means the daemon exited before registration, and `SKIP` means its
+binary was not installed. These are inventory results rather than invented
+support claims: the test fails only when its isolated fixture or query fails,
+and returns CTest skip code 77 when no optional daemon is installed.
+
 Inspect an installed candidate model closure with:
 
 ```sh
