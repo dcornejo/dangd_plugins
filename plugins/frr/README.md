@@ -377,6 +377,12 @@ binary was not installed. These are inventory results rather than invented
 support claims: the test fails only when its isolated fixture or query fails,
 and returns CTest skip code 77 when no optional daemon is installed.
 
+On FRR 10.7.1, this inventory passed independently on both Ubuntu 26.04.1
+validation hosts. All nine optional daemon binaries were installed; mgmtd
+advertised `frr-bfdd`, `frr-ripd`, and `frr-ripngd`, while EIGRP, IS-IS,
+OSPFv2, Pathd, PIM, and VRRP ran without registering their expected modules.
+The latter models therefore remain disabled by the plugin's live-library gate.
+
 Inspect an installed candidate model closure with:
 
 ```sh

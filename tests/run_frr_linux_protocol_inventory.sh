@@ -73,11 +73,14 @@ inventory_daemon() {
   chmod 0755 "$daemon_copy"
 
   "$frr_dir/mgmtd" -N "$tag" -d -u frr -g "$group" \
-    -i "$run_dir/mgmtd.pid" --log "file:$mgmtd_log"
+    -i "$run_dir/mgmtd.pid" --log "file:$mgmtd_log" \
+    >/dev/null 2>&1
   "$frr_dir/zebra" -N "$tag" -d -u frr -g "$group" \
-    -i "$run_dir/zebra.pid" --log "file:$zebra_log"
+    -i "$run_dir/zebra.pid" --log "file:$zebra_log" \
+    >/dev/null 2>&1
   "$daemon_copy" -N "$tag" -d -u frr -g "$group" \
-    -i "$run_dir/$daemon.pid" --log "file:$daemon_log"
+    -i "$run_dir/$daemon.pid" --log "file:$daemon_log" \
+    >/dev/null 2>&1
 
   i=0
   while [ ! -S "$run_dir/mgmtd_fe.sock" ]; do

@@ -14,7 +14,10 @@ All notable changes to the external dangd plugin collection are recorded here.
   pathspace, without creating interfaces, addresses, or routes, and is
   classified by whether its expected module appears in the live RFC 8525 YANG
   Library. Missing binaries, early daemon exits, and absent mgmtd backends are
-  reported separately.
+  reported separately. Independent Ubuntu 26.04.1 runs found BFD, RIP, and
+  RIPng advertised by FRR 10.7.1; the other six installed optional daemons did
+  not register their models. Daemon startup diagnostics are retained in the
+  per-pathspace logs instead of obscuring the inventory summary.
 - Enforced FRR/RFC 8431 routing-provider package exclusivity. Debian retains
   symmetric package conflicts, while both components now install the same
   routing-domain ownership marker so FreeBSD `pkg` rejects co-installation even
