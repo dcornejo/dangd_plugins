@@ -2,7 +2,7 @@
 # Copyright 2026 David Cornejo
 # SPDX-License-Identifier: Apache-2.0
 
-# Inventory optional FRR mgmtd backends in disposable pathspaces.  This test
+# Inventory optional FRR mgmtd backends in disposable pathspaces. This test
 # intentionally creates no interface, address, or route; it only asks each
 # daemon to register its YANG modules and reads RFC 8525 YANG Library data.
 set -eu
@@ -13,8 +13,22 @@ if [ "$#" -ne 1 ] || [ "$(id -u)" -ne 0 ]; then
 fi
 
 probe=$1
-frr_dir=/usr/lib/frr
-group=frrvty
+case "$(uname -s)" in
+  Linux)
+    frr_dir=/usr/lib/frr
+    group=frrvty
+    copy_daemon=1
+    ;;
+  FreeBSD)
+    frr_dir=/usr/local/sbin
+    group=frr
+    copy_daemon=0
+    ;;
+  *)
+    echo "SKIP: native FRR inventory supports Linux and FreeBSD only"
+    exit 77
+    ;;
+esac
 tested=0
 advertised=0
 run_dir=
@@ -66,11 +80,16 @@ inventory_daemon() {
     install -o frr -g "$group" -m 0660 /dev/null "$run_dir/$process.pid"
   done
 
-  # Ubuntu's packaged AppArmor policy denies nonstandard daemon pathspaces.
-  # A disposable copy avoids changing that host policy and cannot collide with
-  # the production daemon's executable profile or sockets.
-  cp "$frr_dir/$daemon" "$daemon_copy"
-  chmod 0755 "$daemon_copy"
+  daemon_command="$frr_dir/$daemon"
+  if [ "$copy_daemon" -eq 1 ]; then
+    # Ubuntu's packaged AppArmor policy denies nonstandard daemon pathspaces.
+    # A disposable copy avoids changing that host policy and cannot collide
+    # with the production daemon's executable profile or sockets. FreeBSD has
+    # no corresponding executable-path restriction and runs the package binary.
+    cp "$frr_dir/$daemon" "$daemon_copy"
+    chmod 0755 "$daemon_copy"
+    daemon_command=$daemon_copy
+  fi
 
   "$frr_dir/mgmtd" -N "$tag" -d -u frr -g "$group" \
     -i "$run_dir/mgmtd.pid" --log "file:$mgmtd_log" \
@@ -78,7 +97,7 @@ inventory_daemon() {
   "$frr_dir/zebra" -N "$tag" -d -u frr -g "$group" \
     -i "$run_dir/zebra.pid" --log "file:$zebra_log" \
     >/dev/null 2>&1
-  "$daemon_copy" -N "$tag" -d -u frr -g "$group" \
+  "$daemon_command" -N "$tag" -d -u frr -g "$group" \
     -i "$run_dir/$daemon.pid" --log "file:$daemon_log" \
     >/dev/null 2>&1
 

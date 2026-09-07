@@ -9,8 +9,8 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
-- Added a Linux, read-only FRR optional-daemon inventory test. Each installed
-  protocol daemon is started with mgmtd and zebra in its own disposable
+- Added a Linux and FreeBSD read-only FRR optional-daemon inventory test. Each
+  installed protocol daemon is started with mgmtd and zebra in its own disposable
   pathspace, without creating interfaces, addresses, or routes, and is
   classified by whether its expected module appears in the live RFC 8525 YANG
   Library. Missing binaries, early daemon exits, and absent mgmtd backends are
@@ -18,6 +18,9 @@ All notable changes to the external dangd plugin collection are recorded here.
   RIPng advertised by FRR 10.7.1; the other six installed optional daemons did
   not register their models. Daemon startup diagnostics are retained in the
   per-pathspace logs instead of obscuring the inventory summary.
+  Independent FreeBSD 16.0-CURRENT runs found the same three advertised modules
+  among six installed optional daemons. The CTest fixture uses `/bin/sh`
+  explicitly so it works when the source checkout is on a no-execute mount.
 - Enforced FRR/RFC 8431 routing-provider package exclusivity. Debian retains
   symmetric package conflicts, while both components now install the same
   routing-domain ownership marker so FreeBSD `pkg` rejects co-installation even

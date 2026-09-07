@@ -359,11 +359,11 @@ mgmtd notification-encoding assertion documented above; another failure is an
 ordinary failed test. There is not yet an equivalent FreeBSD notification
 interaction.
 
-Linux also provides a read-only optional-daemon inventory. For each installed
-protocol daemon it creates a fresh FRR pathspace, starts mgmtd, zebra, and that
-daemon, and reports whether the expected module appears in the live RFC 8525
-YANG Library. It creates no interface, address, or route and never contacts the
-production FRR socket:
+Linux and FreeBSD also provide a read-only optional-daemon inventory. For each
+installed protocol daemon it creates a fresh FRR pathspace, starts mgmtd,
+zebra, and that daemon, and reports whether the expected module appears in the
+live RFC 8525 YANG Library. It creates no interface, address, or route and never
+contacts the production FRR socket:
 
 ```sh
 sudo ctest --test-dir build -R frr_isolated_protocol_inventory \
@@ -382,6 +382,13 @@ validation hosts. All nine optional daemon binaries were installed; mgmtd
 advertised `frr-bfdd`, `frr-ripd`, and `frr-ripngd`, while EIGRP, IS-IS,
 OSPFv2, Pathd, PIM, and VRRP ran without registering their expected modules.
 The latter models therefore remain disabled by the plugin's live-library gate.
+FreeBSD uses its package binaries directly; Linux uses disposable executable
+copies only to avoid changing the packaged AppArmor policy for test pathspaces.
+The same inventory passed independently on both FreeBSD 16.0-CURRENT hosts.
+Their FRR packages installed six of the optional daemons: BFD, RIP, and RIPng
+were advertised; EIGRP, IS-IS, and OSPFv2 did not register with mgmtd; Pathd,
+PIM, and VRRP were not installed. CTest invokes the harness through `/bin/sh`
+so a validation checkout may safely reside on a no-execute filesystem.
 
 Inspect an installed candidate model closure with:
 
