@@ -71,27 +71,49 @@ std::optional<std::string> ExtractZebraAugments(
   for (const xmlNode* instance = root->children; instance;
        instance = instance->next) {
     if (!Is(instance, descriptor.list_name, descriptor.namespace_uri)) continue;
-    const xmlNode* zebra = nullptr;
+    bool has_zebra_augment = false;
     for (const xmlNode* child = instance->children; child; child = child->next)
       if (child->type == XML_ELEMENT_NODE && Namespace(child) == kZebraNamespace) {
-        zebra = child;
+        has_zebra_augment = true;
         break;
       }
-    if (!zebra) continue;
+    if (!has_zebra_augment) continue;
     xmlNode* output_instance =
         xmlDocCopyNode(const_cast<xmlNode*>(instance), output.get(), 2);
-    if (!output_instance) continue;
+    if (!output_instance) {
+      if (error) *error = "cannot copy FRR operational list instance";
+      return std::nullopt;
+    }
     xmlAddChild(output_root, output_instance);
     for (const std::string& key : descriptor.keys) {
       for (const xmlNode* child = instance->children; child; child = child->next)
         if (Is(child, key, descriptor.namespace_uri)) {
-          xmlAddChild(output_instance,
-                      xmlDocCopyNode(const_cast<xmlNode*>(child), output.get(), 1));
+          xmlNode* key_copy =
+              xmlDocCopyNode(const_cast<xmlNode*>(child), output.get(), 1);
+          if (!key_copy) {
+            if (error) *error = "cannot copy FRR operational list key";
+            return std::nullopt;
+          }
+          xmlAddChild(output_instance, key_copy);
           break;
         }
     }
-    xmlAddChild(output_instance,
-                xmlDocCopyNode(const_cast<xmlNode*>(zebra), output.get(), 1));
+    // A parent list may be augmented by more than one top-level zebra node.
+    // Preserve every direct zebra-owned child: returning only the first would
+    // make the operational datastore depend on YANG statement order and could
+    // silently omit otherwise valid state from the same provider.
+    for (const xmlNode* child = instance->children; child; child = child->next) {
+      if (child->type != XML_ELEMENT_NODE ||
+          Namespace(child) != kZebraNamespace)
+        continue;
+      xmlNode* augment_copy =
+          xmlDocCopyNode(const_cast<xmlNode*>(child), output.get(), 1);
+      if (!augment_copy) {
+        if (error) *error = "cannot copy FRR zebra operational augment";
+        return std::nullopt;
+      }
+      xmlAddChild(output_instance, augment_copy);
+    }
     retained = true;
   }
   if (!retained) return std::string{};

@@ -47,4 +47,32 @@ TEST(FrrOperationalTest, RejectsWrongRootAndBuildsOneDataEnvelope) {
             "<zebra/><lib/></data>");
 }
 
+TEST(FrrOperationalTest, RetainsEveryDirectZebraAugmentForOneInstance) {
+  const std::string xml = R"xml(
+    <lib xmlns="http://frrouting.org/yang/interface">
+      <interface><name>eth0</name><vrf>default</vrf>
+        <state><mtu>1500</mtu></state>
+        <link-state xmlns="http://frrouting.org/yang/zebra">
+          <running>true</running>
+        </link-state>
+        <address-state xmlns="http://frrouting.org/yang/zebra">
+          <address-count>2</address-count>
+        </address-state>
+      </interface>
+    </lib>)xml";
+  std::string error;
+  auto filtered = ExtractZebraAugments(
+      xml,
+      {"http://frrouting.org/yang/interface", "lib", "interface",
+       {"name", "vrf"}},
+      &error);
+  ASSERT_TRUE(filtered) << error;
+  EXPECT_NE(filtered->find("<link-state"), std::string::npos);
+  EXPECT_NE(filtered->find("<address-state"), std::string::npos);
+  EXPECT_NE(filtered->find("<running>true</running>"), std::string::npos);
+  EXPECT_NE(filtered->find("<address-count>2</address-count>"),
+            std::string::npos);
+  EXPECT_EQ(filtered->find("<mtu>"), std::string::npos);
+}
+
 }  // namespace

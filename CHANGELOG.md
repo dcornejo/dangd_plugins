@@ -351,6 +351,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- FRR operational filtering now preserves every direct zebra-owned augment
+  beneath an imported parent-list instance instead of silently returning only
+  the first. Copy failures are reported as provider errors, and regression
+  coverage verifies that multiple sibling augment nodes survive while
+  parent-owned state remains excluded.
 - Lock both FRR candidate and running datastores around validation, apply, and
   abort, as required by mgmtd configuration transactions. Also accept FRR's
   frontend behavior of reporting a successful abort as the generic
