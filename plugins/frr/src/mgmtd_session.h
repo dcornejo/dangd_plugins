@@ -27,6 +27,9 @@ class SessionOperations {
   virtual bool ApplyCandidate(std::string* error) = 0;
   virtual bool AbortCandidate(std::string* error) = 0;
   virtual bool UnlockCandidate(std::string* error) = 0;
+  /** Reads config-true XML from running for post-commit verification. */
+  virtual std::optional<std::string> GetRunningConfiguration(
+      std::string_view xpath, std::string* error) = 0;
   virtual bool Close(std::string* error) = 0;
 };
 
@@ -55,7 +58,7 @@ class Session : public SessionOperations {
                                                 std::string* error);
   /** Retrieves config-true XML exactly as accepted in FRR's running store. */
   std::optional<std::string> GetRunningConfiguration(std::string_view xpath,
-                                                     std::string* error);
+                                                     std::string* error) override;
   /** Invokes one modeled FRR RPC and returns its native XML output. */
   std::optional<std::string> InvokeRpc(std::string_view xpath,
                                       std::string_view input_xml,

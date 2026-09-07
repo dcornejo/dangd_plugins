@@ -86,8 +86,24 @@ int main(int argc, char** argv) {
                                       ? std::nullopt
                                       : std::optional<std::string>(*before),
                             after}});
-  if (!transaction.Validate(&error) || !transaction.Apply(&error)) {
+  if (!transaction.Validate(&error)) {
     std::cerr << "mutation: " << error << '\n';
+    return 1;
+  }
+  if (!transaction.Apply(&error)) {
+    const std::string apply_error = error;
+    if (transaction.applied()) {
+      std::string rollback_error;
+      if (!transaction.Rollback(&rollback_error)) {
+        std::cerr << "mutation: " << apply_error
+                  << "; rollback: " << rollback_error << '\n';
+        return 1;
+      }
+      std::cerr << "mutation rejected after commit and restored: "
+                << apply_error << '\n';
+      return 3;
+    }
+    std::cerr << "mutation: " << apply_error << '\n';
     return 1;
   }
   auto observed = Read(socket, xpath, &next, &error);
@@ -107,8 +123,20 @@ int main(int argc, char** argv) {
             &error)
       : std::nullopt;
   if (!applied || !restored || !equivalent || !*equivalent) {
-    std::cerr << "round trip failed: "
+    std::cerr << "round trip failed"
+              << " (applied=" << (applied ? "yes" : "no")
+              << ", restored=" << (restored ? "yes" : "no")
+              << ", equivalent="
+              << (equivalent ? (*equivalent ? "yes" : "no") : "unavailable")
+              << "): "
               << (error.empty() ? "running state did not match" : error)
+              << "\nbefore: " << (before->empty() ? "<empty>" : *before)
+              << "\napplied readback: "
+              << (observed ? (observed->empty() ? "<empty>" : *observed)
+                           : "<unavailable>")
+              << "\nfinal readback: "
+              << (final ? (final->empty() ? "<empty>" : *final)
+                        : "<unavailable>")
               << '\n';
     return 1;
   }

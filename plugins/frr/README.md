@@ -85,7 +85,9 @@ backend actually registers these modeled RPCs. The plugin preserves FRR's
 rejection instead of substituting CLI behavior.
 
 Native FRR protocols beyond zebra/staticd are enabled only when FRR's live
-library and backend advertise them. The conditional set is BFD, EIGRP, IS-IS,
+library advertises their schema. Because RFC 8525 does not identify the owning
+backend, each committed root is also verified by readback before dangd reports
+success. The conditional set is BFD, EIGRP, IS-IS,
 OSPFv2, Pathd, PIM, RIP, RIPng, and VRRP. Modules with standalone roots own
 those roots; OSPFv2 and VRRP consist of augments within already-owned routing
 or interface parents. The provider additionally publishes its small implemented
@@ -370,8 +372,9 @@ sudo ctest --test-dir build -R frr_isolated_protocol_inventory \
   --output-on-failure
 ```
 
-`ADVERTISED` means the running backend registered the expected module.
-`UNSUPPORTED` means the daemon ran but mgmtd did not publish that module;
+`ADVERTISED` means mgmtd's live library publishes the expected schema while
+the daemon is running; it does not by itself prove that the daemon registered a
+configuration backend. `UNSUPPORTED` means mgmtd did not publish that module;
 `UNAVAILABLE` means the daemon exited before registration, and `SKIP` means its
 binary was not installed. These are inventory results rather than invented
 support claims: the test fails only when its isolated fixture or query fails,
@@ -389,6 +392,16 @@ Their FRR packages installed six of the optional daemons: BFD, RIP, and RIPng
 were advertised; EIGRP, IS-IS, and OSPFv2 did not register with mgmtd; Pathd,
 PIM, and VRRP were not installed. CTest invokes the harness through `/bin/sh`
 so a validation checkout may safely reside on a no-execute filesystem.
+
+The BFD behavioral interaction goes beyond schema inventory. It waits for
+`frr-bfdd`, attempts a profile-only transaction, reads the committed root back,
+and restores the exact before-image. FRR 10.7.0/10.7.1 on all four validation
+hosts advertises the schema but registers no `bfdd` mgmtd backend: mgmtd accepts
+the commit and silently retains an empty root. The test recognizes only that
+exact, safely restored condition as skipped. The provider independently reads
+every committed root back and rejects such a silent no-op with the affected
+module path; YANG Library advertisement is not treated as proof of a successful
+configuration operation.
 
 Inspect an installed candidate model closure with:
 

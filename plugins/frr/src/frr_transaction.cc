@@ -93,6 +93,38 @@ bool FrrTransaction::Execute(bool before_image, bool apply,
   failure.clear();
   if (!session->Close(&failure)) record_failure("close");
   if (committed) applied_ = true;
+
+  // FRR prohibits running-datastore reads while candidate is locked. Verify a
+  // successful commit in a fresh session after the mutation session is fully
+  // unlocked and closed. Keep applied_ true on mismatch so the coordinator can
+  // still restore the retained before-image.
+  if (committed && operation_ok) {
+    failure.clear();
+    auto verifier = sessions_(&failure);
+    if (!verifier) {
+      record_failure("verify open");
+    } else {
+      for (const ConfigurationRoot& root : roots_) {
+        auto observed = verifier->GetRunningConfiguration(root.xpath, &failure);
+        if (!observed) {
+          record_failure("verify " + root.xpath);
+          break;
+        }
+        const std::optional<std::string> observed_root = observed->empty()
+            ? std::nullopt
+            : std::optional<std::string>(std::move(*observed));
+        const auto& expected = before_image ? root.before_xml
+                                            : root.proposed_xml;
+        if (expected.has_value() != observed_root.has_value()) {
+          failure = "FRR running datastore did not retain the committed root";
+          record_failure("verify " + root.xpath);
+          break;
+        }
+      }
+      failure.clear();
+      if (!verifier->Close(&failure)) record_failure("verify close");
+    }
+  }
   return operation_ok;
 }
 

@@ -9,6 +9,15 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added cross-platform, profile-only BFD transaction evidence and hardened all
+  FRR commits with post-commit running-datastore verification in a fresh mgmtd
+  session. A commit that FRR acknowledges but silently drops now fails at the
+  affected module path while retaining rollback eligibility. Tests cover that
+  failure and successful compensation. FRR 10.7.0/10.7.1 on all four hosts
+  advertises `frr-bfdd` but retains no BFD profile because `bfdd` registers no
+  mgmtd backend; the guarded native test skips only after proving the no-op and
+  restoring the before-image. Round-trip observation failures now report
+  phase-specific, bounded before/applied/final readback evidence.
 - Added a Linux and FreeBSD read-only FRR optional-daemon inventory test. Each
   installed protocol daemon is started with mgmtd and zebra in its own disposable
   pathspace, without creating interfaces, addresses, or routes, and is
