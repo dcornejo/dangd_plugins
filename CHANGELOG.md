@@ -353,6 +353,13 @@ All notable changes to the external dangd plugin collection are recorded here.
   failed authentication through PAM, system configuration application,
   operational state, and rollback without using any network interface.
 
+### Fixed
+
+- Accepted Debian's canonical `/run/frr` spelling in the guarded native
+  notification mutation probe. The safety check previously started with a
+  valid `/var/run/frr` socket but rejected it after resolving `/var/run` to its
+  `/run` symlink target.
+
 ### Changed
 
 - RFC 8431 reusable-nexthop persistence now encodes absent optional values as

@@ -41,8 +41,12 @@ int main(int argc, char** argv) {
     const std::filesystem::path grandparent =
         std::filesystem::weakly_canonical(parent.parent_path(),
                                            filesystem_error);
+    // Debian exposes /var/run as a symlink to /run. Compare the canonical
+    // spelling as well as the traditional and FreeBSD locations; otherwise a
+    // real socket below /var/run/frr is rejected after canonicalization.
     const bool recognized_frr_run_directory =
         grandparent == "/var/run/frr" ||
+        grandparent == "/run/frr" ||
         grandparent == "/usr/local/var/run/frr";
     if (filesystem_error || socket_path.filename() != "mgmtd_fe.sock" ||
         !parent.filename().string().starts_with("dang-notify-") ||
