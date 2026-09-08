@@ -351,6 +351,13 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- RFC 8431 reusable-nexthop persistence now encodes absent optional values as
+  explicit JSON nulls. This avoids relying on optional-value conversions added
+  by newer nlohmann-json releases and restores compilation with Debian 13's
+  supported 3.11 series. The persistence round-trip test now covers an entry
+  with every optional field absent. The collection build guide also lists the
+  previously omitted Debian PAM development headers and complete baseline
+  dependency commands for Debian/Ubuntu and FreeBSD.
 - FRR operational filtering now preserves every direct zebra-owned augment
   beneath an imported parent-list instance instead of silently returning only
   the first. Copy failures are reported as provider errors, and regression

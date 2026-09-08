@@ -46,6 +46,19 @@ on both Linux and FreeBSD before adding command-driven route or interface code.
 
 ## Build and test
 
+Install the complete collection's build dependencies first. PAM development
+headers are required even when testing another provider because the default
+build includes `pam_dangd`:
+
+```sh
+# Debian/Ubuntu
+sudo apt install build-essential cmake ninja-build git pkg-config \
+  libxml2-dev nlohmann-json3-dev libpugixml-dev libgtest-dev libpam0g-dev
+
+# FreeBSD (PAM headers are part of the base system)
+sudo pkg install cmake ninja git pkgconf libxml2 nlohmann-json pugixml googletest
+```
+
 Point CMake at either the `dang` source tree or an installed include directory:
 
 ```sh

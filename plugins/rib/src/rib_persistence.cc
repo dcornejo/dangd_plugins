@@ -25,14 +25,20 @@ bool Fail(std::string value, std::string* error) {
   return false;
 }
 
+nlohmann::json OptionalJson(const std::optional<std::string>& value) {
+  return value ? nlohmann::json(*value) : nlohmann::json(nullptr);
+}
+
 nlohmann::json Encode(const PersistentRegistry& value) {
   nlohmann::json result{{"version", 1}, {"next-id", value.next_id},
                         {"nexthops", nlohmann::json::array()},
                         {"bindings", nlohmann::json::array()}};
   for (const auto& item : value.nexthops)
     result["nexthops"].push_back({{"rib", item.rib}, {"id", item.id},
-      {"gateway", item.gateway}, {"interface", item.interface},
-      {"address-family", item.address_family}, {"sharable", item.sharable}});
+      {"gateway", OptionalJson(item.gateway)},
+      {"interface", OptionalJson(item.interface)},
+      {"address-family", OptionalJson(item.address_family)},
+      {"sharable", item.sharable}});
   for (const auto& item : value.bindings)
     result["bindings"].push_back({{"rib", item.rib},
       {"address-family", item.address_family}, {"destination", item.destination},
