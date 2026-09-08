@@ -403,21 +403,22 @@ every committed root back and rejects such a silent no-op with the affected
 module path; YANG Library advertisement is not treated as proof of a successful
 configuration operation.
 
-RIP and RIPng have a stronger cross-platform transaction interaction. Each is
+RIP and RIPng have a stronger cross-platform transaction and operational
+interaction. Each is
 started in its own pathspace and receives a `default` instance containing no
 network, interface, or neighbor. The test validates and commits that root,
-reads the accepted XML back, commits the retained empty before-image, and
-verifies restoration. It passes independently on both Ubuntu 26.04.1 and both
-FreeBSD 16.0-CURRENT hosts:
+reads the accepted configuration and live operational XML back, commits the
+retained empty before-image, and verifies restoration. It passes independently
+on both Ubuntu 26.04.1 and both FreeBSD 16.0-CURRENT hosts:
 
 ```sh
 sudo ctest --test-dir build -R frr_isolated_rip_transactions \
   --output-on-failure
 ```
 
-This proves native configuration and rollback for the instance roots without
-emitting RIP traffic. It does not yet prove protocol operational state, RPCs,
-or notification delivery.
+This proves native configuration, basic instance operational visibility, and
+rollback without emitting RIP traffic. It does not yet prove learned-route or
+neighbor operational state, RPCs, or notification delivery.
 
 Inspect an installed candidate model closure with:
 

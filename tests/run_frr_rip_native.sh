@@ -2,8 +2,9 @@
 # Copyright 2026 David Cornejo
 # SPDX-License-Identifier: Apache-2.0
 
-# Exercise reversible RIP and RIPng instance-only transactions. No interface,
-# network, neighbor, address, packet, or route is created by this fixture.
+# Exercise reversible RIP and RIPng instance-only transactions and verify that
+# each committed instance is visible through FRR's operational datastore. No
+# interface, network, neighbor, address, packet, or route is created.
 set -eu
 
 if [ "$#" -ne 2 ] || [ "$(id -u)" -ne 0 ]; then
@@ -126,7 +127,7 @@ exercise_protocol() {
   done
 
   "$mutation_probe" --allow-isolated-test "$run_dir/mgmtd_fe.sock" \
-    "$root" "$xml" '<vrf>default</vrf>'
+    "$root" "$xml" '<vrf>default</vrf>' "$root" '<vrf>default</vrf>'
 
   for process in "$daemon" zebra mgmtd; do
     if [ -s "$run_dir/$process.pid" ]; then

@@ -52,9 +52,11 @@ std::optional<std::string> Read(std::string_view socket,
 }  // namespace
 
 int main(int argc, char** argv) {
-  if (argc != 6 || std::string_view(argv[1]) != "--allow-isolated-test") {
+  if ((argc != 6 && argc != 8) ||
+      std::string_view(argv[1]) != "--allow-isolated-test") {
     std::cerr << "usage: frr-mgmtd-mutation-check --allow-isolated-test "
-                 "SOCKET XPATH AFTER_XML EXPECTED_TEXT\n";
+                 "SOCKET XPATH AFTER_XML EXPECTED_TEXT "
+                 "[OPERATIONAL_XPATH EXPECTED_OPERATIONAL_TEXT]\n";
     return 2;
   }
   const std::string socket = argv[2];
@@ -109,6 +111,21 @@ int main(int argc, char** argv) {
   auto observed = Read(socket, xpath, &next, &error);
   const bool applied = observed && !expected_text.empty() &&
       observed->find(expected_text) != std::string::npos;
+  bool operational = true;
+  std::optional<std::string> operational_xml;
+  if (argc == 8) {
+    auto session = Open(socket, &next, &error);
+    if (session) {
+      operational_xml = session->GetOperationalData(argv[6], &error);
+      std::string close_error;
+      if (!session->Close(&close_error)) {
+        if (error.empty()) error = std::move(close_error);
+        operational_xml.reset();
+      }
+    }
+    operational = operational_xml && argv[7][0] != '\0' &&
+        operational_xml->find(argv[7]) != std::string::npos;
+  }
 
   // Restoration is attempted regardless of observation success. A caller must
   // treat any nonzero result as requiring inspection of the disposable daemon.
@@ -122,10 +139,11 @@ int main(int argc, char** argv) {
                            : std::optional<std::string>(*final),
             &error)
       : std::nullopt;
-  if (!applied || !restored || !equivalent || !*equivalent) {
+  if (!applied || !operational || !restored || !equivalent || !*equivalent) {
     std::cerr << "round trip failed"
               << " (applied=" << (applied ? "yes" : "no")
               << ", restored=" << (restored ? "yes" : "no")
+              << ", operational=" << (operational ? "yes" : "no")
               << ", equivalent="
               << (equivalent ? (*equivalent ? "yes" : "no") : "unavailable")
               << "): "
@@ -134,13 +152,18 @@ int main(int argc, char** argv) {
               << "\napplied readback: "
               << (observed ? (observed->empty() ? "<empty>" : *observed)
                            : "<unavailable>")
+              << "\noperational readback: "
+              << (operational_xml
+                      ? (operational_xml->empty() ? "<empty>" : *operational_xml)
+                      : (argc == 8 ? "<unavailable>" : "<not requested>"))
               << "\nfinal readback: "
               << (final ? (final->empty() ? "<empty>" : *final)
                         : "<unavailable>")
               << '\n';
     return 1;
   }
-  std::cout << "validated, committed, observed, and restored " << xpath
-            << '\n';
+  std::cout << "validated, committed, observed";
+  if (argc == 8) std::cout << ", read operational state";
+  std::cout << ", and restored " << xpath << '\n';
   return 0;
 }
