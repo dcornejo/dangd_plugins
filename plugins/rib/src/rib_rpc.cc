@@ -344,11 +344,31 @@ bool NexthopRegistry::RestorePersistentState(const PersistentRegistry& state,
   return true;
 }
 
+bool NexthopRegistry::ReplacePersistentState(const PersistentRegistry& state,
+                                             std::string* error) {
+  NexthopRegistry candidate;
+  if (!candidate.RestorePersistentState(state, error)) return false;
+  std::scoped_lock lock(mutex_, candidate.mutex_);
+  for (const auto& [reference, count] : configuration_references_) {
+    if (!candidate.entries_.contains(reference)) {
+      *error = "checkpoint omits a datastore-referenced nexthop";
+      return false;
+    }
+    candidate.references_[reference] += count;
+  }
+  entries_ = std::move(candidate.entries_);
+  references_ = std::move(candidate.references_);
+  route_references_ = std::move(candidate.route_references_);
+  next_id_ = candidate.next_id_;
+  return true;
+}
+
 bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
                     std::string* output_xml, std::string* error,
                     std::string* error_path, const CommandRunner& runner,
                     const NexthopResolver& resolver,
-                    NexthopRegistry* registry) {
+                    NexthopRegistry* registry, const RegistryWriter& writer) {
+  (void)writer;
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "route-add.xml", nullptr,
@@ -431,7 +451,9 @@ bool InvokeRouteDelete(NativePlatform platform, const char* input_xml,
                        std::string* output_xml, std::string* error,
                        std::string* error_path, const CommandRunner& runner,
                        const RouteObserver& supplied_observer,
-                       NexthopRegistry* registry) {
+                       NexthopRegistry* registry,
+                       const RegistryWriter& writer) {
+  (void)writer;
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "route-delete.xml", nullptr,
@@ -502,7 +524,9 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
                        std::string* error_path, const CommandRunner& runner,
                        const RouteObserver& observer,
                        const NexthopResolver& resolver,
-                       NexthopRegistry* registry) {
+                       NexthopRegistry* registry,
+                       const RegistryWriter& writer) {
+  (void)writer;
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "route-update.xml", nullptr,
@@ -662,7 +686,9 @@ bool InvokeRibDelete(NativePlatform platform, const char* input_xml,
                      std::string* output_xml, std::string* error,
                      std::string* error_path, const CommandRunner& runner,
                      const RouteObserver& observer,
-                     NexthopRegistry* registry) {
+                     NexthopRegistry* registry,
+                     const RegistryWriter& writer) {
+  (void)writer;
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "rib-delete.xml", nullptr,
@@ -708,7 +734,8 @@ bool InvokeRibDelete(NativePlatform platform, const char* input_xml,
 
 bool InvokeNexthopAdd(NexthopRegistry* registry, const char* input_xml,
                        std::string* output_xml, std::string* error,
-                       std::string* error_path) {
+                       std::string* error_path,
+                       const RegistryWriter& writer) {
   if (!registry || !input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "nh-add.xml", nullptr, XML_PARSE_NONET |
@@ -744,7 +771,19 @@ bool InvokeNexthopAdd(NexthopRegistry* registry, const char* input_xml,
     *output_xml = BooleanOutput(false, reason);
     return true;
   }
+  const PersistentRegistry before = registry->PersistentState();
   const auto id = registry->Add(std::move(entry));
+  if (id && writer) {
+    std::string persistence_error;
+    if (!writer(registry->PersistentState(), &persistence_error)) {
+      std::string restore_error;
+      if (!registry->ReplacePersistentState(before, &restore_error))
+        persistence_error += "; registry rollback failed: " + restore_error;
+      *error = "cannot persist reusable nexthop: " + persistence_error;
+      *error_path = "/ietf-i2rs-rib:nh-add";
+      return false;
+    }
+  }
   *output_xml = id ? NexthopOutput(*id)
                    : BooleanOutput(false, "the nexthop identifier space is exhausted");
   return true;
@@ -752,7 +791,8 @@ bool InvokeNexthopAdd(NexthopRegistry* registry, const char* input_xml,
 
 bool InvokeNexthopDelete(NexthopRegistry* registry, const char* input_xml,
                           std::string* output_xml, std::string* error,
-                          std::string* error_path) {
+                          std::string* error_path,
+                          const RegistryWriter& writer) {
   if (!registry || !input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "nh-delete.xml", nullptr, XML_PARSE_NONET |
@@ -772,8 +812,20 @@ bool InvokeNexthopDelete(NexthopRegistry* registry, const char* input_xml,
     *error_path = "/ietf-i2rs-rib:nh-delete";
     return false;
   }
+  const PersistentRegistry before = registry->PersistentState();
   switch (registry->Remove(rib, id)) {
     case NexthopRegistry::RemoveResult::kRemoved:
+      if (writer) {
+        std::string persistence_error;
+        if (!writer(registry->PersistentState(), &persistence_error)) {
+          std::string restore_error;
+          if (!registry->ReplacePersistentState(before, &restore_error))
+            persistence_error += "; registry rollback failed: " + restore_error;
+          *error = "cannot persist nexthop deletion: " + persistence_error;
+          *error_path = "/ietf-i2rs-rib:nh-delete";
+          return false;
+        }
+      }
       *output_xml = BooleanOutput(true); break;
     case NexthopRegistry::RemoveResult::kInUse:
       *output_xml = BooleanOutput(false, "the nexthop is referenced by a route"); break;

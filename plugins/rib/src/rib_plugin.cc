@@ -7,12 +7,16 @@
 #include "plugins/rib/src/platform_command.h"
 #include "plugins/rib/src/platform_executor.h"
 #include "plugins/rib/src/rib_config.h"
+#include "plugins/rib/src/rib_persistence.h"
 #include "plugins/rib/src/rib_rpc.h"
 #include "plugins/rib/src/route_observer.h"
 #include "rib_model_sources.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <mutex>
 #include <new>
 #include <string>
 #include <string_view>
@@ -29,7 +33,14 @@ constexpr NativePlatform kPlatform = NativePlatform::kFreeBsd;
 #error "The RFC 8431 plugin supports only Linux and FreeBSD"
 #endif
 
-struct Context { NexthopRegistry nexthops; };
+struct Context {
+  NexthopRegistry nexthops;
+  std::once_flag load_once;
+  std::mutex rpc_mutex;
+  std::filesystem::path registry_path;
+  std::string load_error;
+  bool loaded = false;
+};
 using Reference = std::pair<std::string, std::uint32_t>;
 struct Prepared {
   std::vector<Change> changes;
@@ -39,6 +50,26 @@ struct Prepared {
   bool applied = false;
 };
 Context plugin_context;
+bool EnsureRegistry(Context* owner, std::string* error) {
+  std::call_once(owner->load_once, [owner] {
+    const char* configured = std::getenv("DANG_RIB_REGISTRY_FILE");
+    owner->registry_path = configured && *configured
+                               ? configured
+                               : "/var/lib/dangd/rib-nexthops.json";
+    PersistentRegistry state;
+    owner->loaded = LoadRegistry(owner->registry_path, &state,
+                                 &owner->load_error) &&
+                    owner->nexthops.RestorePersistentState(
+                        state, &owner->load_error);
+  });
+  if (!owner->loaded && error) *error = owner->load_error;
+  return owner->loaded;
+}
+RegistryWriter Writer(Context* owner) {
+  return [owner](const PersistentRegistry& state, std::string* error) {
+    return SaveRegistry(owner->registry_path, state, error);
+  };
+}
 NexthopResolver Resolver(Context* owner) {
   return [owner](const std::string& rib, std::uint32_t id,
                  std::optional<std::string>* gateway,
@@ -89,6 +120,10 @@ const char* DependencyAt(void*, size_t) { return nullptr; }
 
 int Prepare(void* raw_context, const DangTransactionV1* tx, void** out, DangPluginErrorV1* error) {
   if (!tx || !tx->before_xml || !tx->proposed_xml || !out) return Fail(error, "RIB transaction input is incomplete");
+  std::string load_error;
+  if (!EnsureRegistry(static_cast<Context*>(raw_context), &load_error))
+    return Fail(error, "cannot load reusable nexthop registry: " + load_error,
+                "/ietf-i2rs-rib:routing-instance");
   Config before, proposed; std::string why, where;
   const auto resolver = Resolver(static_cast<Context*>(raw_context));
   if (!ParseConfig(tx->before_xml, &before, &why, &where, resolver)) return Fail(error, why, where);
@@ -162,6 +197,12 @@ int Invoke(void* raw_context, const DangOperationV1* operation,
     return Fail(error, "RIB RPC input is incomplete", "/ietf-i2rs-rib:routing-instance");
   if (std::string_view(operation->module_name) != "ietf-i2rs-rib")
     return Fail(error, "RIB RPC module is not implemented", "/");
+  auto* owner = static_cast<Context*>(raw_context);
+  std::string load_error;
+  if (!EnsureRegistry(owner, &load_error))
+    return Fail(error, "cannot load reusable nexthop registry: " + load_error,
+                "/ietf-i2rs-rib:routing-instance");
+  std::lock_guard rpc_lock(owner->rpc_mutex);
   const std::string rpc_path = "/ietf-i2rs-rib:" +
                                std::string(operation->operation_name);
   std::string why;
@@ -171,33 +212,33 @@ int Invoke(void* raw_context, const DangOperationV1* operation,
     invoked = InvokeRouteAdd(kPlatform, operation->input_xml, &rpc_output_xml,
                              &why, &where, RunNativeCommand,
                              Resolver(static_cast<Context*>(raw_context)),
-                             &static_cast<Context*>(raw_context)->nexthops);
+                             &owner->nexthops);
   else if (std::string_view(operation->operation_name) == "route-delete")
     invoked = InvokeRouteDelete(kPlatform, operation->input_xml,
                                 &rpc_output_xml, &why, &where,
                                 RunNativeCommand, {},
-                                &static_cast<Context*>(raw_context)->nexthops);
+                                &owner->nexthops);
   else if (std::string_view(operation->operation_name) == "route-update")
     invoked = InvokeRouteUpdate(kPlatform, operation->input_xml,
                                 &rpc_output_xml, &why, &where,
                                 RunNativeCommand, {},
                                 Resolver(static_cast<Context*>(raw_context)),
-                                &static_cast<Context*>(raw_context)->nexthops);
+                                &owner->nexthops);
   else if (std::string_view(operation->operation_name) == "rib-add")
     invoked = InvokeRibAdd(kPlatform, operation->input_xml, &rpc_output_xml,
                            &why, &where);
   else if (std::string_view(operation->operation_name) == "rib-delete")
     invoked = InvokeRibDelete(kPlatform, operation->input_xml, &rpc_output_xml,
                               &why, &where, RunNativeCommand, {},
-                              &static_cast<Context*>(raw_context)->nexthops);
+                              &owner->nexthops);
   else if (std::string_view(operation->operation_name) == "nh-add")
     invoked = InvokeNexthopAdd(
-        &static_cast<Context*>(raw_context)->nexthops, operation->input_xml,
-        &rpc_output_xml, &why, &where);
+        &owner->nexthops, operation->input_xml,
+        &rpc_output_xml, &why, &where, Writer(owner));
   else if (std::string_view(operation->operation_name) == "nh-delete")
     invoked = InvokeNexthopDelete(
-        &static_cast<Context*>(raw_context)->nexthops, operation->input_xml,
-        &rpc_output_xml, &why, &where);
+        &owner->nexthops, operation->input_xml,
+        &rpc_output_xml, &why, &where, Writer(owner));
   else
     return Fail(error, "RFC 8431 operation is not implemented", rpc_path);
   if (!invoked)
@@ -207,6 +248,10 @@ int Invoke(void* raw_context, const DangOperationV1* operation,
 }
 int Operational(void* raw_context, DangOperationalDataV2* out, DangPluginErrorV1* error) {
   if (!out) return Fail(error, "RIB operational output is missing");
+  std::string load_error;
+  if (!EnsureRegistry(static_cast<Context*>(raw_context), &load_error))
+    return Fail(error, "cannot load reusable nexthop registry: " + load_error,
+                "/ietf-i2rs-rib:routing-instance");
   std::vector<ObservedRoute> routes;
   std::string why;
   const bool ok = kPlatform == NativePlatform::kLinux
@@ -226,6 +271,9 @@ int Reconcile(void* raw_context, void*, const char* current_xml,
   std::string why;
   std::string where;
   auto* owner = static_cast<Context*>(raw_context);
+  if (!EnsureRegistry(owner, &why))
+    return Fail(error, "cannot load reusable nexthop registry: " + why,
+                "/ietf-i2rs-rib:routing-instance");
   if (!ParseConfig(current_xml, &current, &why, &where, Resolver(owner)))
     return Fail(error, why, where);
   if (!owner->nexthops.ReplaceConfigurationReferences(References(current)))

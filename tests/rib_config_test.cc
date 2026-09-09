@@ -588,6 +588,59 @@ TEST(RibConfigTest, RejectsInconsistentPersistentRegistryRecovery) {
   EXPECT_TRUE(registry.PersistentState().nexthops.empty());
 }
 
+TEST(RibConfigTest, MakesNexthopMutationDurableBeforeAcknowledgement) {
+  constexpr char addition[] =
+      R"(<nh-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-base><ipv4-address>192.0.2.1</ipv4-address></nexthop-base></nh-add>)";
+  constexpr char deletion[] =
+      R"(<nh-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-id>1</nexthop-id></nh-delete>)";
+  NexthopRegistry registry;
+  PersistentRegistry written;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeNexthopAdd(
+      &registry, addition, &output, &error, &path,
+      [&](const PersistentRegistry& state, std::string*) {
+        written = state;
+        return true;
+      })) << error;
+  ASSERT_EQ(written.nexthops.size(), 1U);
+  EXPECT_EQ(written.nexthops[0].id, 1U);
+  ASSERT_TRUE(InvokeNexthopDelete(
+      &registry, deletion, &output, &error, &path,
+      [&](const PersistentRegistry& state, std::string*) {
+        written = state;
+        return true;
+      })) << error;
+  EXPECT_TRUE(written.nexthops.empty());
+}
+
+TEST(RibConfigTest, RollsNexthopMutationBackWhenPersistenceFails) {
+  constexpr char addition[] =
+      R"(<nh-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-base><ipv4-address>192.0.2.1</ipv4-address></nexthop-base></nh-add>)";
+  constexpr char deletion[] =
+      R"(<nh-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-id>1</nexthop-id></nh-delete>)";
+  const RegistryWriter failure = [](const PersistentRegistry&, std::string* why) {
+    *why = "injected durable-write failure";
+    return false;
+  };
+  NexthopRegistry registry;
+  std::string output;
+  std::string error;
+  std::string path;
+  EXPECT_FALSE(InvokeNexthopAdd(&registry, addition, &output, &error, &path,
+                                failure));
+  EXPECT_NE(error.find("injected durable-write failure"), std::string::npos);
+  EXPECT_TRUE(registry.PersistentState().nexthops.empty());
+
+  ASSERT_EQ(registry.Add({.rib = "100", .gateway = "192.0.2.1",
+                          .interface = std::nullopt,
+                          .address_family = "ipv4", .sharable = false}), 1U);
+  EXPECT_FALSE(InvokeNexthopDelete(&registry, deletion, &output, &error, &path,
+                                   failure));
+  EXPECT_EQ(registry.PersistentState().nexthops.size(), 1U);
+}
+
 TEST(RibConfigTest, NexthopAddRejectsUnsupportedCompositeForm) {
   NexthopRegistry registry;
   std::string output;

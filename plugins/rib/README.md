@@ -139,8 +139,14 @@ or dangling-reference state. Saving uses a private temporary file, `fsync`,
 atomic rename, and parent-directory `fsync`. The in-memory registry now exports
 and restores that complete representation, rebuilding route reference counts
 and rejecting inconsistent recovery data before changing live state. Wiring
-load/save into plugin startup and mutation acknowledgement—with native-route
-compensation when a durable write fails—remains the next step.
+is now active at plugin startup. By default the sidecar is
+`/var/lib/dangd/rib-nexthops.json`; `DANG_RIB_REGISTRY_FILE` selects a different
+private path for packaging or isolated tests. `nh-add` and `nh-delete` are
+serialized and acknowledged only after the new state is durable. A failed write
+restores the prior objects and allocation cursor before returning an attributed
+RPC error. Completing this boundary for imperative route-binding changes still
+requires compensating the corresponding native route if its registry write
+fails.
 
 Numeric names are an intentional temporary variance: RFC 8431 RIB names are
 arbitrary strings, while Linux policy tables and FreeBSD FIBs need an explicit

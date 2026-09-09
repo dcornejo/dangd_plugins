@@ -56,6 +56,9 @@ class NexthopRegistry {
   /** Replaces an empty process registry with validated durable state. */
   [[nodiscard]] bool RestorePersistentState(const PersistentRegistry& state,
                                             std::string* error);
+  /** Restores a checkpoint while preserving datastore-owned references. */
+  [[nodiscard]] bool ReplacePersistentState(const PersistentRegistry& state,
+                                            std::string* error);
 
  private:
   std::mutex mutex_;
@@ -68,6 +71,10 @@ class NexthopRegistry {
   std::uint32_t next_id_ = 1;
 };
 
+/** Makes one complete registry state durable before an RPC is acknowledged. */
+using RegistryWriter =
+    std::function<bool(const PersistentRegistry&, std::string*)>;
+
 /** Executes the supported RFC 8431 route-add RPC and returns its output XML. */
 [[nodiscard]] bool InvokeRouteAdd(NativePlatform platform,
                                   const char* input_xml,
@@ -76,7 +83,8 @@ class NexthopRegistry {
                                   std::string* error_path,
                                   const CommandRunner& runner = RunNativeCommand,
                                   const NexthopResolver& resolver = {},
-                                  NexthopRegistry* registry = nullptr);
+                                  NexthopRegistry* registry = nullptr,
+                                  const RegistryWriter& writer = {});
 
 /** Injectable route inventory used to resolve route-delete prefix requests. */
 using RouteObserver =
@@ -87,7 +95,8 @@ using RouteObserver =
     NativePlatform platform, const char* input_xml, std::string* output_xml,
     std::string* error, std::string* error_path,
     const CommandRunner& runner = RunNativeCommand,
-    const RouteObserver& observer = {}, NexthopRegistry* registry = nullptr);
+    const RouteObserver& observer = {}, NexthopRegistry* registry = nullptr,
+    const RegistryWriter& writer = {});
 
 /** Updates prefix-selected routes with a base nexthop or route attributes. */
 [[nodiscard]] bool InvokeRouteUpdate(
@@ -96,7 +105,8 @@ using RouteObserver =
     const CommandRunner& runner = RunNativeCommand,
     const RouteObserver& observer = {},
     const NexthopResolver& resolver = {},
-    NexthopRegistry* registry = nullptr);
+    NexthopRegistry* registry = nullptr,
+    const RegistryWriter& writer = {});
 
 /** Validates availability of a native RIB/FIB for the rib-add RPC. */
 [[nodiscard]] bool InvokeRibAdd(NativePlatform platform, const char* input_xml,
@@ -108,21 +118,24 @@ using RouteObserver =
     NativePlatform platform, const char* input_xml, std::string* output_xml,
     std::string* error, std::string* error_path,
     const CommandRunner& runner = RunNativeCommand,
-    const RouteObserver& observer = {}, NexthopRegistry* registry = nullptr);
+    const RouteObserver& observer = {}, NexthopRegistry* registry = nullptr,
+    const RegistryWriter& writer = {});
 
 /** Allocates and retains a portable base nexthop for nh-add. */
 [[nodiscard]] bool InvokeNexthopAdd(NexthopRegistry* registry,
                                     const char* input_xml,
                                     std::string* output_xml,
                                     std::string* error,
-                                    std::string* error_path);
+                                    std::string* error_path,
+                                    const RegistryWriter& writer = {});
 
 /** Removes a previously allocated nexthop for nh-delete. */
 [[nodiscard]] bool InvokeNexthopDelete(NexthopRegistry* registry,
                                        const char* input_xml,
                                        std::string* output_xml,
                                        std::string* error,
-                                       std::string* error_path);
+                                       std::string* error_path,
+                                       const RegistryWriter& writer = {});
 
 }  // namespace dang::rib
 

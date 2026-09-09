@@ -20,6 +20,10 @@ All notable changes to the external dangd plugin collection are recorded here.
   boundary rebuilds allocation state, route bindings, and their reference
   counts, rejects dangling or duplicate durable data before mutation, and
   refuses to overwrite a live process registry.
+- Connected reusable-nexthop startup recovery and `nh-add`/`nh-delete`
+  acknowledgement to the private atomic registry sidecar. RPC mutation is
+  serialized, corrupt state fails closed, and an injected durable-write failure
+  restores the exact prior registry before returning an attributed error.
 - Added a guarded Linux/FreeBSD two-peer FRR RIPng interaction. Each endpoint
   uses disposable ULA interface and loopback addresses, verifies a live
   link-local neighbor and learned `/128`, invokes `clear-ripng-route` on one
