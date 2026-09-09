@@ -226,7 +226,7 @@ int Invoke(void* raw_context, const DangOperationV1* operation,
                                 &owner->nexthops, Writer(owner));
   else if (std::string_view(operation->operation_name) == "rib-add")
     invoked = InvokeRibAdd(kPlatform, operation->input_xml, &rpc_output_xml,
-                           &why, &where);
+                           &why, &where, &owner->nexthops, Writer(owner));
   else if (std::string_view(operation->operation_name) == "rib-delete")
     invoked = InvokeRibDelete(kPlatform, operation->input_xml, &rpc_output_xml,
                               &why, &where, RunNativeCommand, {},

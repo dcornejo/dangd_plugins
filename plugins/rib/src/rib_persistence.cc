@@ -31,8 +31,12 @@ nlohmann::json OptionalJson(const std::optional<std::string>& value) {
 
 nlohmann::json Encode(const PersistentRegistry& value) {
   nlohmann::json result{{"version", 1}, {"next-id", value.next_id},
+                        {"ribs", nlohmann::json::array()},
                         {"nexthops", nlohmann::json::array()},
                         {"bindings", nlohmann::json::array()}};
+  for (const auto& item : value.ribs)
+    result["ribs"].push_back(
+        {{"name", item.name}, {"address-family", item.address_family}});
   for (const auto& item : value.nexthops)
     result["nexthops"].push_back({{"rib", item.rib}, {"id", item.id},
       {"gateway", OptionalJson(item.gateway)},
@@ -117,6 +121,19 @@ bool LoadRegistry(const std::filesystem::path& path, PersistentRegistry* registr
     PersistentRegistry loaded;
     loaded.next_id = json.at("next-id").get<std::uint32_t>();
     if (loaded.next_id == 0) return Fail("registry next-id must be nonzero", error);
+    std::set<std::string> rib_names;
+    // The field is optional so version-1 files written by older builds remain
+    // readable. Such files simply have no modeled family for interface-only
+    // nexthops until rib-add is invoked again.
+    for (const auto& item : json.value("ribs", nlohmann::json::array())) {
+      PersistentRib value{item.at("name").get<std::string>(),
+                          item.at("address-family").get<std::string>()};
+      if (value.name.empty() ||
+          (value.address_family != "ipv4" && value.address_family != "ipv6") ||
+          !rib_names.emplace(value.name).second)
+        return Fail("registry contains an invalid or duplicate RIB", error);
+      loaded.ribs.push_back(std::move(value));
+    }
     std::set<std::pair<std::string, std::uint32_t>> ids;
     for (const auto& item : json.at("nexthops")) {
       PersistentNexthop value{item.at("rib").get<std::string>(), item.at("id").get<std::uint32_t>(),

@@ -16,6 +16,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Persisted the address family established by RFC 8431 `rib-add` and use it as
+  the explicit family for interface-only reusable nexthops. Such nexthops now
+  appear in operational data even before a native route exists; missing and
+  conflicting RIB family context fails closed instead of being inferred from
+  host interfaces.
+
 - Added lossless reusable-nexthop registry export and recovery. The recovery
   boundary rebuilds allocation state, route bindings, and their reference
   counts, rejects dangling or duplicate durable data before mutation, and

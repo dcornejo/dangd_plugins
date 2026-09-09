@@ -12,6 +12,13 @@
 
 namespace dang::rib {
 
+/** One modeled RIB and its explicit address family. */
+struct PersistentRib {
+  std::string name;
+  std::string address_family;
+  bool operator==(const PersistentRib&) const = default;
+};
+
 /** One durable reusable nexthop, independent of transient reference counts. */
 struct PersistentNexthop {
   std::string rib;
@@ -34,6 +41,7 @@ struct PersistentRouteBinding {
 
 struct PersistentRegistry {
   std::uint32_t next_id = 1;
+  std::vector<PersistentRib> ribs;
   std::vector<PersistentNexthop> nexthops;
   std::vector<PersistentRouteBinding> bindings;
   bool operator==(const PersistentRegistry&) const = default;

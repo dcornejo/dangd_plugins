@@ -473,6 +473,75 @@ TEST(RibConfigTest, RibAddValidatesLogicalNamespaceAndRejectsRpf) {
   EXPECT_NE(output.find("RPF"), std::string::npos);
 }
 
+TEST(RibConfigTest, RibAddDurablySuppliesInterfaceOnlyNexthopFamily) {
+  NexthopRegistry registry;
+  PersistentRegistry written;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRibAdd(
+      NativePlatform::kLinux,
+      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv6</address-family></rib-add>)",
+      &output, &error, &path, &registry,
+      [&](const PersistentRegistry& state, std::string*) {
+        written = state;
+        return true;
+      })) << error;
+  ASSERT_EQ(written.ribs.size(), 1U);
+  EXPECT_EQ(written.ribs[0], (PersistentRib{"100", "ipv6"}));
+
+  ASSERT_TRUE(InvokeNexthopAdd(
+      &registry,
+      R"(<nh-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-base><outgoing-interface>dummy0</outgoing-interface></nexthop-base></nh-add>)",
+      &output, &error, &path)) << error;
+  const auto snapshot = registry.Snapshot();
+  ASSERT_EQ(snapshot.size(), 1U);
+  EXPECT_EQ(std::get<1>(snapshot[0]), "ipv6");
+  EXPECT_NE(SerializeOperationalRoutes({}, snapshot).find(
+                "<address-family>ipv6</address-family>"),
+            std::string::npos);
+}
+
+TEST(RibConfigTest, InterfaceOnlyNexthopRejectsMissingOrConflictingRibFamily) {
+  NexthopRegistry registry;
+  std::string output;
+  std::string error;
+  std::string path;
+  constexpr char nexthop[] =
+      R"(<nh-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-base><outgoing-interface>dummy0</outgoing-interface></nexthop-base></nh-add>)";
+  ASSERT_TRUE(InvokeNexthopAdd(&registry, nexthop, &output, &error, &path));
+  EXPECT_NE(output.find("prior rib-add"), std::string::npos);
+  EXPECT_TRUE(registry.PersistentState().nexthops.empty());
+
+  ASSERT_TRUE(InvokeRibAdd(
+      NativePlatform::kLinux,
+      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv4</address-family></rib-add>)",
+      &output, &error, &path, &registry));
+  ASSERT_TRUE(InvokeRibAdd(
+      NativePlatform::kLinux,
+      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv6</address-family></rib-add>)",
+      &output, &error, &path, &registry));
+  EXPECT_NE(output.find("another address family"), std::string::npos);
+  EXPECT_EQ(registry.RibFamily("100"), "ipv4");
+}
+
+TEST(RibConfigTest, RibAddRollsBackFamilyWhenPersistenceFails) {
+  NexthopRegistry registry;
+  std::string output;
+  std::string error;
+  std::string path;
+  EXPECT_FALSE(InvokeRibAdd(
+      NativePlatform::kLinux,
+      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv4</address-family></rib-add>)",
+      &output, &error, &path, &registry,
+      [](const PersistentRegistry&, std::string* why) {
+        *why = "injected RIB-family write failure";
+        return false;
+      }));
+  EXPECT_NE(error.find("injected RIB-family write failure"), std::string::npos);
+  EXPECT_FALSE(registry.RibFamily("100").has_value());
+}
+
 TEST(RibConfigTest, RibDeleteRestoresEarlierRoutesAfterFailure) {
   ObservedRoute first;
   first.route = {.routing_instance = "default", .rib = "100",
@@ -610,6 +679,7 @@ TEST(RibConfigTest, PersistsAndRestoresPrivateRegistryAtomically) {
   const auto state = directory / "registry.json";
   PersistentRegistry expected;
   expected.next_id = 9;
+  expected.ribs.push_back({"100", "ipv4"});
   expected.nexthops.push_back({"100", 7, "192.0.2.1", "dummy0", "ipv4", true});
   expected.nexthops.push_back(
       {"200", 8, std::nullopt, std::nullopt, std::nullopt, false});
@@ -628,6 +698,8 @@ TEST(RibConfigTest, PersistsAndRestoresPrivateRegistryAtomically) {
 
 TEST(RibConfigTest, RebuildsRegistryObjectsBindingsAndReferences) {
   NexthopRegistry original;
+  ASSERT_EQ(original.RegisterRib("100", "ipv4"),
+            NexthopRegistry::RegisterRibResult::kRegistered);
   ASSERT_EQ(original.Add({.rib = "100", .gateway = "192.0.2.1",
                           .interface = "dummy0",
                           .address_family = "ipv4", .sharable = true}), 1U);
@@ -652,6 +724,7 @@ TEST(RibConfigTest, RebuildsRegistryObjectsBindingsAndReferences) {
   EXPECT_EQ(gateway, "192.0.2.1");
   EXPECT_EQ(interface, "dummy0");
   EXPECT_EQ(restored.RouteReference(route), 1U);
+  EXPECT_EQ(restored.RibFamily("100"), "ipv4");
   EXPECT_EQ(restored.Remove("100", 1),
             NexthopRegistry::RemoveResult::kInUse);
   EXPECT_EQ(restored.Add({.rib = "100", .gateway = "192.0.2.2",
@@ -669,6 +742,18 @@ TEST(RibConfigTest, RejectsInconsistentPersistentRegistryRecovery) {
   EXPECT_FALSE(registry.RestorePersistentState(state, &error));
   EXPECT_NE(error.find("invalid route binding"), std::string::npos);
   EXPECT_TRUE(registry.PersistentState().nexthops.empty());
+}
+
+TEST(RibConfigTest, RejectsNexthopThatConflictsWithPersistentRibFamily) {
+  PersistentRegistry state;
+  state.ribs.push_back({"100", "ipv6"});
+  state.nexthops.push_back(
+      {"100", 1, "192.0.2.1", std::nullopt, "ipv4", false});
+  NexthopRegistry registry;
+  std::string error;
+  EXPECT_FALSE(registry.RestorePersistentState(state, &error));
+  EXPECT_NE(error.find("conflicting"), std::string::npos);
+  EXPECT_TRUE(registry.PersistentState().ribs.empty());
 }
 
 TEST(RibConfigTest, MakesNexthopMutationDurableBeforeAcknowledgement) {

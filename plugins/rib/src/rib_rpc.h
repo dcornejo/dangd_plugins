@@ -21,6 +21,7 @@ namespace dang::rib {
 /** Process-local, thread-safe store for RFC 8431 reusable nexthops. */
 class NexthopRegistry {
  public:
+  enum class RegisterRibResult { kRegistered, kExisting, kConflict };
   enum class RemoveResult { kRemoved, kMissing, kInUse };
   struct Entry {
     std::string rib;
@@ -30,6 +31,10 @@ class NexthopRegistry {
     bool sharable = false;
   };
   [[nodiscard]] std::optional<std::uint32_t> Add(Entry entry);
+  /** Records the modeled family used by family-neutral nexthops. */
+  [[nodiscard]] RegisterRibResult RegisterRib(const std::string& rib,
+                                              const std::string& family);
+  [[nodiscard]] std::optional<std::string> RibFamily(const std::string& rib);
   [[nodiscard]] RemoveResult Remove(const std::string& rib, std::uint32_t id);
   [[nodiscard]] bool Retain(const std::string& rib, std::uint32_t id);
   void Release(const std::string& rib, std::uint32_t id);
@@ -63,6 +68,7 @@ class NexthopRegistry {
  private:
   std::mutex mutex_;
   std::map<std::pair<std::string, std::uint32_t>, Entry> entries_;
+  std::map<std::string, std::string> rib_families_;
   std::map<std::pair<std::string, std::uint32_t>, std::size_t> references_;
   std::map<std::pair<std::string, std::uint32_t>, std::size_t>
       configuration_references_;
@@ -111,7 +117,9 @@ using RouteObserver =
 /** Validates availability of a native RIB/FIB for the rib-add RPC. */
 [[nodiscard]] bool InvokeRibAdd(NativePlatform platform, const char* input_xml,
                                 std::string* output_xml, std::string* error,
-                                std::string* error_path);
+                                std::string* error_path,
+                                NexthopRegistry* registry = nullptr,
+                                const RegistryWriter& writer = {});
 
 /** Atomically removes every observed route from the selected native RIB/FIB. */
 [[nodiscard]] bool InvokeRibDelete(

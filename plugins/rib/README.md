@@ -114,7 +114,7 @@ combined nexthop and retains it in a mutex-protected registry scoped by RIB.
 `nh-delete` removes exactly that RIB/identifier pair and reports a modeled
 failure for an unknown pair. This portable registry is intentionally owned by
 the plugin because Linux and FreeBSD do not expose equivalent standalone
-nexthop objects. It is currently volatile. Configuration commits, `route-add`,
+nexthop objects. Configuration commits, `route-add`,
 and prefix-selected `route-update`
 resolve `nexthop-ref` against the
 containing RIB and fail closed for absent or cross-RIB identifiers. Reference
@@ -122,18 +122,23 @@ lifetime is enforced for prepared and active datastore configurations, and
 `nh-delete` reports a modeled failure while such a route retains the object.
 Imperative `route-add` and `route-update` operations retain the same bindings;
 successful `route-delete` and `rib-delete` release them. Registry persistence
-remains before reusable-nexthop semantics are compliant. Operational reads
-publish registered identifiers under their containing RIB. Gateway nexthops
-provide their family directly; interface-only entries require an unambiguous
-observed RIB family and are omitted until one is available.
+is completed before reusable-object and imperative-route RPCs are acknowledged.
+Operational reads publish registered identifiers under their containing RIB.
+Gateway nexthops provide their family directly. `rib-add` durably records the
+modeled family, so an interface-only `nh-add` can be published before the RIB
+contains any observed route. An interface-only request for a RIB that has not
+first been registered fails as a modeled operation rather than guessing from
+interface addresses or host defaults. Re-registering a name with a different
+family likewise fails closed.
 
 Applied datastore reference counts are rebuilt from dangd's reconciled
 configuration snapshot. This makes restart restoration independent of prior
 process memory; prepare-time reservations cover the interval between validation
 and reconciliation.
 
-The persistence layer uses a versioned JSON sidecar containing reusable objects,
-the next allocation identifier, and imperative route bindings. Loading is
+The persistence layer uses a versioned JSON sidecar containing modeled RIB
+families, reusable objects, the next allocation identifier, and imperative
+route bindings. Loading is
 bounded to 16 MiB and rejects non-regular, group/world-accessible, duplicate,
 or dangling-reference state. Saving uses a private temporary file, `fsync`,
 atomic rename, and parent-directory `fsync`. The in-memory registry now exports

@@ -201,6 +201,22 @@ std::optional<std::uint32_t> NexthopRegistry::Add(Entry entry) {
   return std::nullopt;
 }
 
+NexthopRegistry::RegisterRibResult NexthopRegistry::RegisterRib(
+    const std::string& rib, const std::string& family) {
+  std::lock_guard lock(mutex_);
+  const auto [found, inserted] = rib_families_.emplace(rib, family);
+  if (inserted) return RegisterRibResult::kRegistered;
+  return found->second == family ? RegisterRibResult::kExisting
+                                 : RegisterRibResult::kConflict;
+}
+
+std::optional<std::string> NexthopRegistry::RibFamily(const std::string& rib) {
+  std::lock_guard lock(mutex_);
+  const auto found = rib_families_.find(rib);
+  return found == rib_families_.end() ? std::nullopt
+                                      : std::optional(found->second);
+}
+
 NexthopRegistry::RemoveResult NexthopRegistry::Remove(
     const std::string& rib, std::uint32_t id) {
   std::lock_guard lock(mutex_);
@@ -258,6 +274,7 @@ void NexthopRegistry::ForgetRib(const std::string& rib) {
       references_.erase(count);
     route = route_references_.erase(route);
   }
+  rib_families_.erase(rib);
 }
 
 std::optional<std::uint32_t> NexthopRegistry::RouteReference(
@@ -315,6 +332,9 @@ PersistentRegistry NexthopRegistry::PersistentState() {
   std::lock_guard lock(mutex_);
   PersistentRegistry state;
   state.next_id = next_id_;
+  state.ribs.reserve(rib_families_.size());
+  for (const auto& [name, family] : rib_families_)
+    state.ribs.push_back({name, family});
   state.nexthops.reserve(entries_.size());
   for (const auto& [key, entry] : entries_) {
     state.nexthops.push_back({key.first, key.second, entry.gateway,
@@ -337,13 +357,24 @@ bool NexthopRegistry::RestorePersistentState(const PersistentRegistry& state,
     return false;
   }
   std::map<std::pair<std::string, std::uint32_t>, Entry> entries;
+  std::map<std::string, std::string> ribs;
+  for (const auto& item : state.ribs) {
+    if (item.name.empty() ||
+        (item.address_family != "ipv4" && item.address_family != "ipv6") ||
+        !ribs.emplace(item.name, item.address_family).second) {
+      *error = "registry contains an invalid or duplicate RIB";
+      return false;
+    }
+  }
   for (const auto& item : state.nexthops) {
     if (item.rib.empty() || item.id == 0 ||
+        (ribs.contains(item.rib) && item.address_family &&
+         ribs.at(item.rib) != *item.address_family) ||
         !entries.emplace(std::make_pair(item.rib, item.id),
                          Entry{item.rib, item.gateway, item.interface,
                                item.address_family, item.sharable})
              .second) {
-      *error = "registry contains an invalid or duplicate nexthop";
+      *error = "registry contains an invalid, conflicting, or duplicate nexthop";
       return false;
     }
   }
@@ -363,12 +394,13 @@ bool NexthopRegistry::RestorePersistentState(const PersistentRegistry& state,
   }
 
   std::lock_guard lock(mutex_);
-  if (!entries_.empty() || !references_.empty() ||
+  if (!entries_.empty() || !rib_families_.empty() || !references_.empty() ||
       !configuration_references_.empty() || !route_references_.empty()) {
     *error = "persistent state can only restore an empty registry";
     return false;
   }
   entries_ = std::move(entries);
+  rib_families_ = std::move(ribs);
   references_ = std::move(references);
   route_references_ = std::move(bindings);
   next_id_ = state.next_id;
@@ -388,6 +420,7 @@ bool NexthopRegistry::ReplacePersistentState(const PersistentRegistry& state,
     candidate.references_[reference] += count;
   }
   entries_ = std::move(candidate.entries_);
+  rib_families_ = std::move(candidate.rib_families_);
   references_ = std::move(candidate.references_);
   route_references_ = std::move(candidate.route_references_);
   next_id_ = candidate.next_id_;
@@ -708,7 +741,8 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
 
 bool InvokeRibAdd(NativePlatform platform, const char* input_xml,
                   std::string* output_xml, std::string* error,
-                  std::string* error_path) {
+                  std::string* error_path, NexthopRegistry* registry,
+                  const RegistryWriter& writer) {
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "rib-add.xml", nullptr,
@@ -735,6 +769,30 @@ bool InvokeRibAdd(NativePlatform platform, const char* input_xml,
   if (Boolean(Child(root, "ip-rpf-check"))) {
     *output_xml = BooleanOutput(false, "IP RPF checks are not implemented by this provider");
     return true;
+  }
+  if (registry) {
+    const PersistentRegistry before = registry->PersistentState();
+    switch (registry->RegisterRib(name, family)) {
+      case NexthopRegistry::RegisterRibResult::kConflict:
+        *output_xml = BooleanOutput(
+            false, "the RIB name is already registered with another address family");
+        return true;
+      case NexthopRegistry::RegisterRibResult::kRegistered:
+        if (writer) {
+          std::string persistence_error;
+          if (!writer(registry->PersistentState(), &persistence_error)) {
+            std::string restore_error;
+            if (!registry->ReplacePersistentState(before, &restore_error))
+              persistence_error += "; registry rollback failed: " + restore_error;
+            *error = "cannot persist RIB family: " + persistence_error;
+            *error_path = "/ietf-i2rs-rib:rib-add";
+            return false;
+          }
+        }
+        break;
+      case NexthopRegistry::RegisterRibResult::kExisting:
+        break;
+    }
   }
   // Linux tables spring into existence with their first route. FreeBSD FIBs
   // are boot-time objects. In both cases a successful reply means the numeric
@@ -839,6 +897,16 @@ bool InvokeNexthopAdd(NexthopRegistry* registry, const char* input_xml,
   if (!ParseBaseNexthop(root, &entry, &reason)) {
     *output_xml = BooleanOutput(false, reason);
     return true;
+  }
+  // An outgoing interface does not encode an IP family. Require the modeled
+  // RIB context established by rib-add instead of guessing from host state.
+  if (!entry.address_family) {
+    entry.address_family = registry->RibFamily(entry.rib);
+    if (!entry.address_family) {
+      *output_xml = BooleanOutput(
+          false, "interface-only nexthop requires a prior rib-add address family");
+      return true;
+    }
   }
   const PersistentRegistry before = registry->PersistentState();
   const auto id = registry->Add(std::move(entry));
