@@ -157,6 +157,37 @@ bool NumericRib(std::string_view name, NativePlatform platform) {
 #endif
 }
 
+bool PersistRegistryChange(NativePlatform platform, NexthopRegistry* registry,
+                           const PersistentRegistry& before,
+                           const RegistryWriter& writer,
+                           const std::vector<Change>& compensation,
+                           const CommandRunner& runner, std::string_view operation,
+                           std::string* error, std::string* error_path) {
+  if (!registry || !writer) return true;
+  const PersistentRegistry after = registry->PersistentState();
+  if (after == before) return true;
+  std::string persistence_error;
+  if (writer(after, &persistence_error)) return true;
+
+  std::string failure = "cannot persist " + std::string(operation) +
+                        " registry change: " + persistence_error;
+  if (!compensation.empty()) {
+    const ExecutionResult rollback =
+        ExecuteChanges(platform, compensation, runner);
+    if (!rollback.ok) {
+      failure += "; native compensation failed: " + rollback.error;
+      for (const auto& item : rollback.rollback_failures)
+        failure += "; compensation rollback failed: " + item;
+    }
+  }
+  std::string restore_error;
+  if (!registry->ReplacePersistentState(before, &restore_error))
+    failure += "; registry rollback failed: " + restore_error;
+  *error = std::move(failure);
+  *error_path = "/ietf-i2rs-rib:" + std::string(operation);
+  return false;
+}
+
 }  // namespace
 
 std::optional<std::uint32_t> NexthopRegistry::Add(Entry entry) {
@@ -368,7 +399,6 @@ bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
                     std::string* error_path, const CommandRunner& runner,
                     const NexthopResolver& resolver,
                     NexthopRegistry* registry, const RegistryWriter& writer) {
-  (void)writer;
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "route-add.xml", nullptr,
@@ -389,8 +419,11 @@ bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
     return false;
   }
   const bool details = Boolean(Child(root, "return-failure-detail"));
+  const PersistentRegistry before =
+      registry ? registry->PersistentState() : PersistentRegistry{};
   unsigned success = 0;
   std::vector<std::pair<std::uint64_t, unsigned>> failed;
+  std::vector<Route> installed;
   for (xmlNodePtr node = routes_node->children; node; node = node->next) {
     if (!Is(node, "route-list")) continue;
     // Reuse the configuration parser by constructing the equivalent RIB
@@ -436,6 +469,7 @@ bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
         platform, {{ChangeKind::kInstall, route}}, runner);
     if (result.ok) {
       if (registry) registry->BindRoute(route, route.nexthop_ref);
+      installed.push_back(route);
       ++success;
     } else {
       if (route.nexthop_ref)
@@ -443,6 +477,12 @@ bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
       failed.emplace_back(index, 0U);
     }
   }
+  std::vector<Change> compensation;
+  for (auto route = installed.rbegin(); route != installed.rend(); ++route)
+    compensation.push_back({ChangeKind::kDelete, *route});
+  if (!PersistRegistryChange(platform, registry, before, writer, compensation,
+                             runner, "route-add", error, error_path))
+    return false;
   *output_xml = Output(success, failed, details);
   return true;
 }
@@ -453,7 +493,6 @@ bool InvokeRouteDelete(NativePlatform platform, const char* input_xml,
                        const RouteObserver& supplied_observer,
                        NexthopRegistry* registry,
                        const RegistryWriter& writer) {
-  (void)writer;
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "route-delete.xml", nullptr,
@@ -483,8 +522,11 @@ bool InvokeRouteDelete(NativePlatform platform, const char* input_xml,
     return false;
   }
   const bool details = Boolean(Child(root, "return-failure-detail"));
+  const PersistentRegistry before =
+      registry ? registry->PersistentState() : PersistentRegistry{};
   unsigned success = 0;
   std::vector<std::pair<std::uint64_t, unsigned>> failed;
+  std::vector<Route> deleted;
   for (xmlNodePtr node = routes_node->children; node; node = node->next) {
     if (!Is(node, "route-list")) continue;
     std::uint64_t index = 0;
@@ -511,10 +553,17 @@ bool InvokeRouteDelete(NativePlatform platform, const char* input_xml,
         platform, {{ChangeKind::kDelete, route}}, runner);
     if (result.ok) {
       if (registry) registry->ForgetRoute(route);
+      deleted.push_back(route);
       ++success;
     }
     else failed.emplace_back(index, 0U);
   }
+  std::vector<Change> compensation;
+  for (auto route = deleted.rbegin(); route != deleted.rend(); ++route)
+    compensation.push_back({ChangeKind::kInstall, *route});
+  if (!PersistRegistryChange(platform, registry, before, writer, compensation,
+                             runner, "route-delete", error, error_path))
+    return false;
   *output_xml = Output(success, failed, details);
   return true;
 }
@@ -526,7 +575,6 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
                        const NexthopResolver& resolver,
                        NexthopRegistry* registry,
                        const RegistryWriter& writer) {
-  (void)writer;
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "route-update.xml", nullptr,
@@ -554,8 +602,11 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
     return false;
   }
   const bool details = Boolean(Child(root, "return-failure-detail"));
+  const PersistentRegistry before =
+      registry ? registry->PersistentState() : PersistentRegistry{};
   unsigned success = 0;
   std::vector<std::pair<std::uint64_t, unsigned>> failed;
+  std::vector<std::pair<Route, Route>> replacements;
   for (xmlNodePtr node = input_routes->children; node; node = node->next) {
     if (!Is(node, "route-list")) continue;
     std::uint64_t index = 0;
@@ -634,6 +685,7 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
                    {ChangeKind::kInstall, replacement}}, runner);
     if (result.ok) {
       if (registry) registry->BindRoute(replacement, replacement.nexthop_ref);
+      replacements.emplace_back(original, replacement);
       ++success;
     } else {
       if (replacement.nexthop_ref)
@@ -641,6 +693,15 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
       failed.emplace_back(index, 0U);
     }
   }
+  std::vector<Change> compensation;
+  for (auto replacement = replacements.rbegin();
+       replacement != replacements.rend(); ++replacement) {
+    compensation.push_back({ChangeKind::kDelete, replacement->second});
+    compensation.push_back({ChangeKind::kInstall, replacement->first});
+  }
+  if (!PersistRegistryChange(platform, registry, before, writer, compensation,
+                             runner, "route-update", error, error_path))
+    return false;
   *output_xml = Output(success, failed, details);
   return true;
 }
@@ -688,7 +749,6 @@ bool InvokeRibDelete(NativePlatform platform, const char* input_xml,
                      const RouteObserver& observer,
                      NexthopRegistry* registry,
                      const RegistryWriter& writer) {
-  (void)writer;
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "rib-delete.xml", nullptr,
@@ -728,7 +788,16 @@ bool InvokeRibDelete(NativePlatform platform, const char* input_xml,
     return true;
   }
   *output_xml = BooleanOutput(true);
+  const PersistentRegistry before =
+      registry ? registry->PersistentState() : PersistentRegistry{};
   if (registry) registry->ForgetRib(name);
+  std::vector<Change> compensation;
+  for (auto deletion = deletions.rbegin(); deletion != deletions.rend();
+       ++deletion)
+    compensation.push_back({ChangeKind::kInstall, deletion->route});
+  if (!PersistRegistryChange(platform, registry, before, writer, compensation,
+                             runner, "rib-delete", error, error_path))
+    return false;
   return true;
 }
 

@@ -212,25 +212,25 @@ int Invoke(void* raw_context, const DangOperationV1* operation,
     invoked = InvokeRouteAdd(kPlatform, operation->input_xml, &rpc_output_xml,
                              &why, &where, RunNativeCommand,
                              Resolver(static_cast<Context*>(raw_context)),
-                             &owner->nexthops);
+                             &owner->nexthops, Writer(owner));
   else if (std::string_view(operation->operation_name) == "route-delete")
     invoked = InvokeRouteDelete(kPlatform, operation->input_xml,
                                 &rpc_output_xml, &why, &where,
                                 RunNativeCommand, {},
-                                &owner->nexthops);
+                                &owner->nexthops, Writer(owner));
   else if (std::string_view(operation->operation_name) == "route-update")
     invoked = InvokeRouteUpdate(kPlatform, operation->input_xml,
                                 &rpc_output_xml, &why, &where,
                                 RunNativeCommand, {},
                                 Resolver(static_cast<Context*>(raw_context)),
-                                &owner->nexthops);
+                                &owner->nexthops, Writer(owner));
   else if (std::string_view(operation->operation_name) == "rib-add")
     invoked = InvokeRibAdd(kPlatform, operation->input_xml, &rpc_output_xml,
                            &why, &where);
   else if (std::string_view(operation->operation_name) == "rib-delete")
     invoked = InvokeRibDelete(kPlatform, operation->input_xml, &rpc_output_xml,
                               &why, &where, RunNativeCommand, {},
-                              &owner->nexthops);
+                              &owner->nexthops, Writer(owner));
   else if (std::string_view(operation->operation_name) == "nh-add")
     invoked = InvokeNexthopAdd(
         &owner->nexthops, operation->input_xml,

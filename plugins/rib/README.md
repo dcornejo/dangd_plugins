@@ -144,9 +144,13 @@ is now active at plugin startup. By default the sidecar is
 private path for packaging or isolated tests. `nh-add` and `nh-delete` are
 serialized and acknowledged only after the new state is durable. A failed write
 restores the prior objects and allocation cursor before returning an attributed
-RPC error. Completing this boundary for imperative route-binding changes still
-requires compensating the corresponding native route if its registry write
-fails.
+RPC error. Imperative route-binding compensation is implemented for
+`route-add`, `route-delete`,
+`route-update`, and `rib-delete`: a failed write executes the inverse native
+plan in reverse order, restores the prior registry checkpoint, and includes
+any compensation failure in the attributed RPC error. Reusable objects and all
+imperative bindings therefore survive restart without acknowledging a split
+kernel/sidecar state.
 
 Numeric names are an intentional temporary variance: RFC 8431 RIB names are
 arbitrary strings, while Linux policy tables and FreeBSD FIBs need an explicit

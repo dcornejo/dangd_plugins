@@ -414,6 +414,50 @@ TEST(RibConfigTest, RouteUpdateReportsMissingNexthopReference) {
   EXPECT_NE(output.find("<error-code>2</error-code>"), std::string::npos);
 }
 
+TEST(RibConfigTest, RouteUpdateCompensatesWhenBindingSaveFails) {
+  NexthopRegistry registry;
+  ASSERT_EQ(registry.Add({.rib = "100", .gateway = "192.0.2.44",
+                          .interface = "dummy44", .address_family = "ipv4",
+                          .sharable = false}), 1U);
+  ObservedRoute observed;
+  observed.route = {.routing_instance = "default", .rib = "100",
+                    .address_family = "ipv4", .destination = "192.0.2.0/24",
+                    .gateway = "192.0.2.1", .interface = "dummy0",
+                    .nexthop_ref = std::nullopt, .preference = 10};
+  std::vector<NativeCommand> commands;
+  std::string output;
+  std::string error;
+  std::string path;
+  EXPECT_FALSE(InvokeRouteUpdate(
+      NativePlatform::kLinux,
+      R"(<route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><input-routes><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><updated-nexthop><nexthop-base><nexthop-ref>1</nexthop-ref></nexthop-base></updated-nexthop></route-list></input-routes></route-update>)",
+      &output, &error, &path,
+      [&](const NativeCommand& command, std::string*) {
+        commands.push_back(command);
+        return true;
+      },
+      [&](std::vector<ObservedRoute>* routes, std::string*) {
+        *routes = {observed};
+        return true;
+      },
+      [&](const std::string& rib, std::uint32_t id,
+          std::optional<std::string>* gateway,
+          std::optional<std::string>* interface) {
+        return registry.Resolve(rib, id, gateway, interface);
+      },
+      &registry,
+      [](const PersistentRegistry&, std::string* why) {
+        *why = "injected update-binding failure";
+        return false;
+      }));
+  ASSERT_EQ(commands.size(), 4U);
+  EXPECT_EQ(commands[0].arguments[3], "delete");
+  EXPECT_EQ(commands[1].arguments[3], "replace");
+  EXPECT_EQ(commands[2].arguments[3], "delete");
+  EXPECT_EQ(commands[3].arguments[3], "replace");
+  EXPECT_FALSE(registry.RouteReference(observed.route).has_value());
+}
+
 TEST(RibConfigTest, RibAddValidatesLogicalNamespaceAndRejectsRpf) {
   std::string output;
   std::string error;
@@ -455,6 +499,45 @@ TEST(RibConfigTest, RibDeleteRestoresEarlierRoutesAfterFailure) {
       }));
   EXPECT_EQ(calls, 3U);
   EXPECT_NE(output.find(">false</result>"), std::string::npos);
+}
+
+TEST(RibConfigTest, RibDeleteCompensatesWhenBindingSaveFails) {
+  NexthopRegistry registry;
+  ASSERT_EQ(registry.Add({.rib = "100", .gateway = "192.0.2.1",
+                          .interface = "dummy0", .address_family = "ipv4",
+                          .sharable = false}), 1U);
+  ObservedRoute observed;
+  observed.route = {.routing_instance = "default", .rib = "100",
+                    .address_family = "ipv4", .destination = "192.0.2.0/24",
+                    .gateway = "192.0.2.1", .interface = "dummy0",
+                    .nexthop_ref = std::nullopt};
+  ASSERT_TRUE(registry.Retain("100", 1));
+  registry.BindRoute(observed.route, 1);
+  std::vector<NativeCommand> commands;
+  std::string output;
+  std::string error;
+  std::string path;
+  EXPECT_FALSE(InvokeRibDelete(
+      NativePlatform::kLinux,
+      R"(<rib-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name></rib-delete>)",
+      &output, &error, &path,
+      [&](const NativeCommand& command, std::string*) {
+        commands.push_back(command);
+        return true;
+      },
+      [&](std::vector<ObservedRoute>* routes, std::string*) {
+        *routes = {observed};
+        return true;
+      },
+      &registry,
+      [](const PersistentRegistry&, std::string* why) {
+        *why = "injected rib-binding failure";
+        return false;
+      }));
+  ASSERT_EQ(commands.size(), 2U);
+  EXPECT_EQ(commands[0].arguments[3], "delete");
+  EXPECT_EQ(commands[1].arguments[3], "replace");
+  EXPECT_EQ(registry.RouteReference(observed.route), 1U);
 }
 
 TEST(RibConfigTest, NexthopLifecycleAllocatesAndScopesIdentifiersByRib) {
@@ -749,6 +832,84 @@ TEST(RibConfigTest, RouteAddExecutesResolvedRegisteredNexthop) {
       }, &registry));
   ASSERT_TRUE(InvokeNexthopDelete(&registry, nh_delete, &output, &error, &path));
   EXPECT_NE(output.find(">true</result>"), std::string::npos) << output;
+}
+
+TEST(RibConfigTest, RouteAddCompensatesNativeStateWhenBindingSaveFails) {
+  NexthopRegistry registry;
+  ASSERT_EQ(registry.Add({.rib = "100", .gateway = "192.0.2.9",
+                          .interface = "dummy9", .address_family = "ipv4",
+                          .sharable = false}), 1U);
+  std::vector<NativeCommand> commands;
+  std::string output;
+  std::string error;
+  std::string path;
+  EXPECT_FALSE(InvokeRouteAdd(
+      NativePlatform::kLinux,
+      R"(<route-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><routes><route-list><route-index>9</route-index><match><ipv4><dest-ipv4-prefix>198.51.100.0/24</dest-ipv4-prefix></ipv4></match><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes><nexthop><nexthop-base><nexthop-ref>1</nexthop-ref></nexthop-base></nexthop></route-list></routes></route-add>)",
+      &output, &error, &path,
+      [&](const NativeCommand& command, std::string*) {
+        commands.push_back(command);
+        return true;
+      },
+      [&](const std::string& rib, std::uint32_t id,
+          std::optional<std::string>* gateway,
+          std::optional<std::string>* interface) {
+        return registry.Resolve(rib, id, gateway, interface);
+      },
+      &registry,
+      [](const PersistentRegistry&, std::string* why) {
+        *why = "injected binding-write failure";
+        return false;
+      }));
+  ASSERT_EQ(commands.size(), 2U);
+  EXPECT_EQ(commands[0].arguments[3], "replace");
+  EXPECT_EQ(commands[1].arguments[3], "delete");
+  EXPECT_NE(error.find("injected binding-write failure"), std::string::npos);
+  Route route;
+  route.rib = "100";
+  route.address_family = "ipv4";
+  route.destination = "198.51.100.0/24";
+  EXPECT_FALSE(registry.RouteReference(route).has_value());
+}
+
+TEST(RibConfigTest, RouteDeleteRestoresNativeStateWhenBindingSaveFails) {
+  NexthopRegistry registry;
+  ASSERT_EQ(registry.Add({.rib = "100", .gateway = "192.0.2.9",
+                          .interface = "dummy9", .address_family = "ipv4",
+                          .sharable = false}), 1U);
+  ObservedRoute observed;
+  observed.route = {.routing_instance = "default", .rib = "100",
+                    .address_family = "ipv4", .index = 9,
+                    .destination = "198.51.100.0/24",
+                    .gateway = "192.0.2.9", .interface = "dummy9",
+                    .nexthop_ref = std::nullopt, .preference = 10};
+  ASSERT_TRUE(registry.Retain("100", 1));
+  registry.BindRoute(observed.route, 1);
+  std::vector<NativeCommand> commands;
+  std::string output;
+  std::string error;
+  std::string path;
+  EXPECT_FALSE(InvokeRouteDelete(
+      NativePlatform::kLinux,
+      R"(<route-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><routes><route-list><route-index>9</route-index><match><ipv4><dest-ipv4-prefix>198.51.100.0/24</dest-ipv4-prefix></ipv4></match></route-list></routes></route-delete>)",
+      &output, &error, &path,
+      [&](const NativeCommand& command, std::string*) {
+        commands.push_back(command);
+        return true;
+      },
+      [&](std::vector<ObservedRoute>* routes, std::string*) {
+        *routes = {observed};
+        return true;
+      },
+      &registry,
+      [](const PersistentRegistry&, std::string* why) {
+        *why = "injected binding-write failure";
+        return false;
+      }));
+  ASSERT_EQ(commands.size(), 2U);
+  EXPECT_EQ(commands[0].arguments[3], "delete");
+  EXPECT_EQ(commands[1].arguments[3], "replace");
+  EXPECT_EQ(registry.RouteReference(observed.route), 1U);
 }
 
 }  // namespace

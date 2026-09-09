@@ -24,6 +24,10 @@ All notable changes to the external dangd plugin collection are recorded here.
   acknowledgement to the private atomic registry sidecar. RPC mutation is
   serialized, corrupt state fails closed, and an injected durable-write failure
   restores the exact prior registry before returning an attributed error.
+- Made imperative `route-add`, `route-delete`, `route-update`, and `rib-delete`
+  bindings durable before acknowledgement. A sidecar failure runs the complete
+  inverse native plan, restores the prior registry checkpoint, and reports any
+  native or registry compensation failure alongside the write error.
 - Added a guarded Linux/FreeBSD two-peer FRR RIPng interaction. Each endpoint
   uses disposable ULA interface and loopback addresses, verifies a live
   link-local neighbor and learned `/128`, invokes `clear-ripng-route` on one
