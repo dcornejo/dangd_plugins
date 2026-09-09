@@ -160,12 +160,12 @@ loopback, and removes that address and every daemon on exit. For example:
 ```sh
 # Linux peer (10.10.12.21 on eth0)
 sudo tests/run_frr_rip_peer_native.sh --allow-private-lan-test \
-  build/frr-mgmtd-session-check eth0 10.10.12.0/24 \
+  clear build/frr-mgmtd-session-check eth0 10.10.12.0/24 \
   198.51.100.6/32 10.10.12.11 198.51.100.5/32
 
 # FreeBSD peer (10.10.12.11 on vtnet0), launched at the same time
 sudo tests/run_frr_rip_peer_native.sh --allow-private-lan-test \
-  build/frr-mgmtd-session-check vtnet0 10.10.12.0/24 \
+  hold build/frr-mgmtd-session-check vtnet0 10.10.12.0/24 \
   198.51.100.5/32 10.10.12.21 198.51.100.6/32
 ```
 
@@ -173,7 +173,12 @@ The opt-in flag is intentionally explicit because the test exchanges real RIP
 packets. Never select an interface connected to a production, management, or
 untrusted network. Success requires the native operational tree to contain the
 peer as a neighbor and the peer `/32` as a learned route with protocol `rip`;
-configuration-only visibility is insufficient.
+configuration-only visibility is insufficient. Assign exactly one side the
+`clear` role and the other the `hold` role. The clear side invokes the modeled
+native `clear-rip-route` RPC without input, requires that learned entry to
+disappear, and then requires it to be learned again while the hold side remains
+an active advertiser. This proves a successful RPC reply corresponds to live
+backend behavior rather than an acknowledged no-op.
 
 After every successful apply, ABI-v6 reconciliation reads every managed root
 back from FRR's running datastore. This always includes

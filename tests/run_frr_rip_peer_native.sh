@@ -9,19 +9,21 @@
 set -eu
 
 usage() {
-  echo "usage: sudo $0 --allow-private-lan-test SESSION_CHECK INTERFACE LAN_PREFIX LOCAL_LOOPBACK PEER_ADDRESS PEER_LOOPBACK" >&2
+  echo "usage: sudo $0 --allow-private-lan-test clear|hold SESSION_CHECK INTERFACE LAN_PREFIX LOCAL_LOOPBACK PEER_ADDRESS PEER_LOOPBACK" >&2
   exit 2
 }
 
-[ "$#" -eq 7 ] || usage
+[ "$#" -eq 8 ] || usage
 [ "$1" = "--allow-private-lan-test" ] || usage
 [ "$(id -u)" -eq 0 ] || usage
-session_probe=$2
-interface=$3
-lan_prefix=$4
-local_loopback=$5
-peer_address=$6
-peer_loopback=$7
+role=$2
+[ "$role" = clear ] || [ "$role" = hold ] || usage
+session_probe=$3
+interface=$4
+lan_prefix=$5
+local_loopback=$6
+peer_address=$7
+peer_loopback=$8
 case "$lan_prefix:$local_loopback:$peer_address:$peer_loopback" in
   *[!0-9./:a-fA-F]*) usage ;;
 esac
@@ -140,17 +142,17 @@ configuration='<ripd xmlns="http://frrouting.org/yang/ripd"><instance><vrf>defau
 "$session_probe" "$run_dir/mgmtd_fe.sock" --replace \
   /frr-ripd:ripd "$configuration" >/dev/null
 
+learned_route='<route><prefix>'"$peer_loopback"'</prefix><nexthops><nexthop><nh-type>ip4</nh-type><protocol>rip</protocol>'
+has_learned_state() {
+  printf '%s' "$1" | grep -Fq "<address>$peer_address</address>" &&
+    printf '%s' "$1" | grep -Fq "$learned_route"
+}
+
 attempt=0
 while :; do
   attempt=$((attempt + 1))
   state=$("$session_probe" "$run_dir/mgmtd_fe.sock" --operational /frr-ripd:ripd)
-  learned_route='<route><prefix>'"$peer_loopback"'</prefix><nexthops><nexthop><nh-type>ip4</nh-type><protocol>rip</protocol>'
-  if printf '%s' "$state" | grep -Fq "<address>$peer_address</address>" &&
-     printf '%s' "$state" | grep -Fq "$learned_route"; then
-    printf '%s\n' "$state"
-    echo "PASS: learned $peer_loopback from RIP neighbor $peer_address on $interface"
-    exit 0
-  fi
+  has_learned_state "$state" && break
   [ "$attempt" -lt 60 ] || {
     echo "RIP neighbor or learned route did not appear" >&2
     printf '%s\n' "$state" >&2
@@ -158,3 +160,45 @@ while :; do
   }
   sleep 2
 done
+
+if [ "$role" = hold ]; then
+  # Keep one advertiser alive across the other endpoint's destructive RPC and
+  # the normal 30-second RIP update interval. Symmetric clearing can leave both
+  # peers waiting without a protocol event that triggers re-advertisement.
+  sleep 60
+  state=$("$session_probe" "$run_dir/mgmtd_fe.sock" --operational /frr-ripd:ripd)
+  has_learned_state "$state" || {
+    echo "holding RIP peer lost its learned state" >&2
+    printf '%s\n' "$state" >&2
+    exit 1
+  }
+  echo "PASS: held RIP advertisement for clear-rip-route peer on $interface"
+  exit 0
+fi
+
+# Exercise the enabled module's modeled RPC against an actual learned route.
+# An acknowledged no-op is not sufficient: the route must disappear from the
+# native operational tree and subsequently be learned again from the live peer.
+"$session_probe" "$run_dir/mgmtd_fe.sock" --rpc \
+  /frr-ripd:clear-rip-route >/dev/null
+cleared_state=$("$session_probe" "$run_dir/mgmtd_fe.sock" --operational /frr-ripd:ripd)
+if printf '%s' "$cleared_state" | grep -Fq "$learned_route"; then
+  echo "clear-rip-route returned success but retained $peer_loopback" >&2
+  printf '%s\n' "$cleared_state" >&2
+  exit 1
+fi
+
+attempt=0
+while :; do
+  attempt=$((attempt + 1))
+  state=$("$session_probe" "$run_dir/mgmtd_fe.sock" --operational /frr-ripd:ripd)
+  has_learned_state "$state" && break
+  [ "$attempt" -lt 60 ] || {
+    echo "RIP route did not return after clear-rip-route" >&2
+    printf '%s\n' "$state" >&2
+    exit 1
+  }
+  sleep 2
+done
+printf '%s\n' "$state"
+echo "PASS: learned, cleared, and relearned $peer_loopback from RIP neighbor $peer_address on $interface"
