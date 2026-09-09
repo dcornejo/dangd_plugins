@@ -9,6 +9,9 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added a guarded Linux/FreeBSD two-peer FRR RIP interaction that verifies
+  native neighbor state and an actually learned route over a sterile private
+  LAN, using programmatic mgmtd configuration and operational reads.
 - Extended the isolated FRR mutation diagnostic with an optional operational
   read performed while the committed configuration is live. The RIP and RIPng
   native interaction now requires their default instances to appear through

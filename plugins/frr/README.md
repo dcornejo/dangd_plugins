@@ -151,6 +151,30 @@ is therefore blocked upstream. FreeBSD compilation passes, but repeating an
 already identified platform-independent mgmtd assertion there would not supply
 successful interoperability evidence.
 
+The separate `run_frr_rip_peer_native.sh` test supplies successful learned
+state evidence across two disposable hosts. Run it concurrently on Linux and
+FreeBSD peers whose named interfaces share a sterile private LAN; it enables
+RIP only in disposable FRR pathspaces, adds one temporary `/32` to each
+loopback, and removes that address and every daemon on exit. For example:
+
+```sh
+# Linux peer (10.10.12.21 on eth0)
+sudo tests/run_frr_rip_peer_native.sh --allow-private-lan-test \
+  build/frr-mgmtd-session-check eth0 10.10.12.0/24 \
+  198.51.100.6/32 10.10.12.11 198.51.100.5/32
+
+# FreeBSD peer (10.10.12.11 on vtnet0), launched at the same time
+sudo tests/run_frr_rip_peer_native.sh --allow-private-lan-test \
+  build/frr-mgmtd-session-check vtnet0 10.10.12.0/24 \
+  198.51.100.5/32 10.10.12.21 198.51.100.6/32
+```
+
+The opt-in flag is intentionally explicit because the test exchanges real RIP
+packets. Never select an interface connected to a production, management, or
+untrusted network. Success requires the native operational tree to contain the
+peer as a neighbor and the peer `/32` as a learned route with protocol `rip`;
+configuration-only visibility is insufficient.
+
 After every successful apply, ABI-v6 reconciliation reads every managed root
 back from FRR's running datastore. This always includes
 `/frr-routing:routing` and `/frr-zebra:zebra`, and conditionally includes live
