@@ -100,9 +100,28 @@ TEST(RibConfigTest, ProducesShellFreeLinuxAndFreeBsdCommands) {
 
   Route directly_connected = config.routes[0];
   directly_connected.gateway.reset();
+  ASSERT_TRUE(BuildFreeBsdCommands(
+      {{ChangeKind::kInstall, directly_connected}}, &commands, &error, &path,
+      [](const std::string& interface, const std::string& family,
+         std::string* address, std::string*) {
+        if (interface != "dummy0" || family != "ipv4") return false;
+        *address = "198.51.100.254";
+        return true;
+      })) << error;
+  EXPECT_EQ(commands[0].arguments,
+            (std::vector<std::string>{"route", "-n", "add", "-inet", "-fib",
+                                      "100", "192.0.2.0/24", "198.51.100.254",
+                                      "-ifp", "dummy0"}));
+
   EXPECT_FALSE(BuildFreeBsdCommands(
-      {{ChangeKind::kInstall, directly_connected}}, &commands, &error, &path));
-  EXPECT_NE(error.find("address resolution"), std::string::npos);
+      {{ChangeKind::kInstall, directly_connected}}, &commands, &error, &path,
+      [](const std::string&, const std::string&, std::string*,
+         std::string* why) {
+        *why = "outgoing interface has multiple usable local ipv4 addresses";
+        return false;
+      }));
+  EXPECT_NE(error.find("multiple usable"), std::string::npos);
+  EXPECT_NE(path.find("/nexthop"), std::string::npos);
 }
 
 TEST(RibConfigTest, CompensatesCompletedCommandsInReverseAfterFailure) {

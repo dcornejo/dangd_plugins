@@ -7,6 +7,13 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Enabled FreeBSD interface-only RFC 8431 nexthops by resolving exactly one
+  usable local address in the route family through `getifaddrs(3)`. Automatic
+  IPv6 link-local addresses are excluded and zero or multiple candidates fail
+  at the modeled nexthop path instead of selecting an arbitrary address.
+
 ### Added
 
 - Added a guarded Linux/FreeBSD two-peer FRR RIPng interaction. Each endpoint

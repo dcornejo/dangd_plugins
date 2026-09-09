@@ -4,6 +4,7 @@
 #ifndef DANG_PLUGINS_RIB_PLATFORM_COMMAND_H_
 #define DANG_PLUGINS_RIB_PLATFORM_COMMAND_H_
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,11 @@ struct NativeCommand {
   std::vector<std::string> arguments;
 };
 
+/** Resolves one unambiguous local address for an interface and IP family. */
+using InterfaceAddressResolver = std::function<bool(
+    const std::string& interface, const std::string& address_family,
+    std::string* address, std::string* error)>;
+
 /** Maps a checked portable plan to Linux iproute2 argv vectors. */
 [[nodiscard]] bool BuildLinuxCommands(const std::vector<Change>& changes,
                                       std::vector<NativeCommand>* commands,
@@ -26,7 +32,9 @@ struct NativeCommand {
 [[nodiscard]] bool BuildFreeBsdCommands(const std::vector<Change>& changes,
                                         std::vector<NativeCommand>* commands,
                                         std::string* error,
-                                        std::string* error_path);
+                                        std::string* error_path,
+                                        const InterfaceAddressResolver&
+                                            resolver = {});
 
 }  // namespace dang::rib
 

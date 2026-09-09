@@ -6,10 +6,12 @@
 #include "plugins/rib/src/platform_command.h"
 #include "plugins/rib/src/route_observer.h"
 
+#include <algorithm>
 #include <charconv>
 
 #if defined(__FreeBSD__)
 #include <arpa/inet.h>
+#include <ifaddrs.h>
 #include <net/if.h>
 #include <net/route.h>
 #include <netinet/in.h>
@@ -22,6 +24,62 @@
 
 namespace dang::rib {
 namespace {
+
+bool ResolveInterfaceAddress(const std::string& interface,
+                             const std::string& address_family,
+                             std::string* address, std::string* error) {
+#if !defined(__FreeBSD__)
+  (void)interface;
+  (void)address_family;
+  (void)address;
+  *error = "native FreeBSD interface address resolution is unavailable";
+  return false;
+#else
+  ifaddrs* raw = nullptr;
+  if (getifaddrs(&raw) != 0) {
+    *error = "cannot enumerate interface addresses: " +
+             std::string(std::strerror(errno));
+    return false;
+  }
+  std::vector<std::string> candidates;
+  const int family = address_family == "ipv4" ? AF_INET : AF_INET6;
+  for (const ifaddrs* item = raw; item; item = item->ifa_next) {
+    if (!item->ifa_name || interface != item->ifa_name || !item->ifa_addr ||
+        item->ifa_addr->sa_family != family)
+      continue;
+    const void* bytes = nullptr;
+    if (family == AF_INET) {
+      const auto* value = reinterpret_cast<const sockaddr_in*>(item->ifa_addr);
+      if (value->sin_addr.s_addr == INADDR_ANY) continue;
+      bytes = &value->sin_addr;
+    } else {
+      const auto* value = reinterpret_cast<const sockaddr_in6*>(item->ifa_addr);
+      if (IN6_IS_ADDR_UNSPECIFIED(&value->sin6_addr) ||
+          IN6_IS_ADDR_MULTICAST(&value->sin6_addr) ||
+          IN6_IS_ADDR_LINKLOCAL(&value->sin6_addr))
+        continue;
+      bytes = &value->sin6_addr;
+    }
+    char text[INET6_ADDRSTRLEN]{};
+    if (inet_ntop(family, bytes, text, sizeof(text)))
+      candidates.emplace_back(text);
+  }
+  freeifaddrs(raw);
+  std::sort(candidates.begin(), candidates.end());
+  candidates.erase(std::unique(candidates.begin(), candidates.end()),
+                   candidates.end());
+  if (candidates.size() != 1U) {
+    *error = candidates.empty()
+                 ? "outgoing interface has no usable local " + address_family +
+                       " address"
+                 : "outgoing interface has multiple usable local " +
+                       address_family + " addresses";
+    return false;
+  }
+  *address = candidates.front();
+  return true;
+#endif
+}
 
 bool SafeFibAndInterface(const Route& route, std::string* error,
                          std::string* path) {
@@ -45,7 +103,8 @@ bool SafeFibAndInterface(const Route& route, std::string* error,
 
 bool BuildFreeBsdCommands(const std::vector<Change>& changes,
                           std::vector<NativeCommand>* commands,
-                          std::string* error, std::string* error_path) {
+                          std::string* error, std::string* error_path,
+                          const InterfaceAddressResolver& supplied_resolver) {
   if (!commands || !error || !error_path) return false;
   commands->clear();
   for (const Change& change : changes) {
@@ -61,16 +120,25 @@ bool BuildFreeBsdCommands(const std::vector<Change>& changes,
         command.arguments.insert(command.arguments.end(),
                                  {"-ifp", *change.route.interface});
     } else if (change.route.interface) {
-      // Ethernet interface routes require the interface's local address as
-      // the route(8) gateway argument. Resolving that address belongs in the
-      // later observed-state adapter; guessing from only an interface-ref can
-      // select the wrong address on a multihomed interface.
-      *error = "FreeBSD interface-only nexthops require native interface "
-               "address resolution";
-      *error_path =
-          "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop";
-      commands->clear();
-      return false;
+      // route(8) represents an Ethernet interface route using one of the
+      // interface's local addresses as its gateway argument. Never guess on a
+      // multihomed interface: require exactly one usable address in the route
+      // family, excluding automatic IPv6 link-local addresses.
+      std::string local_address;
+      const auto& resolver = supplied_resolver
+                                 ? supplied_resolver
+                                 : InterfaceAddressResolver(
+                                       ResolveInterfaceAddress);
+      if (!resolver(*change.route.interface, change.route.address_family,
+                    &local_address, error)) {
+        *error_path =
+            "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop";
+        commands->clear();
+        return false;
+      }
+      command.arguments.push_back(local_address);
+      command.arguments.insert(command.arguments.end(),
+                               {"-ifp", *change.route.interface});
     }
     commands->push_back(std::move(command));
   }

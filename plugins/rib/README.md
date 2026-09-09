@@ -144,10 +144,15 @@ arbitrary strings, while Linux policy tables and FreeBSD FIBs need an explicit
 platform mapping. A future plugin option must supply that mapping before this
 restriction can be removed safely.
 
-FreeBSD interface-only nexthops remain rejected because `route(8)` needs a
-local interface address as its gateway argument for an Ethernet route. The
-operational adapter must resolve that address unambiguously before this case is
-enabled; gateway-plus-interface routes are natively validated now.
+FreeBSD interface-only nexthops resolve the interface's local address through
+`getifaddrs(3)` because `route(8)` requires that address as the gateway argument
+for an Ethernet route. Resolution is restricted to the route's address family,
+ignores unspecified, multicast, and automatic IPv6 link-local addresses, and
+requires exactly one candidate. An unnumbered or multihomed interface fails at
+the modeled nexthop path rather than choosing an arbitrary address. A live
+FreeBSD 16.0-CURRENT test installed and removed an IPv4 interface route through
+the isolated `vtnet0`; adding a second IPv4 address produced the expected
+ambiguity failure without changing the FIB.
 
 Tests must use Linux network namespaces or FreeBSD VNET jails with only
 disposable loopback/epair interfaces. They must never add, remove, or replace a
