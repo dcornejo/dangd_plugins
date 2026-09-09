@@ -136,8 +136,11 @@ The persistence layer uses a versioned JSON sidecar containing reusable objects,
 the next allocation identifier, and imperative route bindings. Loading is
 bounded to 16 MiB and rejects non-regular, group/world-accessible, duplicate,
 or dangling-reference state. Saving uses a private temporary file, `fsync`,
-atomic rename, and parent-directory `fsync`. Wiring this codec into registry
-mutation acknowledgement remains the next step.
+atomic rename, and parent-directory `fsync`. The in-memory registry now exports
+and restores that complete representation, rebuilding route reference counts
+and rejecting inconsistent recovery data before changing live state. Wiring
+load/save into plugin startup and mutation acknowledgement—with native-route
+compensation when a durable write fails—remains the next step.
 
 Numeric names are an intentional temporary variance: RFC 8431 RIB names are
 arbitrary strings, while Linux policy tables and FreeBSD FIBs need an explicit

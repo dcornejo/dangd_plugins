@@ -13,6 +13,7 @@
 #include <tuple>
 
 #include "plugins/rib/src/platform_executor.h"
+#include "plugins/rib/src/rib_persistence.h"
 #include "plugins/rib/src/route_observer.h"
 
 namespace dang::rib {
@@ -50,6 +51,11 @@ class NexthopRegistry {
   [[nodiscard]] bool Resolve(const std::string& rib, std::uint32_t id,
                              std::optional<std::string>* gateway,
                              std::optional<std::string>* interface);
+  /** Captures every durable object, allocation cursor, and route binding. */
+  [[nodiscard]] PersistentRegistry PersistentState();
+  /** Replaces an empty process registry with validated durable state. */
+  [[nodiscard]] bool RestorePersistentState(const PersistentRegistry& state,
+                                            std::string* error);
 
  private:
   std::mutex mutex_;

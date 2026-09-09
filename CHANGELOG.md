@@ -16,6 +16,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added lossless reusable-nexthop registry export and recovery. The recovery
+  boundary rebuilds allocation state, route bindings, and their reference
+  counts, rejects dangling or duplicate durable data before mutation, and
+  refuses to overwrite a live process registry.
 - Added a guarded Linux/FreeBSD two-peer FRR RIPng interaction. Each endpoint
   uses disposable ULA interface and loopback addresses, verifies a live
   link-local neighbor and learned `/128`, invokes `clear-ripng-route` on one

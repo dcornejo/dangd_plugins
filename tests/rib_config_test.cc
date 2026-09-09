@@ -543,6 +543,51 @@ TEST(RibConfigTest, PersistsAndRestoresPrivateRegistryAtomically) {
   std::filesystem::remove_all(directory);
 }
 
+TEST(RibConfigTest, RebuildsRegistryObjectsBindingsAndReferences) {
+  NexthopRegistry original;
+  ASSERT_EQ(original.Add({.rib = "100", .gateway = "192.0.2.1",
+                          .interface = "dummy0",
+                          .address_family = "ipv4", .sharable = true}), 1U);
+  Route route;
+  route.rib = "100";
+  route.address_family = "ipv4";
+  route.destination = "198.51.100.0/24";
+  ASSERT_TRUE(original.Retain("100", 1));
+  original.BindRoute(route, 1);
+
+  const PersistentRegistry state = original.PersistentState();
+  ASSERT_EQ(state.nexthops.size(), 1U);
+  ASSERT_EQ(state.bindings.size(), 1U);
+  EXPECT_EQ(state.bindings[0].destination, route.destination);
+
+  NexthopRegistry restored;
+  std::string error;
+  ASSERT_TRUE(restored.RestorePersistentState(state, &error)) << error;
+  std::optional<std::string> gateway;
+  std::optional<std::string> interface;
+  ASSERT_TRUE(restored.Resolve("100", 1, &gateway, &interface));
+  EXPECT_EQ(gateway, "192.0.2.1");
+  EXPECT_EQ(interface, "dummy0");
+  EXPECT_EQ(restored.RouteReference(route), 1U);
+  EXPECT_EQ(restored.Remove("100", 1),
+            NexthopRegistry::RemoveResult::kInUse);
+  EXPECT_EQ(restored.Add({.rib = "100", .gateway = "192.0.2.2",
+                          .interface = std::nullopt,
+                          .address_family = "ipv4", .sharable = false}), 2U);
+}
+
+TEST(RibConfigTest, RejectsInconsistentPersistentRegistryRecovery) {
+  PersistentRegistry state;
+  state.nexthops.push_back(
+      {"100", 1, "192.0.2.1", std::nullopt, "ipv4", false});
+  state.bindings.push_back({"100", "ipv4", "198.51.100.0/24", 2});
+  NexthopRegistry registry;
+  std::string error;
+  EXPECT_FALSE(registry.RestorePersistentState(state, &error));
+  EXPECT_NE(error.find("invalid route binding"), std::string::npos);
+  EXPECT_TRUE(registry.PersistentState().nexthops.empty());
+}
+
 TEST(RibConfigTest, NexthopAddRejectsUnsupportedCompositeForm) {
   NexthopRegistry registry;
   std::string output;

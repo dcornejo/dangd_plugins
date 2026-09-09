@@ -280,6 +280,70 @@ bool NexthopRegistry::Resolve(const std::string& rib, std::uint32_t id,
   return true;
 }
 
+PersistentRegistry NexthopRegistry::PersistentState() {
+  std::lock_guard lock(mutex_);
+  PersistentRegistry state;
+  state.next_id = next_id_;
+  state.nexthops.reserve(entries_.size());
+  for (const auto& [key, entry] : entries_) {
+    state.nexthops.push_back({key.first, key.second, entry.gateway,
+                              entry.interface, entry.address_family,
+                              entry.sharable});
+  }
+  state.bindings.reserve(route_references_.size());
+  for (const auto& [route, id] : route_references_) {
+    state.bindings.push_back(
+        {std::get<0>(route), std::get<1>(route), std::get<2>(route), id});
+  }
+  return state;
+}
+
+bool NexthopRegistry::RestorePersistentState(const PersistentRegistry& state,
+                                             std::string* error) {
+  if (!error) return false;
+  if (state.next_id == 0) {
+    *error = "registry next-id must be nonzero";
+    return false;
+  }
+  std::map<std::pair<std::string, std::uint32_t>, Entry> entries;
+  for (const auto& item : state.nexthops) {
+    if (item.rib.empty() || item.id == 0 ||
+        !entries.emplace(std::make_pair(item.rib, item.id),
+                         Entry{item.rib, item.gateway, item.interface,
+                               item.address_family, item.sharable})
+             .second) {
+      *error = "registry contains an invalid or duplicate nexthop";
+      return false;
+    }
+  }
+  std::map<std::tuple<std::string, std::string, std::string>, std::uint32_t>
+      bindings;
+  std::map<std::pair<std::string, std::uint32_t>, std::size_t> references;
+  for (const auto& item : state.bindings) {
+    const auto nexthop = std::make_pair(item.rib, item.nexthop_id);
+    const auto route =
+        std::make_tuple(item.rib, item.address_family, item.destination);
+    if (!entries.contains(nexthop) || item.address_family.empty() ||
+        item.destination.empty() || !bindings.emplace(route, item.nexthop_id).second) {
+      *error = "registry contains an invalid route binding";
+      return false;
+    }
+    ++references[nexthop];
+  }
+
+  std::lock_guard lock(mutex_);
+  if (!entries_.empty() || !references_.empty() ||
+      !configuration_references_.empty() || !route_references_.empty()) {
+    *error = "persistent state can only restore an empty registry";
+    return false;
+  }
+  entries_ = std::move(entries);
+  references_ = std::move(references);
+  route_references_ = std::move(bindings);
+  next_id_ = state.next_id;
+  return true;
+}
+
 bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
                     std::string* output_xml, std::string* error,
                     std::string* error_path, const CommandRunner& runner,
