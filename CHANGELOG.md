@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added a guarded Linux/FreeBSD two-peer FRR RIPng interaction. Each endpoint
+  uses disposable ULA interface and loopback addresses, verifies a live
+  link-local neighbor and learned `/128`, invokes `clear-ripng-route` on one
+  peer, and requires the route to disappear and be learned again. Reversed
+  roles prove the native operational and RPC behavior on both platforms.
 - Added a guarded Linux/FreeBSD two-peer FRR RIP interaction that verifies
   native neighbor state and an actually learned route over a sterile private
   LAN. A designated peer then invokes `clear-rip-route` and requires the route

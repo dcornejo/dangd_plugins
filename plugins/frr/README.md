@@ -446,8 +446,34 @@ sudo ctest --test-dir build -R frr_isolated_rip_transactions \
 ```
 
 This proves native configuration, basic instance operational visibility, and
-rollback without emitting RIP traffic. It does not yet prove learned-route or
-neighbor operational state, RPCs, or notification delivery.
+rollback without emitting RIP traffic. The guarded two-peer tests described
+above and below provide the stronger learned-state and RPC evidence;
+notification delivery remains incomplete.
+
+`run_frr_ripng_peer_native.sh` provides the IPv6 counterpart. It temporarily
+assigns a ULA `/64` address to only the explicitly named sterile-LAN interface,
+adds a ULA `/128` to the loopback, and removes both on exit. Run opposite roles
+concurrently, then reverse them:
+
+```sh
+# Linux peer
+sudo tests/run_frr_ripng_peer_native.sh --allow-private-lan-test \
+  clear build/frr-mgmtd-session-check eth0 fd00:10:10:12::6/64 \
+  fd00:10:10:12::/64 fd00:198:51:100::6/128 \
+  fd00:198:51:100::5/128
+
+# FreeBSD peer, launched at the same time
+sudo tests/run_frr_ripng_peer_native.sh --allow-private-lan-test \
+  hold build/frr-mgmtd-session-check vtnet0 fd00:10:10:12::5/64 \
+  fd00:10:10:12::/64 fd00:198:51:100::5/128 \
+  fd00:198:51:100::6/128
+```
+
+The clear side must expose a link-local RIPng neighbor and the peer `/128` in
+`frr-ripngd` operational data, remove that route through the no-input
+`clear-ripng-route` RPC, and learn it again from the holding peer. Reversing the
+roles proves the behavior on both operating systems. Never use a production,
+management, or untrusted interface for this packet-emitting test.
 
 Inspect an installed candidate model closure with:
 
