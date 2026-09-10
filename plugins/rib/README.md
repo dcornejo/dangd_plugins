@@ -194,10 +194,15 @@ with independent Linux and FreeBSD numbers, for example:
 ```
 
 Modeled names and native numbers must be one-to-one on each platform; duplicate
-or conflicting forward and reverse entries fail loading. Unmapped numeric names
-retain the existing identity behavior. Wiring this mapping through every
-configuration, RPC, observation, rollback, and notification boundary remains
-in progress; arbitrary names are not yet enabled by the provider.
+or conflicting forward and reverse entries fail loading. Set
+`DANG_RIB_MAP_FILE` to the absolute path of this file before starting dangd.
+Unmapped numeric names retain the existing identity behavior. Configuration
+validation and apply/rollback, imperative route and RIB RPCs, reusable-nexthop
+scope and persistence, Linux operational reads, and notification payloads all
+preserve the modeled name while native commands receive its platform number.
+FreeBSD mapped nonzero-FIB observation remains in progress because its current
+`NET_RT_DUMP` request is scoped to FIB 0; such state must not be relabeled as a
+mapped RIB until each configured FIB is queried independently.
 
 FreeBSD interface-only nexthops resolve the interface's local address through
 `getifaddrs(3)` because `route(8)` requires that address as the gateway argument

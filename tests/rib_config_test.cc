@@ -398,6 +398,35 @@ TEST(RibConfigTest, RouteAddReportsMixedBatchResults) {
   EXPECT_EQ(events[0].index, 7U);
 }
 
+TEST(RibConfigTest, RouteRpcUsesNativeMappingAndPreservesModeledEventName) {
+  std::vector<NativeCommand> commands;
+  std::vector<Route> events;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRouteAdd(
+      NativePlatform::kLinux,
+      R"(<route-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>blue</rib-name><routes><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes><nexthop><nexthop-base><ipv4-address>198.51.100.1</ipv4-address></nexthop-base></nexthop></route-list></routes></route-add>)",
+      &output, &error, &path,
+      [&](const NativeCommand& command, std::string*) {
+        commands.push_back(command);
+        return true;
+      },
+      {}, nullptr, {},
+      [&](const Route& route, bool installed) {
+        if (installed) events.push_back(route);
+      },
+      [](const std::string& name) -> std::optional<std::string> {
+        return name == "blue" ? std::optional<std::string>("100")
+                              : std::nullopt;
+      })) << error;
+  ASSERT_EQ(commands.size(), 1U);
+  EXPECT_NE(std::ranges::find(commands[0].arguments, "100"),
+            commands[0].arguments.end());
+  ASSERT_EQ(events.size(), 1U);
+  EXPECT_EQ(events[0].rib, "blue");
+}
+
 TEST(RibConfigTest, RouteAddRejectsMalformedEnvelope) {
   std::string output;
   std::string error;
@@ -629,6 +658,56 @@ TEST(RibConfigTest, RibAddValidatesLogicalNamespaceAndRejectsRpf) {
       &output, &error, &path));
   EXPECT_NE(output.find(">false</result>"), std::string::npos);
   EXPECT_NE(output.find("RPF"), std::string::npos);
+}
+
+TEST(RibConfigTest, RibAddAcceptsMappedArbitraryNameAndRejectsUnknownName) {
+  std::string output;
+  std::string error;
+  std::string path;
+  const auto mapping = [](const std::string& name)
+      -> std::optional<std::string> {
+    return name == "blue" ? std::optional<std::string>("100") : std::nullopt;
+  };
+  ASSERT_TRUE(InvokeRibAdd(
+      NativePlatform::kLinux,
+      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>blue</name><address-family>ipv4-address-family</address-family></rib-add>)",
+      &output, &error, &path, nullptr, {}, mapping));
+  EXPECT_NE(output.find(">true</result>"), std::string::npos);
+  ASSERT_TRUE(InvokeRibAdd(
+      NativePlatform::kLinux,
+      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>red</name><address-family>ipv4-address-family</address-family></rib-add>)",
+      &output, &error, &path, nullptr, {}, mapping));
+  EXPECT_NE(output.find(">false</result>"), std::string::npos);
+}
+
+TEST(RibConfigTest, RouteUpdateMappingFailureDoesNotReleaseNexthop) {
+  NexthopRegistry registry;
+  const auto id = registry.Add({.rib = "blue", .gateway = "198.51.100.1"});
+  ASSERT_TRUE(id);
+  ASSERT_TRUE(registry.Retain("blue", *id));
+  std::string output;
+  std::string error;
+  std::string path;
+  const RouteObserver observer = [](std::vector<ObservedRoute>* routes,
+                                    std::string*) {
+    Route route;
+    route.rib = "blue";
+    route.index = 7;
+    route.destination = "192.0.2.0/24";
+    route.gateway = "198.51.100.1";
+    routes->push_back({route, true});
+    return true;
+  };
+  ASSERT_TRUE(InvokeRouteUpdate(
+      NativePlatform::kLinux,
+      R"(<route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>blue</rib-name><input-routes><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><updated-nexthop><nexthop-base><nexthop-ref>1</nexthop-ref></nexthop-base></updated-nexthop></route-list></input-routes></route-update>)",
+      &output, &error, &path, {}, observer, {}, &registry, {}, {},
+      [](const std::string&) -> std::optional<std::string> {
+        return std::nullopt;
+      })) << error;
+  EXPECT_NE(output.find(">1</failed-count>"), std::string::npos);
+  EXPECT_EQ(registry.Remove("blue", *id),
+            NexthopRegistry::RemoveResult::kInUse);
 }
 
 TEST(RibConfigTest, RibAddDurablySuppliesInterfaceOnlyNexthopFamily) {

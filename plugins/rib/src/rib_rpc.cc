@@ -157,6 +157,17 @@ bool NumericRib(std::string_view name, NativePlatform platform) {
 #endif
 }
 
+std::optional<Route> NativeRoute(const Route& route,
+                                 const RibNameResolver& resolver) {
+  Route result = route;
+  if (resolver) {
+    const auto native = resolver(route.rib);
+    if (!native) return std::nullopt;
+    result.rib = *native;
+  }
+  return result;
+}
+
 bool PersistRegistryChange(NativePlatform platform, NexthopRegistry* registry,
                            const PersistentRegistry& before,
                            const RegistryWriter& writer,
@@ -478,7 +489,8 @@ bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
                     std::string* error_path, const CommandRunner& runner,
                     const NexthopResolver& resolver,
                     NexthopRegistry* registry, const RegistryWriter& writer,
-                    const RouteEventSink& events) {
+                    const RouteEventSink& events,
+                    const RibNameResolver& native_rib) {
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "route-add.xml", nullptr,
@@ -541,12 +553,17 @@ bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
       continue;
     }
     Route route = config.routes.front();
+    const auto native_route = NativeRoute(route, native_rib);
+    if (!native_route) {
+      failed.emplace_back(index, 2U);
+      continue;
+    }
     if (route.nexthop_ref &&
         (!registry || !registry->Retain(route.rib, *route.nexthop_ref))) {
       failed.emplace_back(index, 2U); continue;
     }
     ExecutionResult result = ExecuteChanges(
-        platform, {{ChangeKind::kInstall, route}}, runner);
+        platform, {{ChangeKind::kInstall, *native_route}}, runner);
     if (result.ok) {
       if (registry) registry->BindRoute(route, route.nexthop_ref);
       installed.push_back(route);
@@ -559,7 +576,8 @@ bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
   }
   std::vector<Change> compensation;
   for (auto route = installed.rbegin(); route != installed.rend(); ++route)
-    compensation.push_back({ChangeKind::kDelete, *route});
+    compensation.push_back(
+        {ChangeKind::kDelete, *NativeRoute(*route, native_rib)});
   if (!PersistRegistryChange(platform, registry, before, writer, compensation,
                              runner, "route-add", error, error_path))
     return false;
@@ -575,7 +593,8 @@ bool InvokeRouteDelete(NativePlatform platform, const char* input_xml,
                        const RouteObserver& supplied_observer,
                        NexthopRegistry* registry,
                        const RegistryWriter& writer,
-                       const RouteEventSink& events) {
+                       const RouteEventSink& events,
+                       const RibNameResolver& native_rib) {
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "route-delete.xml", nullptr,
@@ -632,8 +651,10 @@ bool InvokeRouteDelete(NativePlatform platform, const char* input_xml,
     if (matches.size() != 1U) { failed.emplace_back(index, 0U); continue; }
     Route route = matches.front()->route;
     route.index = index;
+    const auto native_route = NativeRoute(route, native_rib);
+    if (!native_route) { failed.emplace_back(index, 2U); continue; }
     const ExecutionResult result = ExecuteChanges(
-        platform, {{ChangeKind::kDelete, route}}, runner);
+        platform, {{ChangeKind::kDelete, *native_route}}, runner);
     if (result.ok) {
       if (registry) registry->ForgetRoute(route);
       deleted.push_back(route);
@@ -643,7 +664,8 @@ bool InvokeRouteDelete(NativePlatform platform, const char* input_xml,
   }
   std::vector<Change> compensation;
   for (auto route = deleted.rbegin(); route != deleted.rend(); ++route)
-    compensation.push_back({ChangeKind::kInstall, *route});
+    compensation.push_back(
+        {ChangeKind::kInstall, *NativeRoute(*route, native_rib)});
   if (!PersistRegistryChange(platform, registry, before, writer, compensation,
                              runner, "route-delete", error, error_path))
     return false;
@@ -660,7 +682,8 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
                        const NexthopResolver& resolver,
                        NexthopRegistry* registry,
                        const RegistryWriter& writer,
-                       const RouteEventSink& events) {
+                       const RouteEventSink& events,
+                       const RibNameResolver& native_rib) {
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "route-update.xml", nullptr,
@@ -762,13 +785,19 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
       failed.emplace_back(index, 3U); continue;
     }
     const Route original = matches.front()->route;
+    const auto native_original = NativeRoute(original, native_rib);
+    const auto native_replacement = NativeRoute(replacement, native_rib);
+    if (!native_original || !native_replacement) {
+      failed.emplace_back(index, 2U);
+      continue;
+    }
     if (replacement.nexthop_ref &&
         (!registry || !registry->Retain(rib_name, *replacement.nexthop_ref))) {
       failed.emplace_back(index, 2U); continue;
     }
     const ExecutionResult result = ExecuteChanges(
-        platform, {{ChangeKind::kDelete, original},
-                   {ChangeKind::kInstall, replacement}}, runner);
+        platform, {{ChangeKind::kDelete, *native_original},
+                   {ChangeKind::kInstall, *native_replacement}}, runner);
     if (result.ok) {
       if (registry) registry->BindRoute(replacement, replacement.nexthop_ref);
       replacements.emplace_back(original, replacement);
@@ -783,7 +812,10 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
   for (auto replacement = replacements.rbegin();
        replacement != replacements.rend(); ++replacement) {
     compensation.push_back({ChangeKind::kDelete, replacement->second});
-    compensation.push_back({ChangeKind::kInstall, replacement->first});
+    compensation.back().route = *NativeRoute(replacement->second, native_rib);
+    compensation.push_back(
+        {ChangeKind::kInstall,
+         *NativeRoute(replacement->first, native_rib)});
   }
   if (!PersistRegistryChange(platform, registry, before, writer, compensation,
                              runner, "route-update", error, error_path))
@@ -800,7 +832,8 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
 bool InvokeRibAdd(NativePlatform platform, const char* input_xml,
                   std::string* output_xml, std::string* error,
                   std::string* error_path, NexthopRegistry* registry,
-                  const RegistryWriter& writer) {
+                  const RegistryWriter& writer,
+                  const RibNameResolver& native_rib) {
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "rib-add.xml", nullptr,
@@ -822,7 +855,9 @@ bool InvokeRibAdd(NativePlatform platform, const char* input_xml,
     *error_path = "/ietf-i2rs-rib:rib-add";
     return false;
   }
-  if (!NumericRib(name, platform)) {
+  const auto native_name = native_rib ? native_rib(name)
+                                      : std::optional<std::string>(name);
+  if (!native_name || !NumericRib(*native_name, platform)) {
     *output_xml = BooleanOutput(false, "the platform requires a numeric RIB/FIB name");
     return true;
   }
@@ -867,7 +902,8 @@ bool InvokeRibDelete(NativePlatform platform, const char* input_xml,
                      const RouteObserver& observer,
                      NexthopRegistry* registry,
                      const RegistryWriter& writer,
-                     const RouteEventSink& events) {
+                     const RouteEventSink& events,
+                     const RibNameResolver& native_rib) {
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "rib-delete.xml", nullptr,
@@ -886,7 +922,9 @@ bool InvokeRibDelete(NativePlatform platform, const char* input_xml,
     *error_path = "/ietf-i2rs-rib:rib-delete/name";
     return false;
   }
-  if (!NumericRib(name, platform)) {
+  const auto native_name = native_rib ? native_rib(name)
+                                      : std::optional<std::string>(name);
+  if (!native_name || !NumericRib(*native_name, platform)) {
     *output_xml = BooleanOutput(false, "the platform requires a numeric RIB/FIB name");
     return true;
   }
@@ -899,8 +937,14 @@ bool InvokeRibDelete(NativePlatform platform, const char* input_xml,
   }
   std::vector<Change> deletions;
   for (const ObservedRoute& route : observed)
-    if (route.route.rib == name)
-      deletions.push_back({ChangeKind::kDelete, route.route});
+    if (route.route.rib == name) {
+      const auto native_route = NativeRoute(route.route, native_rib);
+      if (!native_route) {
+        *output_xml = BooleanOutput(false, "the RIB has no platform mapping");
+        return true;
+      }
+      deletions.push_back({ChangeKind::kDelete, *native_route});
+    }
   const ExecutionResult result = ExecuteChanges(platform, deletions, runner);
   if (!result.ok) {
     *output_xml = BooleanOutput(false, result.error);
@@ -918,7 +962,8 @@ bool InvokeRibDelete(NativePlatform platform, const char* input_xml,
                              runner, "rib-delete", error, error_path))
     return false;
   if (events)
-    for (const Change& deletion : deletions) events(deletion.route, false);
+    for (const ObservedRoute& route : observed)
+      if (route.route.rib == name) events(route.route, false);
   return true;
 }
 

@@ -21,6 +21,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Wired modeled RIB names through configuration validation and reversible
+  native plans, imperative route/RIB RPCs, Linux operational translation, and
+  notification tracking. Registries and emitted XML retain modeled names while
+  platform commands receive the mapped number; an unmapped arbitrary name
+  fails at the RFC 8431 RIB path.
+
 - Added the strict bidirectional foundation for RFC 8431 modeled RIB names.
   Its bounded versioned JSON format supports distinct Linux table and FreeBSD
   FIB numbers, preserves numeric identity fallback, and rejects ambiguous

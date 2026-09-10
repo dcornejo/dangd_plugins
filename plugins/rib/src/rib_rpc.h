@@ -90,6 +90,8 @@ using RegistryWriter =
 
 /** Receives a route-change only after its native and durable work succeeds. */
 using RouteEventSink = std::function<void(const Route&, bool installed)>;
+using RibNameResolver =
+    std::function<std::optional<std::string>(const std::string&)>;
 
 /** Executes the supported RFC 8431 route-add RPC and returns its output XML. */
 [[nodiscard]] bool InvokeRouteAdd(NativePlatform platform,
@@ -101,7 +103,8 @@ using RouteEventSink = std::function<void(const Route&, bool installed)>;
                                   const NexthopResolver& resolver = {},
                                   NexthopRegistry* registry = nullptr,
                                   const RegistryWriter& writer = {},
-                                  const RouteEventSink& events = {});
+                                  const RouteEventSink& events = {},
+                                  const RibNameResolver& native_rib = {});
 
 /** Injectable route inventory used to resolve route-delete prefix requests. */
 using RouteObserver =
@@ -113,7 +116,8 @@ using RouteObserver =
     std::string* error, std::string* error_path,
     const CommandRunner& runner = RunNativeCommand,
     const RouteObserver& observer = {}, NexthopRegistry* registry = nullptr,
-    const RegistryWriter& writer = {}, const RouteEventSink& events = {});
+    const RegistryWriter& writer = {}, const RouteEventSink& events = {},
+    const RibNameResolver& native_rib = {});
 
 /** Updates prefix-selected routes with a base nexthop or route attributes. */
 [[nodiscard]] bool InvokeRouteUpdate(
@@ -123,14 +127,16 @@ using RouteObserver =
     const RouteObserver& observer = {},
     const NexthopResolver& resolver = {},
     NexthopRegistry* registry = nullptr,
-    const RegistryWriter& writer = {}, const RouteEventSink& events = {});
+    const RegistryWriter& writer = {}, const RouteEventSink& events = {},
+    const RibNameResolver& native_rib = {});
 
 /** Validates availability of a native RIB/FIB for the rib-add RPC. */
 [[nodiscard]] bool InvokeRibAdd(NativePlatform platform, const char* input_xml,
                                 std::string* output_xml, std::string* error,
                                 std::string* error_path,
                                 NexthopRegistry* registry = nullptr,
-                                const RegistryWriter& writer = {});
+                                const RegistryWriter& writer = {},
+                                const RibNameResolver& native_rib = {});
 
 /** Atomically removes every observed route from the selected native RIB/FIB. */
 [[nodiscard]] bool InvokeRibDelete(
@@ -138,7 +144,8 @@ using RouteObserver =
     std::string* error, std::string* error_path,
     const CommandRunner& runner = RunNativeCommand,
     const RouteObserver& observer = {}, NexthopRegistry* registry = nullptr,
-    const RegistryWriter& writer = {}, const RouteEventSink& events = {});
+    const RegistryWriter& writer = {}, const RouteEventSink& events = {},
+    const RibNameResolver& native_rib = {});
 
 /** Allocates and retains a portable base nexthop for nh-add. */
 [[nodiscard]] bool InvokeNexthopAdd(NexthopRegistry* registry,

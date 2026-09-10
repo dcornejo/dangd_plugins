@@ -8,6 +8,7 @@
 #include "plugins/rib/src/platform_executor.h"
 #include "plugins/rib/src/rib_config.h"
 #include "plugins/rib/src/rib_persistence.h"
+#include "plugins/rib/src/rib_mapping.h"
 #include "plugins/rib/src/rib_rpc.h"
 #include "plugins/rib/src/route_observer.h"
 #include "rib_model_sources.h"
@@ -36,6 +37,7 @@ constexpr NativePlatform kPlatform = NativePlatform::kFreeBsd;
 
 struct Context {
   NexthopRegistry nexthops;
+  RibMapping rib_mapping;
   std::once_flag load_once;
   std::mutex rpc_mutex;
   std::mutex notification_mutex;
@@ -47,12 +49,14 @@ struct Context {
   RouteChangeTracker route_changes;
   NexthopResolutionTracker nexthop_resolutions;
   std::filesystem::path registry_path;
+  std::filesystem::path mapping_path;
   std::string load_error;
   bool loaded = false;
 };
 using Reference = std::pair<std::string, std::uint32_t>;
 struct Prepared {
   std::vector<Change> changes;
+  std::vector<Change> native_changes;
   std::vector<Route> before_routes;
   std::vector<Route> proposed_routes;
   std::vector<Reference> before_references;
@@ -67,14 +71,59 @@ bool EnsureRegistry(Context* owner, std::string* error) {
     owner->registry_path = configured && *configured
                                ? configured
                                : "/var/lib/dangd/rib-nexthops.json";
+    const char* configured_mapping = std::getenv("DANG_RIB_MAP_FILE");
+    owner->mapping_path = configured_mapping && *configured_mapping
+                              ? configured_mapping
+                              : std::filesystem::path{};
     PersistentRegistry state;
-    owner->loaded = LoadRegistry(owner->registry_path, &state,
+    owner->loaded = LoadRibMapping(owner->mapping_path, &owner->rib_mapping,
+                                   &owner->load_error) &&
+                    LoadRegistry(owner->registry_path, &state,
                                  &owner->load_error) &&
                     owner->nexthops.RestorePersistentState(
                         state, &owner->load_error);
   });
   if (!owner->loaded && error) *error = owner->load_error;
   return owner->loaded;
+}
+
+std::optional<std::vector<Change>> NativeChanges(
+    const RibMapping& mapping, const std::vector<Change>& changes,
+    std::string* error) {
+  std::vector<Change> result = changes;
+  for (Change& change : result) {
+    const auto native = mapping.ToNative(change.route.rib, kPlatform);
+    if (!native) {
+      if (error)
+        *error = "RIB name '" + change.route.rib +
+                 "' has no mapping for this platform";
+      return std::nullopt;
+    }
+    change.route.rib = *native;
+  }
+  return result;
+}
+
+void ModelObservedRoutes(const RibMapping& mapping,
+                         std::vector<ObservedRoute>* routes) {
+  for (ObservedRoute& route : *routes)
+    route.route.rib = mapping.ToModeled(route.route.rib, kPlatform);
+}
+
+RibNameResolver NativeRib(Context* owner) {
+  return [owner](const std::string& name) {
+    return owner->rib_mapping.ToNative(name, kPlatform);
+  };
+}
+
+RouteObserver Observer(Context* owner) {
+  return [owner](std::vector<ObservedRoute>* routes, std::string* error) {
+    const bool ok = kPlatform == NativePlatform::kLinux
+                        ? ObserveLinuxRoutes(routes, error)
+                        : ObserveFreeBsdRoutes(routes, error);
+    if (ok) ModelObservedRoutes(owner->rib_mapping, routes);
+    return ok;
+  };
 }
 RegistryWriter Writer(Context* owner) {
   return [owner](const PersistentRegistry& state, std::string* error) {
@@ -153,8 +202,13 @@ int Prepare(void* raw_context, const DangTransactionV1* tx, void** out, DangPlug
   if (!ParseConfig(tx->before_xml, &before, &why, &where, resolver)) return Fail(error, why, where);
   if (!ParseConfig(tx->proposed_xml, &proposed, &why, &where, resolver)) return Fail(error, why, where);
   auto* owner = static_cast<Context*>(raw_context);
+  const std::vector<Change> changes = PlanChanges(before, proposed);
+  auto native_changes = NativeChanges(owner->rib_mapping, changes, &why);
+  if (!native_changes)
+    return Fail(error, why,
+                "/ietf-i2rs-rib:routing-instance/rib-list/name");
   auto* prepared = new (std::nothrow) Prepared{
-      PlanChanges(before, proposed), before.routes, proposed.routes,
+      changes, std::move(*native_changes), before.routes, proposed.routes,
       References(before), References(proposed),
       &owner->nexthops};
   if (!prepared) return Fail(error, "cannot retain RIB transaction plan");
@@ -174,13 +228,13 @@ int Prepare(void* raw_context, const DangTransactionV1* tx, void** out, DangPlug
 int Validate(void*, void* raw, DangPluginErrorV1* error) {
   auto* prepared = static_cast<Prepared*>(raw); if (!prepared) return Fail(error, "RIB transaction plan is missing");
   std::vector<NativeCommand> commands; std::string why, where;
-  const bool ok = kPlatform == NativePlatform::kLinux ? BuildLinuxCommands(prepared->changes, &commands, &why, &where) : BuildFreeBsdCommands(prepared->changes, &commands, &why, &where);
+  const bool ok = kPlatform == NativePlatform::kLinux ? BuildLinuxCommands(prepared->native_changes, &commands, &why, &where) : BuildFreeBsdCommands(prepared->native_changes, &commands, &why, &where);
   return ok ? 1 : Fail(error, why, where);
 }
 int Apply(void*, void* raw, DangPluginErrorV1* error) {
   auto* prepared = static_cast<Prepared*>(raw); if (!prepared) return Fail(error, "RIB transaction plan is missing");
   if (prepared->applied) return 1;
-  auto result = ExecuteChanges(kPlatform, prepared->changes);
+  auto result = ExecuteChanges(kPlatform, prepared->native_changes);
   if (!result.ok) return Fail(error, result.error, result.error_path);
   prepared->applied = true; return 1;
 }
@@ -188,7 +242,7 @@ int Rollback(void*, void* raw, DangPluginErrorV1* error) {
   auto* prepared = static_cast<Prepared*>(raw); if (!prepared) return Fail(error, "RIB transaction plan is missing");
   if (!prepared->applied) return 1;
   std::vector<Change> inverse;
-  for (auto i = prepared->changes.rbegin(); i != prepared->changes.rend(); ++i)
+  for (auto i = prepared->native_changes.rbegin(); i != prepared->native_changes.rend(); ++i)
     inverse.push_back({i->kind == ChangeKind::kDelete ? ChangeKind::kInstall : ChangeKind::kDelete, i->route});
   auto result = ExecuteChanges(kPlatform, inverse);
   if (!result.ok) return Fail(error, result.error, result.error_path);
@@ -240,25 +294,30 @@ int Invoke(void* raw_context, const DangOperationV1* operation,
     invoked = InvokeRouteAdd(kPlatform, operation->input_xml, &rpc_output_xml,
                              &why, &where, RunNativeCommand,
                              Resolver(static_cast<Context*>(raw_context)),
-                             &owner->nexthops, Writer(owner), EventSink(owner));
+                             &owner->nexthops, Writer(owner), EventSink(owner),
+                             NativeRib(owner));
   else if (std::string_view(operation->operation_name) == "route-delete")
     invoked = InvokeRouteDelete(kPlatform, operation->input_xml,
                                 &rpc_output_xml, &why, &where,
-                                RunNativeCommand, {},
-                                &owner->nexthops, Writer(owner), EventSink(owner));
+                                RunNativeCommand, Observer(owner),
+                                &owner->nexthops, Writer(owner), EventSink(owner),
+                                NativeRib(owner));
   else if (std::string_view(operation->operation_name) == "route-update")
     invoked = InvokeRouteUpdate(kPlatform, operation->input_xml,
                                 &rpc_output_xml, &why, &where,
-                                RunNativeCommand, {},
+                                RunNativeCommand, Observer(owner),
                                 Resolver(static_cast<Context*>(raw_context)),
-                                &owner->nexthops, Writer(owner), EventSink(owner));
+                                &owner->nexthops, Writer(owner), EventSink(owner),
+                                NativeRib(owner));
   else if (std::string_view(operation->operation_name) == "rib-add")
     invoked = InvokeRibAdd(kPlatform, operation->input_xml, &rpc_output_xml,
-                           &why, &where, &owner->nexthops, Writer(owner));
+                           &why, &where, &owner->nexthops, Writer(owner),
+                           NativeRib(owner));
   else if (std::string_view(operation->operation_name) == "rib-delete")
     invoked = InvokeRibDelete(kPlatform, operation->input_xml, &rpc_output_xml,
-                              &why, &where, RunNativeCommand, {},
-                              &owner->nexthops, Writer(owner), EventSink(owner));
+                              &why, &where, RunNativeCommand, Observer(owner),
+                              &owner->nexthops, Writer(owner), EventSink(owner),
+                              NativeRib(owner));
   else if (std::string_view(operation->operation_name) == "nh-add")
     invoked = InvokeNexthopAdd(
         &owner->nexthops, operation->input_xml,
@@ -287,8 +346,10 @@ int Operational(void* raw_context, DangOperationalDataV2* out, DangPluginErrorV1
                       : ObserveFreeBsdRoutes(&routes, &why);
   if (!ok) return Fail(error, "cannot read host RIB: " + why,
                        "/ietf-i2rs-rib:routing-instance/rib-list");
+  auto* owner = static_cast<Context*>(raw_context);
+  ModelObservedRoutes(owner->rib_mapping, &routes);
   operational_xml = SerializeOperationalRoutes(
-      routes, static_cast<Context*>(raw_context)->nexthops.Snapshot());
+      routes, owner->nexthops.Snapshot());
   *out = {operational_xml.c_str(), 0}; return 1;
 }
 int Reconcile(void* raw_context, void* raw_prepared, const char* current_xml,
@@ -340,6 +401,7 @@ int NextNotification(void* raw_context, DangNotificationV1* event,
                "/ietf-i2rs-rib:routing-instance/rib-list");
     return -1;
   }
+  ModelObservedRoutes(owner->rib_mapping, &routes);
   std::lock_guard lock(owner->notification_mutex);
   for (const ObservedRoute& change : owner->route_changes.Observe(routes)) {
     if (owner->notifications.size() >= kMaximumPendingNotifications) break;
