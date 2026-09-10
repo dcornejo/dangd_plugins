@@ -181,8 +181,23 @@ remain unsupported rather than receiving an approximate status.
 
 Numeric names are an intentional temporary variance: RFC 8431 RIB names are
 arbitrary strings, while Linux policy tables and FreeBSD FIBs need an explicit
-platform mapping. A future plugin option must supply that mapping before this
-restriction can be removed safely.
+platform mapping. The mapping foundation accepts a bounded versioned JSON file
+with independent Linux and FreeBSD numbers, for example:
+
+```json
+{
+  "version": 1,
+  "ribs": [
+    {"name": "blue", "linux-table": 100, "freebsd-fib": 2}
+  ]
+}
+```
+
+Modeled names and native numbers must be one-to-one on each platform; duplicate
+or conflicting forward and reverse entries fail loading. Unmapped numeric names
+retain the existing identity behavior. Wiring this mapping through every
+configuration, RPC, observation, rollback, and notification boundary remains
+in progress; arbitrary names are not yet enabled by the provider.
 
 FreeBSD interface-only nexthops resolve the interface's local address through
 `getifaddrs(3)` because `route(8)` requires that address as the gateway argument

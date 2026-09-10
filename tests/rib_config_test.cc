@@ -7,15 +7,52 @@
 #include "plugins/rib/src/route_observer.h"
 #include "plugins/rib/src/rib_rpc.h"
 #include "plugins/rib/src/rib_persistence.h"
+#include "plugins/rib/src/rib_mapping.h"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <unistd.h>
 
 namespace dang::rib {
 namespace {
+
+TEST(RibConfigTest, MapsArbitraryRibNamesBidirectionallyPerPlatform) {
+  RibMapping mapping;
+  std::string error;
+  ASSERT_TRUE(mapping.Add("blue", NativePlatform::kLinux, 100, &error));
+  ASSERT_TRUE(mapping.Add("blue", NativePlatform::kFreeBsd, 2, &error));
+  EXPECT_EQ(mapping.ToNative("blue", NativePlatform::kLinux), "100");
+  EXPECT_EQ(mapping.ToNative("blue", NativePlatform::kFreeBsd), "2");
+  EXPECT_EQ(mapping.ToModeled("100", NativePlatform::kLinux), "blue");
+  EXPECT_EQ(mapping.ToModeled("2", NativePlatform::kFreeBsd), "blue");
+  EXPECT_EQ(mapping.ToNative("77", NativePlatform::kLinux), "77");
+  EXPECT_FALSE(mapping.ToNative("missing", NativePlatform::kLinux));
+  EXPECT_FALSE(mapping.Add("red", NativePlatform::kLinux, 100, &error));
+  EXPECT_NE(error.find("multiple modeled names"), std::string::npos);
+}
+
+TEST(RibConfigTest, LoadsVersionedRibMappingAndRejectsAmbiguousReverseNames) {
+  const auto path = std::filesystem::temp_directory_path() /
+                    ("dang-rib-map-" + std::to_string(getpid()) + ".json");
+  {
+    std::ofstream output(path);
+    output << R"({"version":1,"ribs":[{"name":"blue","linux-table":100,"freebsd-fib":2}]})";
+  }
+  RibMapping mapping;
+  std::string error;
+  ASSERT_TRUE(LoadRibMapping(path, &mapping, &error)) << error;
+  EXPECT_EQ(mapping.ToNative("blue", NativePlatform::kLinux), "100");
+  {
+    std::ofstream output(path);
+    output << R"({"version":1,"ribs":[{"name":"blue","linux-table":100},{"name":"red","linux-table":100}]})";
+  }
+  EXPECT_FALSE(LoadRibMapping(path, &mapping, &error));
+  EXPECT_NE(error.find("multiple modeled names"), std::string::npos);
+  std::filesystem::remove(path);
+}
 
 constexpr char kBefore[] = R"xml(<config>
   <routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib">

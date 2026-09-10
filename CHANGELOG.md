@@ -21,6 +21,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added the strict bidirectional foundation for RFC 8431 modeled RIB names.
+  Its bounded versioned JSON format supports distinct Linux table and FreeBSD
+  FIB numbers, preserves numeric identity fallback, and rejects ambiguous
+  forward or reverse aliases before the mapping is used.
+
 - Implemented RFC 8431 `nexthop-resolution-status-change` for reusable
   nexthops. Live imperative and datastore route bindings are joined with the
   native installed-route inventory, producing quiet-baseline resolved and
