@@ -18,6 +18,7 @@
 #include <cstring>
 #include <deque>
 #include <filesystem>
+#include <iterator>
 #include <mutex>
 #include <new>
 #include <string>
@@ -118,9 +119,25 @@ RibNameResolver NativeRib(Context* owner) {
 
 RouteObserver Observer(Context* owner) {
   return [owner](std::vector<ObservedRoute>* routes, std::string* error) {
-    const bool ok = kPlatform == NativePlatform::kLinux
-                        ? ObserveLinuxRoutes(routes, error)
-                        : ObserveFreeBsdRoutes(routes, error);
+    bool ok = false;
+    if (kPlatform == NativePlatform::kLinux) {
+      ok = ObserveLinuxRoutes(routes, error);
+    } else {
+      routes->clear();
+      std::vector<std::uint32_t> fibs =
+          owner->rib_mapping.NativeNumbers(NativePlatform::kFreeBsd);
+      if (std::ranges::find(fibs, 0U) == fibs.end()) fibs.insert(fibs.begin(), 0U);
+      ok = true;
+      for (const std::uint32_t fib : fibs) {
+        std::vector<ObservedRoute> observed;
+        if (!ObserveFreeBsdRoutesForFib(fib, &observed, error)) {
+          ok = false;
+          break;
+        }
+        routes->insert(routes->end(), std::make_move_iterator(observed.begin()),
+                       std::make_move_iterator(observed.end()));
+      }
+    }
     if (ok) ModelObservedRoutes(owner->rib_mapping, routes);
     return ok;
   };
@@ -341,13 +358,10 @@ int Operational(void* raw_context, DangOperationalDataV2* out, DangPluginErrorV1
                 "/ietf-i2rs-rib:routing-instance");
   std::vector<ObservedRoute> routes;
   std::string why;
-  const bool ok = kPlatform == NativePlatform::kLinux
-                      ? ObserveLinuxRoutes(&routes, &why)
-                      : ObserveFreeBsdRoutes(&routes, &why);
+  auto* owner = static_cast<Context*>(raw_context);
+  const bool ok = Observer(owner)(&routes, &why);
   if (!ok) return Fail(error, "cannot read host RIB: " + why,
                        "/ietf-i2rs-rib:routing-instance/rib-list");
-  auto* owner = static_cast<Context*>(raw_context);
-  ModelObservedRoutes(owner->rib_mapping, &routes);
   operational_xml = SerializeOperationalRoutes(
       routes, owner->nexthops.Snapshot());
   *out = {operational_xml.c_str(), 0}; return 1;
@@ -393,15 +407,12 @@ int NextNotification(void* raw_context, DangNotificationV1* event,
   // Keep native observation and registry-derived resolution state in one
   // imperative-RPC epoch so neither baseline can capture half a transaction.
   std::lock_guard rpc_lock(owner->rpc_mutex);
-  const bool observed = kPlatform == NativePlatform::kLinux
-                            ? ObserveLinuxRoutes(&routes, &observe_error)
-                            : ObserveFreeBsdRoutes(&routes, &observe_error);
+  const bool observed = Observer(owner)(&routes, &observe_error);
   if (!observed) {
     (void)Fail(error, "cannot observe RIB notifications: " + observe_error,
                "/ietf-i2rs-rib:routing-instance/rib-list");
     return -1;
   }
-  ModelObservedRoutes(owner->rib_mapping, &routes);
   std::lock_guard lock(owner->notification_mutex);
   for (const ObservedRoute& change : owner->route_changes.Observe(routes)) {
     if (owner->notifications.size() >= kMaximumPendingNotifications) break;

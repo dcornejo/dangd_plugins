@@ -179,9 +179,8 @@ status change; losing the final installed binding transitions it to
 complete supported base nexthop. Complex nexthops outside the portable subset
 remain unsupported rather than receiving an approximate status.
 
-Numeric names are an intentional temporary variance: RFC 8431 RIB names are
-arbitrary strings, while Linux policy tables and FreeBSD FIBs need an explicit
-platform mapping. The mapping foundation accepts a bounded versioned JSON file
+RFC 8431 RIB names are arbitrary strings, while Linux policy tables and
+FreeBSD FIBs use native numbers. The plugin accepts a bounded versioned JSON file
 with independent Linux and FreeBSD numbers, for example:
 
 ```json
@@ -198,11 +197,11 @@ or conflicting forward and reverse entries fail loading. Set
 `DANG_RIB_MAP_FILE` to the absolute path of this file before starting dangd.
 Unmapped numeric names retain the existing identity behavior. Configuration
 validation and apply/rollback, imperative route and RIB RPCs, reusable-nexthop
-scope and persistence, Linux operational reads, and notification payloads all
+scope and persistence, operational reads, and notification payloads all
 preserve the modeled name while native commands receive its platform number.
-FreeBSD mapped nonzero-FIB observation remains in progress because its current
-`NET_RT_DUMP` request is scoped to FIB 0; such state must not be relabeled as a
-mapped RIB until each configured FIB is queried independently.
+On FreeBSD, operational and notification polling query FIB 0 plus every
+explicitly mapped FreeBSD FIB independently with `NET_RT_DUMP`; results are
+then translated back to their unique modeled names.
 
 FreeBSD interface-only nexthops resolve the interface's local address through
 `getifaddrs(3)` because `route(8)` requires that address as the gateway argument

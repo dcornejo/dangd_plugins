@@ -63,6 +63,11 @@ class NexthopResolutionTracker {
 [[nodiscard]] bool ObserveFreeBsdRoutes(std::vector<ObservedRoute>* routes,
                                         std::string* error);
 
+/** Reads one numbered FreeBSD FIB with the routing sysctl API. */
+[[nodiscard]] bool ObserveFreeBsdRoutesForFib(
+    std::uint32_t fib, std::vector<ObservedRoute>* routes,
+    std::string* error);
+
 /** Serializes a partial RFC 8431 operational-data subtree. */
 [[nodiscard]] std::string SerializeOperationalRoutes(
     const std::vector<ObservedRoute>& routes,

@@ -21,6 +21,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Completed mapped FreeBSD FIB observation. Operational reads and notification
+  polling now query FIB 0 plus each explicitly configured FreeBSD FIB and map
+  every result back to its unique RFC 8431 RIB name.
+
 - Wired modeled RIB names through configuration validation and reversible
   native plans, imperative route/RIB RPCs, Linux operational translation, and
   notification tracking. Registries and emitted XML retain modeled names while

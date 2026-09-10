@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "plugins/rib/src/platform_executor.h"
 
@@ -26,6 +27,9 @@ class RibMapping {
   /** Returns the unique modeled alias, or an unchanged native number. */
   [[nodiscard]] std::string ToModeled(std::string_view native_name,
                                      NativePlatform platform) const;
+  /** Returns the sorted native numbers explicitly configured for a platform. */
+  [[nodiscard]] std::vector<std::uint32_t> NativeNumbers(
+      NativePlatform platform) const;
 
  private:
   using ForwardKey = std::pair<NativePlatform, std::string>;

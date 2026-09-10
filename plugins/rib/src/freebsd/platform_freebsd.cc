@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <limits>
 
 #if defined(__FreeBSD__)
 #include <arpa/inet.h>
@@ -147,14 +148,26 @@ bool BuildFreeBsdCommands(const std::vector<Change>& changes,
 
 bool ObserveFreeBsdRoutes(std::vector<ObservedRoute>* routes,
                           std::string* error) {
+  return ObserveFreeBsdRoutesForFib(0, routes, error);
+}
+
+bool ObserveFreeBsdRoutesForFib(std::uint32_t fib,
+                                std::vector<ObservedRoute>* routes,
+                                std::string* error) {
 #if !defined(__FreeBSD__)
+  (void)fib;
   (void)routes;
   if (error) *error = "FreeBSD route observation is unavailable on this host";
   return false;
 #else
   if (!routes || !error) return false;
   routes->clear();
-  int mib[] = {CTL_NET, PF_ROUTE, 0, AF_UNSPEC, NET_RT_DUMP, 0};
+  if (fib > static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
+    *error = "FreeBSD FIB number exceeds the routing sysctl range";
+    return false;
+  }
+  int mib[] = {CTL_NET, PF_ROUTE, 0, AF_UNSPEC, NET_RT_DUMP,
+               static_cast<int>(fib)};
   size_t length = 0;
   if (sysctl(mib, 6, nullptr, &length, nullptr, 0) < 0) {
     *error = std::strerror(errno); return false;
@@ -201,7 +214,7 @@ bool ObserveFreeBsdRoutes(std::vector<ObservedRoute>* routes,
     ObservedRoute observed;
     Route& route = observed.route;
     route.routing_instance = "default";
-    route.rib = "0";  // NET_RT_DUMP reports the calling process's selected FIB.
+    route.rib = std::to_string(fib);
     route.address_family = ipv4 ? "ipv4" : "ipv6";
     route.destination = std::string(text) + "/" + std::to_string(prefix);
     route.preference = static_cast<std::uint32_t>(message->rtm_rmx.rmx_weight);

@@ -64,6 +64,16 @@ std::string RibMapping::ToModeled(std::string_view native_name,
                                       : configured->second;
 }
 
+std::vector<std::uint32_t> RibMapping::NativeNumbers(
+    NativePlatform platform) const {
+  std::vector<std::uint32_t> result;
+  for (const auto& [key, modeled_name] : reverse_) {
+    (void)modeled_name;
+    if (key.first == platform) result.push_back(key.second);
+  }
+  return result;
+}
+
 bool LoadRibMapping(const std::filesystem::path& path, RibMapping* mapping,
                     std::string* error) {
   if (!mapping) return false;

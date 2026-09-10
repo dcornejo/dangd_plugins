@@ -28,6 +28,10 @@ TEST(RibConfigTest, MapsArbitraryRibNamesBidirectionallyPerPlatform) {
   EXPECT_EQ(mapping.ToNative("blue", NativePlatform::kFreeBsd), "2");
   EXPECT_EQ(mapping.ToModeled("100", NativePlatform::kLinux), "blue");
   EXPECT_EQ(mapping.ToModeled("2", NativePlatform::kFreeBsd), "blue");
+  EXPECT_EQ(mapping.NativeNumbers(NativePlatform::kLinux),
+            std::vector<std::uint32_t>({100U}));
+  EXPECT_EQ(mapping.NativeNumbers(NativePlatform::kFreeBsd),
+            std::vector<std::uint32_t>({2U}));
   EXPECT_EQ(mapping.ToNative("77", NativePlatform::kLinux), "77");
   EXPECT_FALSE(mapping.ToNative("missing", NativePlatform::kLinux));
   EXPECT_FALSE(mapping.Add("red", NativePlatform::kLinux, 100, &error));
