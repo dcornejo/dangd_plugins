@@ -1,0 +1,13 @@
+<nexthop-resolution-status-change xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib">
+  <nexthop>
+    <nexthop-id>7</nexthop-id>
+    <sharing-flag>true</sharing-flag>
+    <nexthop-base>
+      <egress-interface-ipv4-address>
+        <outgoing-interface>dummy0</outgoing-interface>
+        <ipv4-address>192.0.2.1</ipv4-address>
+      </egress-interface-ipv4-address>
+    </nexthop-base>
+  </nexthop>
+  <nexthop-state>resolved</nexthop-state>
+</nexthop-resolution-status-change>

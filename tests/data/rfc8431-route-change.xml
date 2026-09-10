@@ -1,0 +1,8 @@
+<route-change xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib">
+  <rib-name>100</rib-name>
+  <address-family>ipv4-address-family</address-family>
+  <route-index>42</route-index>
+  <match><ipv4><dest-ipv4-prefix>198.51.100.0/24</dest-ipv4-prefix></ipv4></match>
+  <route-installed-state>installed</route-installed-state>
+  <route-state>active</route-state>
+</route-change>

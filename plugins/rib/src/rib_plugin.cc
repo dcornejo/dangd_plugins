@@ -39,8 +39,13 @@ struct Context {
   std::once_flag load_once;
   std::mutex rpc_mutex;
   std::mutex notification_mutex;
-  std::deque<std::string> notifications;
+  struct PendingNotification {
+    std::string name;
+    std::string xml;
+  };
+  std::deque<PendingNotification> notifications;
   RouteChangeTracker route_changes;
+  NexthopResolutionTracker nexthop_resolutions;
   std::filesystem::path registry_path;
   std::string load_error;
   bool loaded = false;
@@ -48,6 +53,8 @@ struct Context {
 using Reference = std::pair<std::string, std::uint32_t>;
 struct Prepared {
   std::vector<Change> changes;
+  std::vector<Route> before_routes;
+  std::vector<Route> proposed_routes;
   std::vector<Reference> before_references;
   std::vector<Reference> proposed_references;
   NexthopRegistry* registry = nullptr;
@@ -106,6 +113,7 @@ thread_local std::string path;
 thread_local std::string operational_xml;
 thread_local std::string rpc_output_xml;
 thread_local std::string notification_xml;
+thread_local std::string notification_name;
 
 constexpr std::size_t kMaximumPendingNotifications = 1024;
 RouteEventSink EventSink(Context* owner) {
@@ -113,7 +121,8 @@ RouteEventSink EventSink(Context* owner) {
     std::lock_guard lock(owner->notification_mutex);
     owner->route_changes.ApplyManaged(route, installed);
     if (owner->notifications.size() >= kMaximumPendingNotifications) return;
-    owner->notifications.push_back(SerializeRouteChange(route, installed));
+    owner->notifications.push_back(
+        {"route-change", SerializeRouteChange(route, installed)});
   };
 }
 
@@ -145,7 +154,8 @@ int Prepare(void* raw_context, const DangTransactionV1* tx, void** out, DangPlug
   if (!ParseConfig(tx->proposed_xml, &proposed, &why, &where, resolver)) return Fail(error, why, where);
   auto* owner = static_cast<Context*>(raw_context);
   auto* prepared = new (std::nothrow) Prepared{
-      PlanChanges(before, proposed), References(before), References(proposed),
+      PlanChanges(before, proposed), before.routes, proposed.routes,
+      References(before), References(proposed),
       &owner->nexthops};
   if (!prepared) return Fail(error, "cannot retain RIB transaction plan");
   if (!RetainAll(prepared->registry, prepared->before_references)) {
@@ -185,6 +195,9 @@ int Rollback(void*, void* raw, DangPluginErrorV1* error) {
   if (!prepared->registry->ReplaceConfigurationReferences(
           prepared->before_references))
     return Fail(error, "cannot restore datastore nexthop references");
+  if (!prepared->registry->ReplaceConfigurationRouteBindings(
+          prepared->before_routes))
+    return Fail(error, "cannot restore datastore nexthop route bindings");
   prepared->applied = false; return 1;
 }
 void Release(void*, void* raw) {
@@ -294,6 +307,9 @@ int Reconcile(void* raw_context, void* raw_prepared, const char* current_xml,
   if (!owner->nexthops.ReplaceConfigurationReferences(References(current)))
     return Fail(error, "cannot establish applied nexthop references",
                 "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop");
+  if (!owner->nexthops.ReplaceConfigurationRouteBindings(current.routes))
+    return Fail(error, "cannot establish applied nexthop route bindings",
+                "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop");
   auto* prepared = static_cast<Prepared*>(raw_prepared);
   if (prepared && prepared->applied) {
     const auto events = EventSink(owner);
@@ -313,31 +329,38 @@ int NextNotification(void* raw_context, DangNotificationV1* event,
   auto* owner = static_cast<Context*>(raw_context);
   std::string observe_error;
   std::vector<ObservedRoute> routes;
-  {
-    // Serialize observation with imperative mutations so the baseline cannot
-    // capture a route halfway through a compensated RPC plan.
-    std::lock_guard rpc_lock(owner->rpc_mutex);
-    const bool observed = kPlatform == NativePlatform::kLinux
-                              ? ObserveLinuxRoutes(&routes, &observe_error)
-                              : ObserveFreeBsdRoutes(&routes, &observe_error);
-    if (!observed) {
-      (void)Fail(error, "cannot observe RIB notifications: " + observe_error,
-                 "/ietf-i2rs-rib:routing-instance/rib-list");
-      return -1;
-    }
+  // Keep native observation and registry-derived resolution state in one
+  // imperative-RPC epoch so neither baseline can capture half a transaction.
+  std::lock_guard rpc_lock(owner->rpc_mutex);
+  const bool observed = kPlatform == NativePlatform::kLinux
+                            ? ObserveLinuxRoutes(&routes, &observe_error)
+                            : ObserveFreeBsdRoutes(&routes, &observe_error);
+  if (!observed) {
+    (void)Fail(error, "cannot observe RIB notifications: " + observe_error,
+               "/ietf-i2rs-rib:routing-instance/rib-list");
+    return -1;
   }
   std::lock_guard lock(owner->notification_mutex);
   for (const ObservedRoute& change : owner->route_changes.Observe(routes)) {
     if (owner->notifications.size() >= kMaximumPendingNotifications) break;
+    owner->notifications.push_back({
+        "route-change", SerializeRouteChange(change.route, change.installed)});
+  }
+  for (const NexthopResolutionChange& change :
+       owner->nexthop_resolutions.Observe(owner->nexthops.ResolutionState(),
+                                          routes)) {
+    if (owner->notifications.size() >= kMaximumPendingNotifications) break;
     owner->notifications.push_back(
-        SerializeRouteChange(change.route, change.installed));
+        {"nexthop-resolution-status-change",
+         SerializeNexthopResolutionChange(change.nexthop, change.resolved)});
   }
   if (owner->notifications.empty()) return 0;
-  notification_xml = std::move(owner->notifications.front());
+  notification_name = std::move(owner->notifications.front().name);
+  notification_xml = std::move(owner->notifications.front().xml);
   owner->notifications.pop_front();
   *event = {.stream_name = "NETCONF",
             .module_name = "ietf-i2rs-rib",
-            .notification_name = "route-change",
+            .notification_name = notification_name.c_str(),
             .content_xml = notification_xml.c_str(),
             .instance_path = "",
             .default_deny_all = 0};

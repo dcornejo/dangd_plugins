@@ -15,3 +15,12 @@ dang_models=$3
 
 "$yanglint" -p "$rib_models" -p "$dang_models" \
   "$rib_models/ietf-i2rs-rib@2018-09-13.yang"
+
+test_data=$(dirname "$0")/data
+"$yanglint" -p "$rib_models" -p "$dang_models" -t notif \
+  "$rib_models/ietf-i2rs-rib@2018-09-13.yang" \
+  "$test_data/rfc8431-route-change.xml"
+"$yanglint" -p "$rib_models" -p "$dang_models" -t notif \
+  -O "$test_data/rfc8431-operational-context.xml" \
+  "$rib_models/ietf-i2rs-rib@2018-09-13.yang" \
+  "$test_data/rfc8431-nexthop-resolution.xml"

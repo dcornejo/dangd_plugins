@@ -20,7 +20,7 @@ namespace {
 constexpr char kBefore[] = R"xml(<config>
   <routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib">
     <name>default</name><rib-list><name>100</name>
-    <address-family>ipv4</address-family><route-list>
+    <address-family>ipv4-address-family</address-family><route-list>
       <route-index>7</route-index><match><ipv4>
         <dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix>
       </ipv4></match><nexthop><nexthop-base>
@@ -258,15 +258,66 @@ TEST(RibConfigTest, ManagedChangesAdvanceExternalNotificationBaseline) {
   EXPECT_TRUE(tracker.Observe({}).empty());
 }
 
+TEST(RibConfigTest, TracksObservedReusableNexthopResolutionTransitions) {
+  PersistentRegistry registry;
+  registry.nexthops.push_back(
+      {"100", 7, "192.0.2.1", "dummy&0", "ipv4", true});
+  registry.bindings.push_back({"100", "ipv4", "198.51.100.0/24", 7});
+  Route route{.routing_instance = "default",
+              .rib = "100",
+              .address_family = "ipv4",
+              .index = 1,
+              .destination = "198.51.100.0/24"};
+  NexthopResolutionTracker tracker;
+  EXPECT_TRUE(tracker.Observe(registry, {}).empty());
+  const auto resolved = tracker.Observe(registry, {{route, true}});
+  ASSERT_EQ(resolved.size(), 1U);
+  EXPECT_TRUE(resolved[0].resolved);
+  const std::string xml = SerializeNexthopResolutionChange(
+      resolved[0].nexthop, resolved[0].resolved);
+  EXPECT_NE(xml.find("<nexthop-id>7</nexthop-id>"), std::string::npos);
+  EXPECT_NE(xml.find("dummy&amp;0"), std::string::npos);
+  EXPECT_NE(xml.find("<nexthop-state>resolved</nexthop-state>"),
+            std::string::npos);
+  EXPECT_TRUE(tracker.Observe(registry, {{route, true}}).empty());
+  const auto unresolved = tracker.Observe(registry, {});
+  ASSERT_EQ(unresolved.size(), 1U);
+  EXPECT_FALSE(unresolved[0].resolved);
+}
+
+TEST(RibConfigTest, IncludesDatastoreRoutesInResolutionState) {
+  NexthopRegistry registry;
+  ASSERT_EQ(registry.Add({.rib = "100",
+                          .gateway = "192.0.2.1",
+                          .address_family = "ipv4"}), 1U);
+  Route route{.routing_instance = "default",
+              .rib = "100",
+              .address_family = "ipv4",
+              .index = 1,
+              .destination = "198.51.100.0/24",
+              .nexthop_ref = 1};
+  ASSERT_TRUE(registry.ReplaceConfigurationRouteBindings({route}));
+  const PersistentRegistry state = registry.ResolutionState();
+  ASSERT_EQ(state.bindings.size(), 1U);
+  EXPECT_EQ(state.bindings[0].nexthop_id, 1U);
+  const PersistentRegistry checkpoint = registry.PersistentState();
+  std::string restore_error;
+  ASSERT_TRUE(registry.ReplacePersistentState(checkpoint, &restore_error))
+      << restore_error;
+  ASSERT_EQ(registry.ResolutionState().bindings.size(), 1U);
+  ASSERT_TRUE(registry.ReplaceConfigurationRouteBindings({}));
+  EXPECT_TRUE(registry.ResolutionState().bindings.empty());
+}
+
 TEST(RibConfigTest, SerializesRegisteredNexthopsWithAndWithoutRoutes) {
   const std::vector<std::tuple<std::string, std::string, std::uint32_t>> refs{
       {"100", "ipv4", 7}, {"200", "ipv6", 9}};
   const std::string xml = SerializeOperationalRoutes({}, refs);
-  EXPECT_NE(xml.find("<name>100</name><address-family>ipv4</address-family>"),
+  EXPECT_NE(xml.find("<name>100</name><address-family>ipv4-address-family</address-family>"),
             std::string::npos);
   EXPECT_NE(xml.find("<nexthop-member-id>7</nexthop-member-id>"),
             std::string::npos);
-  EXPECT_NE(xml.find("<name>200</name><address-family>ipv6</address-family>"),
+  EXPECT_NE(xml.find("<name>200</name><address-family>ipv6-address-family</address-family>"),
             std::string::npos);
   EXPECT_NE(xml.find("<nexthop-member-id>9</nexthop-member-id>"),
             std::string::npos);
@@ -533,11 +584,11 @@ TEST(RibConfigTest, RibAddValidatesLogicalNamespaceAndRejectsRpf) {
   std::string error;
   std::string path;
   ASSERT_TRUE(InvokeRibAdd(NativePlatform::kLinux,
-      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv4</address-family></rib-add>)",
+      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv4-address-family</address-family></rib-add>)",
       &output, &error, &path));
   EXPECT_NE(output.find(">true</result>"), std::string::npos) << output;
   ASSERT_TRUE(InvokeRibAdd(NativePlatform::kLinux,
-      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv4</address-family><ip-rpf-check>true</ip-rpf-check></rib-add>)",
+      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv4-address-family</address-family><ip-rpf-check>true</ip-rpf-check></rib-add>)",
       &output, &error, &path));
   EXPECT_NE(output.find(">false</result>"), std::string::npos);
   EXPECT_NE(output.find("RPF"), std::string::npos);
@@ -551,7 +602,7 @@ TEST(RibConfigTest, RibAddDurablySuppliesInterfaceOnlyNexthopFamily) {
   std::string path;
   ASSERT_TRUE(InvokeRibAdd(
       NativePlatform::kLinux,
-      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv6</address-family></rib-add>)",
+      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv6-address-family</address-family></rib-add>)",
       &output, &error, &path, &registry,
       [&](const PersistentRegistry& state, std::string*) {
         written = state;
@@ -568,7 +619,7 @@ TEST(RibConfigTest, RibAddDurablySuppliesInterfaceOnlyNexthopFamily) {
   ASSERT_EQ(snapshot.size(), 1U);
   EXPECT_EQ(std::get<1>(snapshot[0]), "ipv6");
   EXPECT_NE(SerializeOperationalRoutes({}, snapshot).find(
-                "<address-family>ipv6</address-family>"),
+                "<address-family>ipv6-address-family</address-family>"),
             std::string::npos);
 }
 
@@ -585,11 +636,11 @@ TEST(RibConfigTest, InterfaceOnlyNexthopRejectsMissingOrConflictingRibFamily) {
 
   ASSERT_TRUE(InvokeRibAdd(
       NativePlatform::kLinux,
-      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv4</address-family></rib-add>)",
+      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv4-address-family</address-family></rib-add>)",
       &output, &error, &path, &registry));
   ASSERT_TRUE(InvokeRibAdd(
       NativePlatform::kLinux,
-      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv6</address-family></rib-add>)",
+      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv6-address-family</address-family></rib-add>)",
       &output, &error, &path, &registry));
   EXPECT_NE(output.find("another address family"), std::string::npos);
   EXPECT_EQ(registry.RibFamily("100"), "ipv4");
@@ -602,7 +653,7 @@ TEST(RibConfigTest, RibAddRollsBackFamilyWhenPersistenceFails) {
   std::string path;
   EXPECT_FALSE(InvokeRibAdd(
       NativePlatform::kLinux,
-      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv4</address-family></rib-add>)",
+      R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>100</name><address-family>ipv4-address-family</address-family></rib-add>)",
       &output, &error, &path, &registry,
       [](const PersistentRegistry&, std::string* why) {
         *why = "injected RIB-family write failure";

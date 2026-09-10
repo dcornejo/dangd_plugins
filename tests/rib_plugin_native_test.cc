@@ -23,7 +23,8 @@ int main(int argc, char** argv) {
   std::ostringstream proposed;
   proposed << "<config><routing-instance xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\">"
               "<name>native-test</name><rib-list><name>" << argv[2]
-           << "</name><address-family>" << (ipv6 ? "ipv6" : "ipv4")
+           << "</name><address-family>"
+           << (ipv6 ? "ipv6-address-family" : "ipv4-address-family")
            << "</address-family><route-list><route-index>1</route-index><match><"
            << (ipv6 ? "ipv6><dest-ipv6-prefix>" : "ipv4><dest-ipv4-prefix>")
            << prefix << (ipv6 ? "</dest-ipv6-prefix></ipv6>" : "</dest-ipv4-prefix></ipv4>")
@@ -53,7 +54,8 @@ int main(int argc, char** argv) {
   const std::string rib_add_input =
       "<rib-add xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\"><name>" +
       std::string(argv[2]) + "</name><address-family>" +
-      (ipv6 ? "ipv6" : "ipv4") + "</address-family></rib-add>";
+      (ipv6 ? "ipv6-address-family" : "ipv4-address-family") +
+      "</address-family></rib-add>";
   DangOperationV1 rib_add{"ietf-i2rs-rib", "rib-add",
                           "/ietf-i2rs-rib:rib-add", rib_add_input.c_str()};
   DangOperationResultV1 rib_add_result{};

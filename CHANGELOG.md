@@ -9,12 +9,22 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Corrected RFC 8431 XML address-family identity values from the internal
+  `ipv4`/`ipv6` shorthand to the schema-defined `ipv4-address-family` and
+  `ipv6-address-family`. Independent `yanglint -t notif` fixtures now validate
+  both notification shapes, including interface leafref context.
+
 - Enabled FreeBSD interface-only RFC 8431 nexthops by resolving exactly one
   usable local address in the route family through `getifaddrs(3)`. Automatic
   IPv6 link-local addresses are excluded and zero or multiple candidates fail
   at the modeled nexthop path instead of selecting an arbitrary address.
 
 ### Added
+
+- Implemented RFC 8431 `nexthop-resolution-status-change` for reusable
+  nexthops. Live imperative and datastore route bindings are joined with the
+  native installed-route inventory, producing quiet-baseline resolved and
+  unresolved transitions with complete portable nexthop payloads.
 
 - Added native-route snapshot tracking for externally initiated RFC 8431
   `route-change` notifications. The first observation establishes a quiet

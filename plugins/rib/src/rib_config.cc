@@ -76,7 +76,10 @@ xmlNodePtr FindRoutingInstance(xmlDocPtr document) {
 
 std::string LocalIdentity(std::string value) {
   const std::size_t colon = value.find(':');
-  return colon == std::string::npos ? value : value.substr(colon + 1);
+  value = colon == std::string::npos ? value : value.substr(colon + 1);
+  if (value == "ipv4-address-family") return "ipv4";
+  if (value == "ipv6-address-family") return "ipv6";
+  return value;
 }
 
 bool ParseUnsigned(xmlNodePtr node, std::uint64_t* output) {

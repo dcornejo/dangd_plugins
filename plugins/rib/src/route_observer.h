@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "plugins/rib/src/rib_config.h"
+#include "plugins/rib/src/rib_persistence.h"
 
 namespace dang::rib {
 
@@ -38,6 +39,22 @@ class RouteChangeTracker {
   bool initialized_ = false;
 };
 
+struct NexthopResolutionChange {
+  PersistentNexthop nexthop;
+  bool resolved = false;
+};
+
+/** Derives reusable-nexthop resolution transitions from installed bindings. */
+class NexthopResolutionTracker {
+ public:
+  [[nodiscard]] std::vector<NexthopResolutionChange> Observe(
+      const PersistentRegistry& registry,
+      const std::vector<ObservedRoute>& routes);
+
+ private:
+  std::map<std::pair<std::string, std::uint32_t>, bool> states_;
+};
+
 /** Reads Linux routes with rtnetlink. */
 [[nodiscard]] bool ObserveLinuxRoutes(std::vector<ObservedRoute>* routes,
                                       std::string* error);
@@ -55,6 +72,10 @@ class RouteChangeTracker {
 /** Serializes one RFC 8431 route-change event without an RFC 5277 wrapper. */
 [[nodiscard]] std::string SerializeRouteChange(const Route& route,
                                                bool installed);
+
+/** Serializes one RFC 8431 reusable-nexthop resolution transition. */
+[[nodiscard]] std::string SerializeNexthopResolutionChange(
+    const PersistentNexthop& nexthop, bool resolved);
 
 }  // namespace dang::rib
 

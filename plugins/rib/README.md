@@ -19,8 +19,9 @@ destination-prefix configuration slice. It claims ABI-v8 exclusive ownership
 of `routing`, so dangd rejects loading it together with the FRR provider. The
 portable `route-add`, `route-delete`, prefix-selected `route-update`, `rib-add`,
 `rib-delete`, `nh-add`, and `nh-delete` RPCs are implemented. Managed
-`route-change` delivery is implemented; external route detection and
-`nexthop-resolution-status-change` remain incomplete. Operational reads enumerate host IPv4
+`route-change` delivery covers managed and externally observed changes, and
+`nexthop-resolution-status-change` covers the portable reusable-nexthop subset.
+Operational reads enumerate host IPv4
 and IPv6 unicast routes through native kernel APIs and publish active and
 installed status as partial RFC 8431 state.
 
@@ -170,7 +171,13 @@ quiet; later external additions, removals, and route-property changes produce
 `route-change` events. Managed changes advance the same baseline when their
 event is queued, preventing a duplicate when the kernel subsequently reports
 the completed operation. The separate `nexthop-resolution-status-change`
-notification remains future work.
+notification is also implemented for reusable nexthops. Resolution means at
+least one imperative or datastore route bound through `nexthop-ref` is present
+and installed in the observed native RIB. Creating an unused object is not a
+status change; losing the final installed binding transitions it to
+`unresolved`. The notification contains the allocated ID, sharing flag, and
+complete supported base nexthop. Complex nexthops outside the portable subset
+remain unsupported rather than receiving an approximate status.
 
 Numeric names are an intentional temporary variance: RFC 8431 RIB names are
 arbitrary strings, while Linux policy tables and FreeBSD FIBs need an explicit

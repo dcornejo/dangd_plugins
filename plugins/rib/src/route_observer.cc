@@ -67,6 +67,38 @@ void RouteChangeTracker::ApplyManaged(const Route& route, bool installed) {
   else routes_.erase(key);
 }
 
+std::vector<NexthopResolutionChange> NexthopResolutionTracker::Observe(
+    const PersistentRegistry& registry,
+    const std::vector<ObservedRoute>& routes) {
+  using RouteKey = std::tuple<std::string, std::string, std::string>;
+  std::set<RouteKey> installed;
+  for (const ObservedRoute& route : routes)
+    if (route.installed)
+      installed.emplace(route.route.rib, route.route.address_family,
+                        route.route.destination);
+  std::set<std::pair<std::string, std::uint32_t>> resolved;
+  for (const PersistentRouteBinding& binding : registry.bindings)
+    if (installed.contains(
+            {binding.rib, binding.address_family, binding.destination}))
+      resolved.emplace(binding.rib, binding.nexthop_id);
+
+  std::map<std::pair<std::string, std::uint32_t>, bool> next;
+  std::vector<NexthopResolutionChange> changes;
+  for (const PersistentNexthop& nexthop : registry.nexthops) {
+    const auto key = std::make_pair(nexthop.rib, nexthop.id);
+    const bool current = resolved.contains(key);
+    next[key] = current;
+    const auto previous = states_.find(key);
+    // Object creation alone is not a resolution change. A newly observed
+    // object is reported only when it is already backed by an installed route.
+    if ((previous == states_.end() && current) ||
+        (previous != states_.end() && previous->second != current))
+      changes.push_back({nexthop, current});
+  }
+  states_ = std::move(next);
+  return changes;
+}
+
 std::string SerializeOperationalRoutes(
     const std::vector<ObservedRoute>& input,
     const std::vector<std::tuple<std::string, std::string, std::uint32_t>>&
@@ -116,6 +148,7 @@ std::string SerializeOperationalRoutes(
       current_family = route.address_family;
       xml << "<rib-list><name>" << Escape(route.rib)
           << "</name><address-family>" << route.address_family
+          << "-address-family"
           << "</address-family>";
     }
     const bool ipv4 = route.address_family == "ipv4";
@@ -146,7 +179,8 @@ std::string SerializeOperationalRoutes(
   for (const auto& [key, values] : ids) {
     if (emitted.contains(key)) continue;
     xml << "<rib-list><name>" << Escape(key.first)
-        << "</name><address-family>" << key.second << "</address-family>";
+        << "</name><address-family>" << key.second
+        << "-address-family</address-family>";
     for (const std::uint32_t id : values)
       xml << "<nexthop-list><nexthop-member-id>" << id
           << "</nexthop-member-id></nexthop-list>";
@@ -162,7 +196,8 @@ std::string SerializeRouteChange(const Route& route, bool installed) {
   xml << "<route-change xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\">"
       << "<rib-name>" << Escape(route.rib) << "</rib-name>"
       << "<address-family>" << Escape(route.address_family)
-      << "</address-family><route-index>" << route.index << "</route-index>"
+      << "-address-family</address-family><route-index>" << route.index
+      << "</route-index>"
       << "<match><" << (ipv4 ? "ipv4><dest-ipv4-prefix>"
                                  : "ipv6><dest-ipv6-prefix>")
       << Escape(route.destination)
@@ -173,6 +208,40 @@ std::string SerializeRouteChange(const Route& route, bool installed) {
       << "</route-installed-state><route-state>"
       << (installed ? "active" : "inactive")
       << "</route-state></route-change>";
+  return xml.str();
+}
+
+std::string SerializeNexthopResolutionChange(
+    const PersistentNexthop& nexthop, bool resolved) {
+  std::ostringstream xml;
+  xml << "<nexthop-resolution-status-change xmlns=\""
+         "urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\"><nexthop>"
+      << "<nexthop-id>" << nexthop.id << "</nexthop-id><sharing-flag>"
+      << (nexthop.sharable ? "true" : "false")
+      << "</sharing-flag><nexthop-base>";
+  if (nexthop.gateway && nexthop.interface) {
+    const bool ipv4 = nexthop.gateway->find(':') == std::string::npos;
+    xml << '<' << (ipv4 ? "egress-interface-ipv4-address"
+                         : "egress-interface-ipv6-address")
+        << "><outgoing-interface>" << Escape(*nexthop.interface)
+        << "</outgoing-interface><" << (ipv4 ? "ipv4-address"
+                                               : "ipv6-address")
+        << '>' << Escape(*nexthop.gateway) << "</"
+        << (ipv4 ? "ipv4-address" : "ipv6-address") << "></"
+        << (ipv4 ? "egress-interface-ipv4-address"
+                 : "egress-interface-ipv6-address") << '>';
+  } else if (nexthop.gateway) {
+    const bool ipv4 = nexthop.gateway->find(':') == std::string::npos;
+    xml << '<' << (ipv4 ? "ipv4-address" : "ipv6-address") << '>'
+        << Escape(*nexthop.gateway) << "</"
+        << (ipv4 ? "ipv4-address" : "ipv6-address") << '>';
+  } else if (nexthop.interface) {
+    xml << "<outgoing-interface>" << Escape(*nexthop.interface)
+        << "</outgoing-interface>";
+  }
+  xml << "</nexthop-base></nexthop><nexthop-state>"
+      << (resolved ? "resolved" : "unresolved")
+      << "</nexthop-state></nexthop-resolution-status-change>";
   return xml.str();
 }
 

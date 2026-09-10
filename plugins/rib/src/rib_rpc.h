@@ -50,6 +50,9 @@ class NexthopRegistry {
   /** Atomically replaces reference counts owned by the applied datastore. */
   [[nodiscard]] bool ReplaceConfigurationReferences(
       const std::vector<std::pair<std::string, std::uint32_t>>& references);
+  /** Replaces datastore route bindings used only for live resolution state. */
+  [[nodiscard]] bool ReplaceConfigurationRouteBindings(
+      const std::vector<Route>& routes);
   /** Returns a consistent RIB/family/identifier view for operational output. */
   [[nodiscard]] std::vector<std::tuple<std::string, std::string, std::uint32_t>>
   Snapshot();
@@ -58,6 +61,8 @@ class NexthopRegistry {
                              std::optional<std::string>* interface);
   /** Captures every durable object, allocation cursor, and route binding. */
   [[nodiscard]] PersistentRegistry PersistentState();
+  /** Returns durable state plus transient datastore route bindings. */
+  [[nodiscard]] PersistentRegistry ResolutionState();
   /** Replaces an empty process registry with validated durable state. */
   [[nodiscard]] bool RestorePersistentState(const PersistentRegistry& state,
                                             std::string* error);
@@ -74,6 +79,8 @@ class NexthopRegistry {
       configuration_references_;
   std::map<std::tuple<std::string, std::string, std::string>, std::uint32_t>
       route_references_;
+  std::map<std::tuple<std::string, std::string, std::string>, std::uint32_t>
+      configuration_route_references_;
   std::uint32_t next_id_ = 1;
 };
 

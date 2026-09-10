@@ -306,6 +306,23 @@ bool NexthopRegistry::ReplaceConfigurationReferences(
   return true;
 }
 
+bool NexthopRegistry::ReplaceConfigurationRouteBindings(
+    const std::vector<Route>& routes) {
+  std::lock_guard lock(mutex_);
+  std::map<std::tuple<std::string, std::string, std::string>, std::uint32_t>
+      replacement;
+  for (const Route& route : routes) {
+    if (!route.nexthop_ref) continue;
+    if (!entries_.contains({route.rib, *route.nexthop_ref}) ||
+        !replacement.emplace(
+            std::make_tuple(route.rib, route.address_family, route.destination),
+            *route.nexthop_ref).second)
+      return false;
+  }
+  configuration_route_references_ = std::move(replacement);
+  return true;
+}
+
 std::vector<std::tuple<std::string, std::string, std::uint32_t>>
 NexthopRegistry::Snapshot() {
   std::lock_guard lock(mutex_);
@@ -346,6 +363,25 @@ PersistentRegistry NexthopRegistry::PersistentState() {
     state.bindings.push_back(
         {std::get<0>(route), std::get<1>(route), std::get<2>(route), id});
   }
+  return state;
+}
+
+PersistentRegistry NexthopRegistry::ResolutionState() {
+  std::lock_guard lock(mutex_);
+  PersistentRegistry state;
+  state.next_id = next_id_;
+  for (const auto& [name, family] : rib_families_)
+    state.ribs.push_back({name, family});
+  for (const auto& [key, entry] : entries_)
+    state.nexthops.push_back({key.first, key.second, entry.gateway,
+                              entry.interface, entry.address_family,
+                              entry.sharable});
+  for (const auto& [route, id] : route_references_)
+    state.bindings.push_back(
+        {std::get<0>(route), std::get<1>(route), std::get<2>(route), id});
+  for (const auto& [route, id] : configuration_route_references_)
+    state.bindings.push_back(
+        {std::get<0>(route), std::get<1>(route), std::get<2>(route), id});
   return state;
 }
 
@@ -395,7 +431,8 @@ bool NexthopRegistry::RestorePersistentState(const PersistentRegistry& state,
 
   std::lock_guard lock(mutex_);
   if (!entries_.empty() || !rib_families_.empty() || !references_.empty() ||
-      !configuration_references_.empty() || !route_references_.empty()) {
+      !configuration_references_.empty() || !route_references_.empty() ||
+      !configuration_route_references_.empty()) {
     *error = "persistent state can only restore an empty registry";
     return false;
   }
@@ -419,10 +456,19 @@ bool NexthopRegistry::ReplacePersistentState(const PersistentRegistry& state,
     }
     candidate.references_[reference] += count;
   }
+  for (const auto& [route, id] : configuration_route_references_) {
+    if (!candidate.entries_.contains({std::get<0>(route), id})) {
+      *error = "checkpoint omits a datastore-bound nexthop";
+      return false;
+    }
+    candidate.configuration_route_references_[route] = id;
+  }
   entries_ = std::move(candidate.entries_);
   rib_families_ = std::move(candidate.rib_families_);
   references_ = std::move(candidate.references_);
   route_references_ = std::move(candidate.route_references_);
+  configuration_route_references_ =
+      std::move(candidate.configuration_route_references_);
   next_id_ = candidate.next_id_;
   return true;
 }
@@ -768,7 +814,9 @@ bool InvokeRibAdd(NativePlatform platform, const char* input_xml,
     return false;
   }
   const std::string name = Text(Child(root, "name"));
-  const std::string family = Text(Child(root, "address-family"));
+  std::string family = Text(Child(root, "address-family"));
+  if (family == "ipv4-address-family") family = "ipv4";
+  if (family == "ipv6-address-family") family = "ipv6";
   if (name.empty() || (family != "ipv4" && family != "ipv6")) {
     *error = "rib-add requires a name and IPv4 or IPv6 address family";
     *error_path = "/ietf-i2rs-rib:rib-add";
