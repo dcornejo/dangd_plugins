@@ -16,6 +16,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added native-route snapshot tracking for externally initiated RFC 8431
+  `route-change` notifications. The first observation establishes a quiet
+  baseline, later add/change/remove transitions are reported deterministically,
+  and managed operations advance that baseline to suppress duplicate events.
+
 - Upgraded the RFC 8431 RIB provider to plugin ABI v8 and added bounded
   `route-change` delivery for successfully reconciled datastore changes and
   durable imperative route RPCs. Failed native execution, persistence, and

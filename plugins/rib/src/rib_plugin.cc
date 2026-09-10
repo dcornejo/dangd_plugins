@@ -40,6 +40,7 @@ struct Context {
   std::mutex rpc_mutex;
   std::mutex notification_mutex;
   std::deque<std::string> notifications;
+  RouteChangeTracker route_changes;
   std::filesystem::path registry_path;
   std::string load_error;
   bool loaded = false;
@@ -110,6 +111,7 @@ constexpr std::size_t kMaximumPendingNotifications = 1024;
 RouteEventSink EventSink(Context* owner) {
   return [owner](const Route& route, bool installed) {
     std::lock_guard lock(owner->notification_mutex);
+    owner->route_changes.ApplyManaged(route, installed);
     if (owner->notifications.size() >= kMaximumPendingNotifications) return;
     owner->notifications.push_back(SerializeRouteChange(route, installed));
   };
@@ -309,7 +311,27 @@ int NextNotification(void* raw_context, DangNotificationV1* event,
   if (!raw_context || !event)
     return Fail(error, "RIB notification output is missing", "/");
   auto* owner = static_cast<Context*>(raw_context);
+  std::string observe_error;
+  std::vector<ObservedRoute> routes;
+  {
+    // Serialize observation with imperative mutations so the baseline cannot
+    // capture a route halfway through a compensated RPC plan.
+    std::lock_guard rpc_lock(owner->rpc_mutex);
+    const bool observed = kPlatform == NativePlatform::kLinux
+                              ? ObserveLinuxRoutes(&routes, &observe_error)
+                              : ObserveFreeBsdRoutes(&routes, &observe_error);
+    if (!observed) {
+      (void)Fail(error, "cannot observe RIB notifications: " + observe_error,
+                 "/ietf-i2rs-rib:routing-instance/rib-list");
+      return -1;
+    }
+  }
   std::lock_guard lock(owner->notification_mutex);
+  for (const ObservedRoute& change : owner->route_changes.Observe(routes)) {
+    if (owner->notifications.size() >= kMaximumPendingNotifications) break;
+    owner->notifications.push_back(
+        SerializeRouteChange(change.route, change.installed));
+  }
   if (owner->notifications.empty()) return 0;
   notification_xml = std::move(owner->notifications.front());
   owner->notifications.pop_front();

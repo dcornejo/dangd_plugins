@@ -5,6 +5,7 @@
 #define DANG_PLUGINS_RIB_ROUTE_OBSERVER_H_
 
 #include <string>
+#include <map>
 #include <tuple>
 #include <vector>
 
@@ -16,6 +17,25 @@ namespace dang::rib {
 struct ObservedRoute {
   Route route;
   bool installed = true;
+};
+
+/**
+ * Tracks a native RIB snapshot and reports additions, removals, and changes.
+ *
+ * The first observation establishes a quiet baseline. Managed changes update
+ * an established baseline immediately so their later kernel observation does
+ * not generate a duplicate event.
+ */
+class RouteChangeTracker {
+ public:
+  [[nodiscard]] std::vector<ObservedRoute> Observe(
+      const std::vector<ObservedRoute>& routes);
+  void ApplyManaged(const Route& route, bool installed);
+
+ private:
+  using Key = std::tuple<std::string, std::string, std::string>;
+  std::map<Key, ObservedRoute> routes_;
+  bool initialized_ = false;
 };
 
 /** Reads Linux routes with rtnetlink. */

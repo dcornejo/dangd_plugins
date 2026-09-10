@@ -31,6 +31,42 @@ std::string Escape(std::string_view value) {
 
 }  // namespace
 
+std::vector<ObservedRoute> RouteChangeTracker::Observe(
+    const std::vector<ObservedRoute>& routes) {
+  std::map<Key, ObservedRoute> next;
+  for (const ObservedRoute& route : routes)
+    next[{route.route.rib, route.route.address_family,
+          route.route.destination}] = route;
+  if (!initialized_) {
+    routes_ = std::move(next);
+    initialized_ = true;
+    return {};
+  }
+  std::vector<ObservedRoute> changes;
+  for (const auto& [key, previous] : routes_)
+    if (!next.contains(key)) {
+      ObservedRoute removed = previous;
+      removed.installed = false;
+      changes.push_back(std::move(removed));
+    }
+  for (const auto& [key, current] : next) {
+    const auto previous = routes_.find(key);
+    if (previous == routes_.end() ||
+        previous->second.route != current.route ||
+        previous->second.installed != current.installed)
+      changes.push_back(current);
+  }
+  routes_ = std::move(next);
+  return changes;
+}
+
+void RouteChangeTracker::ApplyManaged(const Route& route, bool installed) {
+  if (!initialized_) return;
+  const Key key{route.rib, route.address_family, route.destination};
+  if (installed) routes_[key] = ObservedRoute{route, true};
+  else routes_.erase(key);
+}
+
 std::string SerializeOperationalRoutes(
     const std::vector<ObservedRoute>& input,
     const std::vector<std::tuple<std::string, std::string, std::uint32_t>>&

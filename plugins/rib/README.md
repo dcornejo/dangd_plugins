@@ -164,8 +164,13 @@ are queued only after native execution and any registry sidecar update have
 succeeded. Datastore events are queued from successful applied-configuration
 reconciliation rather than tentative hardware apply, so a failed or rolled-back
 commit does not leak a success event. The bounded queue contains at most 1024
-events. Detection of externally initiated route changes and the separate
-`nexthop-resolution-status-change` notification remain future work.
+events. When dangd drains notifications, the provider also compares a fresh
+native route inventory with a synchronized baseline. The initial inventory is
+quiet; later external additions, removals, and route-property changes produce
+`route-change` events. Managed changes advance the same baseline when their
+event is queued, preventing a duplicate when the kernel subsequently reports
+the completed operation. The separate `nexthop-resolution-status-change`
+notification remains future work.
 
 Numeric names are an intentional temporary variance: RFC 8431 RIB names are
 arbitrary strings, while Linux policy tables and FreeBSD FIBs need an explicit

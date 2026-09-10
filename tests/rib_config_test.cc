@@ -215,6 +215,49 @@ TEST(RibConfigTest, SerializesInstalledAndRemovedRouteNotifications) {
   EXPECT_NE(removed.find("<route-state>inactive"), std::string::npos);
 }
 
+TEST(RibConfigTest, TracksExternalRouteChangesWithoutInitialFlood) {
+  Route first{.routing_instance = "default",
+              .rib = "100",
+              .address_family = "ipv4",
+              .index = 1,
+              .destination = "192.0.2.0/24",
+              .gateway = "192.0.2.1"};
+  Route second = first;
+  second.index = 2;
+  second.destination = "198.51.100.0/24";
+  RouteChangeTracker tracker;
+  EXPECT_TRUE(tracker.Observe({{first, true}}).empty());
+  const auto added = tracker.Observe({{first, true}, {second, true}});
+  ASSERT_EQ(added.size(), 1U);
+  EXPECT_EQ(added[0].route.destination, second.destination);
+  EXPECT_TRUE(added[0].installed);
+
+  second.gateway = "198.51.100.1";
+  const auto changed = tracker.Observe({{first, true}, {second, true}});
+  ASSERT_EQ(changed.size(), 1U);
+  EXPECT_EQ(changed[0].route.gateway, second.gateway);
+
+  const auto removed = tracker.Observe({{second, true}});
+  ASSERT_EQ(removed.size(), 1U);
+  EXPECT_EQ(removed[0].route.destination, first.destination);
+  EXPECT_FALSE(removed[0].installed);
+}
+
+TEST(RibConfigTest, ManagedChangesAdvanceExternalNotificationBaseline) {
+  Route route{.routing_instance = "default",
+              .rib = "100",
+              .address_family = "ipv4",
+              .index = 1,
+              .destination = "192.0.2.0/24",
+              .gateway = "192.0.2.1"};
+  RouteChangeTracker tracker;
+  EXPECT_TRUE(tracker.Observe({}).empty());
+  tracker.ApplyManaged(route, true);
+  EXPECT_TRUE(tracker.Observe({{route, true}}).empty());
+  tracker.ApplyManaged(route, false);
+  EXPECT_TRUE(tracker.Observe({}).empty());
+}
+
 TEST(RibConfigTest, SerializesRegisteredNexthopsWithAndWithoutRoutes) {
   const std::vector<std::tuple<std::string, std::string, std::uint32_t>> refs{
       {"100", "ipv4", 7}, {"200", "ipv6", 9}};
