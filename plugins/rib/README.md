@@ -24,6 +24,9 @@ portable `route-add`, `route-delete`, prefix-selected `route-update`, `rib-add`,
 Operational reads enumerate host IPv4
 and IPv6 unicast routes through native kernel APIs and publish active and
 installed status as partial RFC 8431 state.
+Gateway-plus-interface nexthops use the schema-defined combined IPv4 or IPv6
+container; generated examples for both address families are validated as YANG
+operational data with their interface leafrefs resolved.
 
 ## Installation status and dependencies
 

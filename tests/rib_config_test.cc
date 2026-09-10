@@ -233,6 +233,29 @@ TEST(RibConfigTest, SerializesObservedRoutesAsRfc8431State) {
   EXPECT_NE(xml.find("<route-installed-state>installed</route-installed-state>"),
             std::string::npos);
   EXPECT_NE(xml.find("dummy&amp;0"), std::string::npos);
+  EXPECT_NE(xml.find("<egress-interface-ipv4-address>"), std::string::npos);
+  EXPECT_NE(xml.find("</egress-interface-ipv4-address>"), std::string::npos);
+  EXPECT_EQ(xml.find("</ipv4-address><outgoing-interface>"),
+            std::string::npos);
+}
+
+TEST(RibConfigTest, SerializesCombinedIpv6NexthopAsOneChoiceCase) {
+  ObservedRoute observed;
+  observed.route = {.routing_instance = "default",
+                    .rib = "200",
+                    .address_family = "ipv6",
+                    .index = 43,
+                    .destination = "2001:db8:1::/64",
+                    .gateway = "2001:db8::1",
+                    .interface = "dummy0",
+                    .nexthop_ref = std::nullopt,
+                    .preference = 20,
+                    .local_only = false};
+  const std::string xml = SerializeOperationalRoutes({observed});
+  EXPECT_NE(xml.find("<egress-interface-ipv6-address>"), std::string::npos);
+  EXPECT_NE(xml.find("<ipv6-address>2001:db8::1</ipv6-address>"),
+            std::string::npos);
+  EXPECT_NE(xml.find("</egress-interface-ipv6-address>"), std::string::npos);
 }
 
 TEST(RibConfigTest, SerializesInstalledAndRemovedRouteNotifications) {

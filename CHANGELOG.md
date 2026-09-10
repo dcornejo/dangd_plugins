@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Corrected operational RFC 8431 nexthops that have both a gateway and an
+  outgoing interface. They now use the modeled combined IPv4 or IPv6 container
+  instead of emitting two mutually exclusive choice leaves. Both forms are
+  covered by direct YANG data validation.
+
 - Corrected RFC 8431 XML address-family identity values from the internal
   `ipv4`/`ipv6` shorthand to the schema-defined `ipv4-address-family` and
   `ipv6-address-family`. Independent `yanglint -t notif` fixtures now validate

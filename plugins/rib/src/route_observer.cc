@@ -29,6 +29,25 @@ std::string Escape(std::string_view value) {
   return result;
 }
 
+/** Emits exactly one case of the RFC 8431 nexthop-base choice. */
+void EmitBaseNexthop(std::ostringstream& xml, bool ipv4,
+                     const std::optional<std::string>& gateway,
+                     const std::optional<std::string>& interface) {
+  const char* address = ipv4 ? "ipv4-address" : "ipv6-address";
+  if (gateway && interface) {
+    const char* combined = ipv4 ? "egress-interface-ipv4-address"
+                                : "egress-interface-ipv6-address";
+    xml << '<' << combined << "><outgoing-interface>"
+        << Escape(*interface) << "</outgoing-interface><" << address << '>'
+        << Escape(*gateway) << "</" << address << "></" << combined << '>';
+  } else if (gateway) {
+    xml << '<' << address << '>' << Escape(*gateway) << "</" << address << '>';
+  } else if (interface) {
+    xml << "<outgoing-interface>" << Escape(*interface)
+        << "</outgoing-interface>";
+  }
+}
+
 }  // namespace
 
 std::vector<ObservedRoute> RouteChangeTracker::Observe(
@@ -157,13 +176,7 @@ std::string SerializeOperationalRoutes(
         << Escape(route.destination)
         << (ipv4 ? "</dest-ipv4-prefix></ipv4>" : "</dest-ipv6-prefix></ipv6>")
         << "</match><nexthop><nexthop-base>";
-    if (route.gateway)
-      xml << '<' << (ipv4 ? "ipv4-address" : "ipv6-address") << '>'
-          << Escape(*route.gateway) << "</"
-          << (ipv4 ? "ipv4-address" : "ipv6-address") << '>';
-    if (route.interface)
-      xml << "<outgoing-interface>" << Escape(*route.interface)
-          << "</outgoing-interface>";
+    EmitBaseNexthop(xml, ipv4, route.gateway, route.interface);
     xml << "</nexthop-base></nexthop><route-status><route-state>active</route-state>"
         << "<route-installed-state>"
         << (observed.installed ? "installed" : "uninstalled")
@@ -219,26 +232,8 @@ std::string SerializeNexthopResolutionChange(
       << "<nexthop-id>" << nexthop.id << "</nexthop-id><sharing-flag>"
       << (nexthop.sharable ? "true" : "false")
       << "</sharing-flag><nexthop-base>";
-  if (nexthop.gateway && nexthop.interface) {
-    const bool ipv4 = nexthop.gateway->find(':') == std::string::npos;
-    xml << '<' << (ipv4 ? "egress-interface-ipv4-address"
-                         : "egress-interface-ipv6-address")
-        << "><outgoing-interface>" << Escape(*nexthop.interface)
-        << "</outgoing-interface><" << (ipv4 ? "ipv4-address"
-                                               : "ipv6-address")
-        << '>' << Escape(*nexthop.gateway) << "</"
-        << (ipv4 ? "ipv4-address" : "ipv6-address") << "></"
-        << (ipv4 ? "egress-interface-ipv4-address"
-                 : "egress-interface-ipv6-address") << '>';
-  } else if (nexthop.gateway) {
-    const bool ipv4 = nexthop.gateway->find(':') == std::string::npos;
-    xml << '<' << (ipv4 ? "ipv4-address" : "ipv6-address") << '>'
-        << Escape(*nexthop.gateway) << "</"
-        << (ipv4 ? "ipv4-address" : "ipv6-address") << '>';
-  } else if (nexthop.interface) {
-    xml << "<outgoing-interface>" << Escape(*nexthop.interface)
-        << "</outgoing-interface>";
-  }
+  const bool ipv4 = !nexthop.gateway || nexthop.gateway->find(':') == std::string::npos;
+  EmitBaseNexthop(xml, ipv4, nexthop.gateway, nexthop.interface);
   xml << "</nexthop-base></nexthop><nexthop-state>"
       << (resolved ? "resolved" : "unresolved")
       << "</nexthop-state></nexthop-resolution-status-change>";
