@@ -81,6 +81,9 @@ class NexthopRegistry {
 using RegistryWriter =
     std::function<bool(const PersistentRegistry&, std::string*)>;
 
+/** Receives a route-change only after its native and durable work succeeds. */
+using RouteEventSink = std::function<void(const Route&, bool installed)>;
+
 /** Executes the supported RFC 8431 route-add RPC and returns its output XML. */
 [[nodiscard]] bool InvokeRouteAdd(NativePlatform platform,
                                   const char* input_xml,
@@ -90,7 +93,8 @@ using RegistryWriter =
                                   const CommandRunner& runner = RunNativeCommand,
                                   const NexthopResolver& resolver = {},
                                   NexthopRegistry* registry = nullptr,
-                                  const RegistryWriter& writer = {});
+                                  const RegistryWriter& writer = {},
+                                  const RouteEventSink& events = {});
 
 /** Injectable route inventory used to resolve route-delete prefix requests. */
 using RouteObserver =
@@ -102,7 +106,7 @@ using RouteObserver =
     std::string* error, std::string* error_path,
     const CommandRunner& runner = RunNativeCommand,
     const RouteObserver& observer = {}, NexthopRegistry* registry = nullptr,
-    const RegistryWriter& writer = {});
+    const RegistryWriter& writer = {}, const RouteEventSink& events = {});
 
 /** Updates prefix-selected routes with a base nexthop or route attributes. */
 [[nodiscard]] bool InvokeRouteUpdate(
@@ -112,7 +116,7 @@ using RouteObserver =
     const RouteObserver& observer = {},
     const NexthopResolver& resolver = {},
     NexthopRegistry* registry = nullptr,
-    const RegistryWriter& writer = {});
+    const RegistryWriter& writer = {}, const RouteEventSink& events = {});
 
 /** Validates availability of a native RIB/FIB for the rib-add RPC. */
 [[nodiscard]] bool InvokeRibAdd(NativePlatform platform, const char* input_xml,
@@ -127,7 +131,7 @@ using RouteObserver =
     std::string* error, std::string* error_path,
     const CommandRunner& runner = RunNativeCommand,
     const RouteObserver& observer = {}, NexthopRegistry* registry = nullptr,
-    const RegistryWriter& writer = {});
+    const RegistryWriter& writer = {}, const RouteEventSink& events = {});
 
 /** Allocates and retains a portable base nexthop for nh-add. */
 [[nodiscard]] bool InvokeNexthopAdd(NexthopRegistry* registry,

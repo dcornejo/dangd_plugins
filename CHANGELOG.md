@@ -16,6 +16,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Upgraded the RFC 8431 RIB provider to plugin ABI v8 and added bounded
+  `route-change` delivery for successfully reconciled datastore changes and
+  durable imperative route RPCs. Failed native execution, persistence, and
+  rolled-back tentative changes do not publish success events.
+
 - Persisted the address family established by RFC 8431 `rib-add` and use it as
   the explicit family for interface-only reusable nexthops. Such nexthops now
   appear in operational data even before a native route exists; missing and

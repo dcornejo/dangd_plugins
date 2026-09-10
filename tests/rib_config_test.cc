@@ -194,6 +194,27 @@ TEST(RibConfigTest, SerializesObservedRoutesAsRfc8431State) {
   EXPECT_NE(xml.find("dummy&amp;0"), std::string::npos);
 }
 
+TEST(RibConfigTest, SerializesInstalledAndRemovedRouteNotifications) {
+  Route route{.routing_instance = "default",
+              .rib = "100&blue",
+              .address_family = "ipv6",
+              .index = 42,
+              .destination = "2001:db8::/64"};
+  const std::string installed = SerializeRouteChange(route, true);
+  EXPECT_NE(installed.find("<route-change xmlns="), std::string::npos);
+  EXPECT_NE(installed.find("<rib-name>100&amp;blue</rib-name>"),
+            std::string::npos);
+  EXPECT_NE(installed.find("<dest-ipv6-prefix>2001:db8::/64"),
+            std::string::npos);
+  EXPECT_NE(installed.find("<route-installed-state>installed"),
+            std::string::npos);
+  EXPECT_NE(installed.find("<route-state>active"), std::string::npos);
+  const std::string removed = SerializeRouteChange(route, false);
+  EXPECT_NE(removed.find("<route-installed-state>uninstalled"),
+            std::string::npos);
+  EXPECT_NE(removed.find("<route-state>inactive"), std::string::npos);
+}
+
 TEST(RibConfigTest, SerializesRegisteredNexthopsWithAndWithoutRoutes) {
   const std::vector<std::tuple<std::string, std::string, std::uint32_t>> refs{
       {"100", "ipv4", 7}, {"200", "ipv6", 9}};
@@ -222,6 +243,7 @@ TEST(RibConfigTest, RouteAddReportsMixedBatchResults) {
       <route-list><route-index>8</route-index><match><ipv4><dest-ipv4-prefix>198.51.100.0/24</dest-ipv4-prefix></ipv4></match><route-attributes><route-preference>20</route-preference><local-only>false</local-only></route-attributes><nexthop><nexthop-base><ipv4-address>192.0.2.1</ipv4-address></nexthop-base></nexthop></route-list>
     </routes></route-add>)xml";
   unsigned calls = 0;
+  std::vector<Route> events;
   std::string output;
   std::string error;
   std::string path;
@@ -232,12 +254,17 @@ TEST(RibConfigTest, RouteAddReportsMixedBatchResults) {
         if (calls == 1) return true;
         *command_error = "injected failure";
         return false;
+      }, {}, nullptr, {},
+      [&](const Route& route, bool installed) {
+        if (installed) events.push_back(route);
       })) << error;
   EXPECT_NE(output.find("<success-count xmlns="), std::string::npos);
   EXPECT_NE(output.find(">1</success-count>"), std::string::npos);
   EXPECT_NE(output.find(">1</failed-count>"), std::string::npos);
   EXPECT_NE(output.find("<route-index>8</route-index>"), std::string::npos);
   EXPECT_NE(output.find("<error-code>0</error-code>"), std::string::npos);
+  ASSERT_EQ(events.size(), 1U);
+  EXPECT_EQ(events[0].index, 7U);
 }
 
 TEST(RibConfigTest, RouteAddRejectsMalformedEnvelope) {
@@ -928,6 +955,7 @@ TEST(RibConfigTest, RouteAddCompensatesNativeStateWhenBindingSaveFails) {
   std::string output;
   std::string error;
   std::string path;
+  unsigned events = 0;
   EXPECT_FALSE(InvokeRouteAdd(
       NativePlatform::kLinux,
       R"(<route-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><routes><route-list><route-index>9</route-index><match><ipv4><dest-ipv4-prefix>198.51.100.0/24</dest-ipv4-prefix></ipv4></match><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes><nexthop><nexthop-base><nexthop-ref>1</nexthop-ref></nexthop-base></nexthop></route-list></routes></route-add>)",
@@ -945,7 +973,8 @@ TEST(RibConfigTest, RouteAddCompensatesNativeStateWhenBindingSaveFails) {
       [](const PersistentRegistry&, std::string* why) {
         *why = "injected binding-write failure";
         return false;
-      }));
+      },
+      [&](const Route&, bool) { ++events; }));
   ASSERT_EQ(commands.size(), 2U);
   EXPECT_EQ(commands[0].arguments[3], "replace");
   EXPECT_EQ(commands[1].arguments[3], "delete");
@@ -955,6 +984,7 @@ TEST(RibConfigTest, RouteAddCompensatesNativeStateWhenBindingSaveFails) {
   route.address_family = "ipv4";
   route.destination = "198.51.100.0/24";
   EXPECT_FALSE(registry.RouteReference(route).has_value());
+  EXPECT_EQ(events, 0U);
 }
 
 TEST(RibConfigTest, RouteDeleteRestoresNativeStateWhenBindingSaveFails) {

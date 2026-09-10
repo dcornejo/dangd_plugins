@@ -120,4 +120,24 @@ std::string SerializeOperationalRoutes(
   return xml.str();
 }
 
+std::string SerializeRouteChange(const Route& route, bool installed) {
+  const bool ipv4 = route.address_family == "ipv4";
+  std::ostringstream xml;
+  xml << "<route-change xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\">"
+      << "<rib-name>" << Escape(route.rib) << "</rib-name>"
+      << "<address-family>" << Escape(route.address_family)
+      << "</address-family><route-index>" << route.index << "</route-index>"
+      << "<match><" << (ipv4 ? "ipv4><dest-ipv4-prefix>"
+                                 : "ipv6><dest-ipv6-prefix>")
+      << Escape(route.destination)
+      << (ipv4 ? "</dest-ipv4-prefix></ipv4>"
+               : "</dest-ipv6-prefix></ipv6>")
+      << "</match><route-installed-state>"
+      << (installed ? "installed" : "uninstalled")
+      << "</route-installed-state><route-state>"
+      << (installed ? "active" : "inactive")
+      << "</route-state></route-change>";
+  return xml.str();
+}
+
 }  // namespace dang::rib

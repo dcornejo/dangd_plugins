@@ -41,14 +41,15 @@ int main(int argc, char** argv) {
               "</route-list></rib-list></routing-instance></config>";
 
   void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
-  auto init = library ? reinterpret_cast<DangPluginInitV7>(
-      dlsym(library, "dang_plugin_init_v7")) : nullptr;
-  const DangPluginV7* api = init ? init() : nullptr;
+  auto init = library ? reinterpret_cast<DangPluginInitV8>(
+      dlsym(library, "dang_plugin_init_v8")) : nullptr;
+  const DangPluginV8* api = init ? init() : nullptr;
   if (!api) {
-    std::cerr << (library ? "missing v7 initializer" : dlerror()) << '\n';
+    std::cerr << (library ? "missing v8 initializer" : dlerror()) << '\n';
     return 1;
   }
-  const DangPluginV1& base = api->v6.v5.v4.v3.v2.v1;
+  const DangPluginV7& v7 = api->v7;
+  const DangPluginV1& base = v7.v6.v5.v4.v3.v2.v1;
   const std::string rib_add_input =
       "<rib-add xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\"><name>" +
       std::string(argv[2]) + "</name><address-family>" +
@@ -61,7 +62,7 @@ int main(int argc, char** argv) {
   DangTransactionV1 transaction{before, candidate.c_str(), "[]"};
   DangPluginErrorV1 error{};
   void* prepared = nullptr;
-  bool ok = api->v6.v5.v4.v3.v2.invoke(base.context, &rib_add,
+  bool ok = v7.v6.v5.v4.v3.v2.invoke(base.context, &rib_add,
                                         &rib_add_result, &error) &&
       rib_add_result.output_xml &&
       std::string_view(rib_add_result.output_xml).find(">true</result>") !=
@@ -75,7 +76,7 @@ int main(int argc, char** argv) {
   DangOperationV1 nh_operation{"ietf-i2rs-rib", "nh-add",
                                "/ietf-i2rs-rib:nh-add", nh_add_input.c_str()};
   DangOperationResultV1 nh_result{};
-  ok = ok && api->v6.v5.v4.v3.v2.invoke(base.context, &nh_operation,
+  ok = ok && v7.v6.v5.v4.v3.v2.invoke(base.context, &nh_operation,
                                         &nh_result, &error) &&
       nh_result.output_xml &&
       std::string_view(nh_result.output_xml).find(">1</nexthop-id>") !=
@@ -87,20 +88,20 @@ int main(int argc, char** argv) {
   nh_operation = {"ietf-i2rs-rib", "nh-delete", "/ietf-i2rs-rib:nh-delete",
                   nh_delete_input.c_str()};
   nh_result = {};
-  ok = ok && api->v6.v5.v4.v3.v2.invoke(base.context, &nh_operation,
+  ok = ok && v7.v6.v5.v4.v3.v2.invoke(base.context, &nh_operation,
                                         &nh_result, &error) &&
       nh_result.output_xml &&
       std::string_view(nh_result.output_xml).find(">true</result>") !=
           std::string_view::npos;
   DangHardwareActionV1 action{};
-  ok = ok && api->v6.v5.v4.hardware_action_at(base.context, prepared, 0,
+  ok = ok && v7.v6.v5.v4.hardware_action_at(base.context, prepared, 0,
                                                &action, &error) &&
-      api->v6.v5.v4.apply_hardware_action(base.context, prepared,
+      v7.v6.v5.v4.apply_hardware_action(base.context, prepared,
                                           action.action_id, &error);
   DangOperationalDataV2 state{};
-  ok = ok && api->v6.v5.get_operational_data_v2(base.context, &state, &error) &&
+  ok = ok && v7.v6.v5.get_operational_data_v2(base.context, &state, &error) &&
       state.data_xml && std::string_view(state.data_xml).find(prefix) != std::string_view::npos &&
-      api->v6.v5.v4.rollback_hardware_action(base.context, prepared,
+      v7.v6.v5.v4.rollback_hardware_action(base.context, prepared,
                                              action.action_id, &error);
   std::ostringstream rpc;
   rpc << "<route-add xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\">"
@@ -123,10 +124,22 @@ int main(int argc, char** argv) {
   DangOperationV1 operation{"ietf-i2rs-rib", "route-add", "/ietf-i2rs-rib:route-add",
                             rpc_input.c_str()};
   DangOperationResultV1 operation_result{};
-  ok = ok && api->v6.v5.v4.v3.v2.invoke(base.context, &operation,
+  ok = ok && v7.v6.v5.v4.v3.v2.invoke(base.context, &operation,
                                         &operation_result, &error) &&
       operation_result.output_xml &&
       std::string_view(operation_result.output_xml).find(">1</success-count>") !=
+          std::string_view::npos;
+  DangNotificationV1 route_event{};
+  ok = ok && api->next_notification(base.context, &route_event, &error) == 1 &&
+      route_event.module_name &&
+      std::string_view(route_event.module_name) == "ietf-i2rs-rib" &&
+      route_event.notification_name &&
+      std::string_view(route_event.notification_name) == "route-change" &&
+      route_event.content_xml &&
+      std::string_view(route_event.content_xml).find(prefix) !=
+          std::string_view::npos &&
+      std::string_view(route_event.content_xml).find(
+          "<route-installed-state>installed</route-installed-state>") !=
           std::string_view::npos;
   std::ostringstream update;
   update << "<route-update xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\">"
@@ -141,7 +154,7 @@ int main(int argc, char** argv) {
   operation = {"ietf-i2rs-rib", "route-update",
                "/ietf-i2rs-rib:route-update", update_input.c_str()};
   operation_result = {};
-  ok = ok && api->v6.v5.v4.v3.v2.invoke(base.context, &operation,
+  ok = ok && v7.v6.v5.v4.v3.v2.invoke(base.context, &operation,
                                         &operation_result, &error) &&
       operation_result.output_xml &&
       std::string_view(operation_result.output_xml).find(">1</success-count>") !=
@@ -163,7 +176,7 @@ int main(int argc, char** argv) {
                              : "/ietf-i2rs-rib:route-delete",
                may_empty_rib ? rib_delete_input.c_str() : deletion_input.c_str()};
   operation_result = {};
-  ok = ok && api->v6.v5.v4.v3.v2.invoke(base.context, &operation,
+  ok = ok && v7.v6.v5.v4.v3.v2.invoke(base.context, &operation,
                                         &operation_result, &error) &&
       operation_result.output_xml &&
       std::string_view(operation_result.output_xml).find(

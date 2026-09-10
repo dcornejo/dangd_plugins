@@ -431,7 +431,8 @@ bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
                     std::string* output_xml, std::string* error,
                     std::string* error_path, const CommandRunner& runner,
                     const NexthopResolver& resolver,
-                    NexthopRegistry* registry, const RegistryWriter& writer) {
+                    NexthopRegistry* registry, const RegistryWriter& writer,
+                    const RouteEventSink& events) {
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "route-add.xml", nullptr,
@@ -516,6 +517,8 @@ bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
   if (!PersistRegistryChange(platform, registry, before, writer, compensation,
                              runner, "route-add", error, error_path))
     return false;
+  if (events)
+    for (const Route& route : installed) events(route, true);
   *output_xml = Output(success, failed, details);
   return true;
 }
@@ -525,7 +528,8 @@ bool InvokeRouteDelete(NativePlatform platform, const char* input_xml,
                        std::string* error_path, const CommandRunner& runner,
                        const RouteObserver& supplied_observer,
                        NexthopRegistry* registry,
-                       const RegistryWriter& writer) {
+                       const RegistryWriter& writer,
+                       const RouteEventSink& events) {
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "route-delete.xml", nullptr,
@@ -597,6 +601,8 @@ bool InvokeRouteDelete(NativePlatform platform, const char* input_xml,
   if (!PersistRegistryChange(platform, registry, before, writer, compensation,
                              runner, "route-delete", error, error_path))
     return false;
+  if (events)
+    for (const Route& route : deleted) events(route, false);
   *output_xml = Output(success, failed, details);
   return true;
 }
@@ -607,7 +613,8 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
                        const RouteObserver& observer,
                        const NexthopResolver& resolver,
                        NexthopRegistry* registry,
-                       const RegistryWriter& writer) {
+                       const RegistryWriter& writer,
+                       const RouteEventSink& events) {
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "route-update.xml", nullptr,
@@ -735,6 +742,11 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
   if (!PersistRegistryChange(platform, registry, before, writer, compensation,
                              runner, "route-update", error, error_path))
     return false;
+  if (events)
+    for (const auto& [original, replacement] : replacements) {
+      events(original, false);
+      events(replacement, true);
+    }
   *output_xml = Output(success, failed, details);
   return true;
 }
@@ -806,7 +818,8 @@ bool InvokeRibDelete(NativePlatform platform, const char* input_xml,
                      std::string* error_path, const CommandRunner& runner,
                      const RouteObserver& observer,
                      NexthopRegistry* registry,
-                     const RegistryWriter& writer) {
+                     const RegistryWriter& writer,
+                     const RouteEventSink& events) {
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "rib-delete.xml", nullptr,
@@ -856,6 +869,8 @@ bool InvokeRibDelete(NativePlatform platform, const char* input_xml,
   if (!PersistRegistryChange(platform, registry, before, writer, compensation,
                              runner, "rib-delete", error, error_path))
     return false;
+  if (events)
+    for (const Change& deletion : deletions) events(deletion.route, false);
   return true;
 }
 

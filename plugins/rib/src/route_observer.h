@@ -32,6 +32,10 @@ struct ObservedRoute {
     const std::vector<std::tuple<std::string, std::string, std::uint32_t>>&
         nexthops = {});
 
+/** Serializes one RFC 8431 route-change event without an RFC 5277 wrapper. */
+[[nodiscard]] std::string SerializeRouteChange(const Route& route,
+                                               bool installed);
+
 }  // namespace dang::rib
 
 #endif  // DANG_PLUGINS_RIB_ROUTE_OBSERVER_H_

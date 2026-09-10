@@ -9,28 +9,29 @@
 int main(int argc, char** argv) {
   if (argc != 2) return 2;
   void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
-  auto init = library ? reinterpret_cast<DangPluginInitV7>(
-      dlsym(library, "dang_plugin_init_v7")) : nullptr;
-  const DangPluginV7* api = init ? init() : nullptr;
+  auto init = library ? reinterpret_cast<DangPluginInitV8>(
+      dlsym(library, "dang_plugin_init_v8")) : nullptr;
+  const DangPluginV8* api = init ? init() : nullptr;
   if (!api) return 1;
-  const DangPluginV1& base = api->v6.v5.v4.v3.v2.v1;
+  const DangPluginV7& v7 = api->v7;
+  const DangPluginV1& base = v7.v6.v5.v4.v3.v2.v1;
   constexpr char before[] = "<config/>";
   constexpr char proposed[] = R"(<config><routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>default</name><rib-list><name>100</name><address-family>ipv4</address-family><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>198.18.0.0/24</dest-ipv4-prefix></ipv4></match><nexthop><nexthop-base><egress-interface-ipv4-address><outgoing-interface>dummy0</outgoing-interface><ipv4-address>192.0.2.1</ipv4-address></egress-interface-ipv4-address></nexthop-base></nexthop><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes></route-list></rib-list></routing-instance></config>)";
   DangTransactionV1 transaction{before, proposed, "[]"};
   DangPluginErrorV1 error{};
   void* prepared = nullptr;
-  bool valid = base.abi_version == DANG_PLUGIN_ABI_V7 &&
+  bool valid = base.abi_version == DANG_PLUGIN_ABI_V8 &&
       std::string_view(base.plugin_name) == "dang-rib" &&
-      api->resource_domain_count(base.context) == 1 &&
-      std::string_view(api->resource_domain_at(base.context, 0)) == "routing" &&
+      v7.resource_domain_count(base.context) == 1 &&
+      std::string_view(v7.resource_domain_at(base.context, 0)) == "routing" &&
       base.prepare(base.context, &transaction, &prepared, &error) &&
       base.validate(base.context, prepared, &error);
   DangHardwareActionV1 action{};
-  valid = valid && api->v6.v5.v4.hardware_action_count(base.context, prepared) == 1 &&
-      api->v6.v5.v4.hardware_action_at(base.context, prepared, 0, &action, &error) &&
+  valid = valid && v7.v6.v5.v4.hardware_action_count(base.context, prepared) == 1 &&
+      v7.v6.v5.v4.hardware_action_at(base.context, prepared, 0, &action, &error) &&
       action.action_id && std::string_view(action.action_id) == "routes";
   DangOperationalDataV2 state{};
-  valid = valid && api->v6.v5.get_operational_data_v2(base.context, &state, &error) &&
+  valid = valid && v7.v6.v5.get_operational_data_v2(base.context, &state, &error) &&
       state.complete == 0 && state.data_xml &&
       std::string_view(state.data_xml).find("routing-instance") != std::string_view::npos;
   if (prepared) base.release(base.context, prepared);
@@ -39,13 +40,13 @@ int main(int argc, char** argv) {
   DangOperationV1 operation{"ietf-i2rs-rib", "nh-add",
                             "/ietf-i2rs-rib:nh-add", nh_add_xml};
   DangOperationResultV1 operation_result{};
-  valid = valid && api->v6.v5.v4.v3.v2.invoke(
+  valid = valid && v7.v6.v5.v4.v3.v2.invoke(
       base.context, &operation, &operation_result, &error) &&
       operation_result.output_xml &&
       std::string_view(operation_result.output_xml).find(">1</nexthop-id>") !=
           std::string_view::npos;
   state = {};
-  valid = valid && api->v6.v5.get_operational_data_v2(
+  valid = valid && v7.v6.v5.get_operational_data_v2(
       base.context, &state, &error) && state.data_xml &&
       std::string_view(state.data_xml).find(
           "<nexthop-member-id>1</nexthop-member-id>") !=
@@ -59,28 +60,28 @@ int main(int argc, char** argv) {
   operation = {"ietf-i2rs-rib", "nh-delete", "/ietf-i2rs-rib:nh-delete",
                nh_delete_xml};
   operation_result = {};
-  valid = valid && api->v6.v5.v4.v3.v2.invoke(
+  valid = valid && v7.v6.v5.v4.v3.v2.invoke(
       base.context, &operation, &operation_result, &error) &&
       operation_result.output_xml &&
       std::string_view(operation_result.output_xml).find("referenced by a route") !=
           std::string_view::npos;
   DangAppliedConfigurationV1 applied{};
-  valid = valid && api->v6.reconcile_applied_configuration(
+  valid = valid && v7.v6.reconcile_applied_configuration(
       base.context, referenced_prepared, referenced, &applied, &error) &&
       applied.applied_xml == referenced;
   if (referenced_prepared)
     base.release(base.context, referenced_prepared);
   operation_result = {};
-  valid = valid && api->v6.v5.v4.v3.v2.invoke(
+  valid = valid && v7.v6.v5.v4.v3.v2.invoke(
       base.context, &operation, &operation_result, &error) &&
       operation_result.output_xml &&
       std::string_view(operation_result.output_xml).find("referenced by a route") !=
           std::string_view::npos;
   applied = {};
-  valid = valid && api->v6.reconcile_applied_configuration(
+  valid = valid && v7.v6.reconcile_applied_configuration(
       base.context, nullptr, before, &applied, &error);
   operation_result = {};
-  valid = valid && api->v6.v5.v4.v3.v2.invoke(
+  valid = valid && v7.v6.v5.v4.v3.v2.invoke(
       base.context, &operation, &operation_result, &error) &&
       operation_result.output_xml &&
       std::string_view(operation_result.output_xml).find(">true</result>") !=

@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <filesystem>
 #include <mutex>
 #include <new>
@@ -37,6 +38,8 @@ struct Context {
   NexthopRegistry nexthops;
   std::once_flag load_once;
   std::mutex rpc_mutex;
+  std::mutex notification_mutex;
+  std::deque<std::string> notifications;
   std::filesystem::path registry_path;
   std::string load_error;
   bool loaded = false;
@@ -101,6 +104,16 @@ thread_local std::string message;
 thread_local std::string path;
 thread_local std::string operational_xml;
 thread_local std::string rpc_output_xml;
+thread_local std::string notification_xml;
+
+constexpr std::size_t kMaximumPendingNotifications = 1024;
+RouteEventSink EventSink(Context* owner) {
+  return [owner](const Route& route, bool installed) {
+    std::lock_guard lock(owner->notification_mutex);
+    if (owner->notifications.size() >= kMaximumPendingNotifications) return;
+    owner->notifications.push_back(SerializeRouteChange(route, installed));
+  };
+}
 
 int Fail(DangPluginErrorV1* error, std::string text, std::string where = {}) {
   message = std::move(text); path = std::move(where);
@@ -212,25 +225,25 @@ int Invoke(void* raw_context, const DangOperationV1* operation,
     invoked = InvokeRouteAdd(kPlatform, operation->input_xml, &rpc_output_xml,
                              &why, &where, RunNativeCommand,
                              Resolver(static_cast<Context*>(raw_context)),
-                             &owner->nexthops, Writer(owner));
+                             &owner->nexthops, Writer(owner), EventSink(owner));
   else if (std::string_view(operation->operation_name) == "route-delete")
     invoked = InvokeRouteDelete(kPlatform, operation->input_xml,
                                 &rpc_output_xml, &why, &where,
                                 RunNativeCommand, {},
-                                &owner->nexthops, Writer(owner));
+                                &owner->nexthops, Writer(owner), EventSink(owner));
   else if (std::string_view(operation->operation_name) == "route-update")
     invoked = InvokeRouteUpdate(kPlatform, operation->input_xml,
                                 &rpc_output_xml, &why, &where,
                                 RunNativeCommand, {},
                                 Resolver(static_cast<Context*>(raw_context)),
-                                &owner->nexthops, Writer(owner));
+                                &owner->nexthops, Writer(owner), EventSink(owner));
   else if (std::string_view(operation->operation_name) == "rib-add")
     invoked = InvokeRibAdd(kPlatform, operation->input_xml, &rpc_output_xml,
                            &why, &where, &owner->nexthops, Writer(owner));
   else if (std::string_view(operation->operation_name) == "rib-delete")
     invoked = InvokeRibDelete(kPlatform, operation->input_xml, &rpc_output_xml,
                               &why, &where, RunNativeCommand, {},
-                              &owner->nexthops, Writer(owner));
+                              &owner->nexthops, Writer(owner), EventSink(owner));
   else if (std::string_view(operation->operation_name) == "nh-add")
     invoked = InvokeNexthopAdd(
         &owner->nexthops, operation->input_xml,
@@ -263,7 +276,7 @@ int Operational(void* raw_context, DangOperationalDataV2* out, DangPluginErrorV1
       routes, static_cast<Context*>(raw_context)->nexthops.Snapshot());
   *out = {operational_xml.c_str(), 0}; return 1;
 }
-int Reconcile(void* raw_context, void*, const char* current_xml,
+int Reconcile(void* raw_context, void* raw_prepared, const char* current_xml,
               DangAppliedConfigurationV1* result, DangPluginErrorV1* error) {
   if (!raw_context || !current_xml || !result)
     return Fail(error, "RIB reconciliation input is incomplete");
@@ -279,20 +292,45 @@ int Reconcile(void* raw_context, void*, const char* current_xml,
   if (!owner->nexthops.ReplaceConfigurationReferences(References(current)))
     return Fail(error, "cannot establish applied nexthop references",
                 "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop");
+  auto* prepared = static_cast<Prepared*>(raw_prepared);
+  if (prepared && prepared->applied) {
+    const auto events = EventSink(owner);
+    for (const Change& change : prepared->changes)
+      events(change.route, change.kind == ChangeKind::kInstall);
+  }
   *result = {current_xml, nullptr, 0};
   return 1;
 }
 size_t ResourceCount(void*) { return 1; }
 const char* ResourceAt(void*, size_t index) { return index == 0 ? "routing" : nullptr; }
 
-const DangPluginV7 kPlugin{.v6 = {.v5 = {.v4 = {.v3 = {.v2 = {.v1 = {
-  DANG_PLUGIN_ABI_V7, "dang-rib", &plugin_context, SourceCount, SourceAt,
+int NextNotification(void* raw_context, DangNotificationV1* event,
+                     DangPluginErrorV1* error) {
+  if (!raw_context || !event)
+    return Fail(error, "RIB notification output is missing", "/");
+  auto* owner = static_cast<Context*>(raw_context);
+  std::lock_guard lock(owner->notification_mutex);
+  if (owner->notifications.empty()) return 0;
+  notification_xml = std::move(owner->notifications.front());
+  owner->notifications.pop_front();
+  *event = {.stream_name = "NETCONF",
+            .module_name = "ietf-i2rs-rib",
+            .notification_name = "route-change",
+            .content_xml = notification_xml.c_str(),
+            .instance_path = "",
+            .default_deny_all = 0};
+  return 1;
+}
+
+const DangPluginV8 kPlugin{.v7 = {.v6 = {.v5 = {.v4 = {.v3 = {.v2 = {.v1 = {
+  DANG_PLUGIN_ABI_V8, "dang-rib", &plugin_context, SourceCount, SourceAt,
   DependencyCount, DependencyAt, Prepare, Validate, Apply, Rollback, Release,
   nullptr}, .invoke = Invoke}, .get_operational_data = nullptr},
   .hardware_action_count = ActionCount, .hardware_action_at = ActionAt,
   .apply_hardware_action = ApplyAction, .rollback_hardware_action = RollbackAction},
   .get_operational_data_v2 = Operational}, .reconcile_applied_configuration = Reconcile},
-  .resource_domain_count = ResourceCount, .resource_domain_at = ResourceAt};
+  .resource_domain_count = ResourceCount, .resource_domain_at = ResourceAt},
+  .next_notification = NextNotification};
 }
 
-extern "C" const DangPluginV7* dang_plugin_init_v7() { return &kPlugin; }
+extern "C" const DangPluginV8* dang_plugin_init_v8() { return &kPlugin; }

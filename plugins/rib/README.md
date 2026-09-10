@@ -15,11 +15,12 @@ The source files are unmodified copies from the IETF YangModels RFC registry:
   `f6faea9938f0341ed48fda93dba9a69aa32ee7142c463342efec3d38f4eb3621`.
 
 The `dangd_rib_plugin` advertises the pinned model and implements the documented
-destination-prefix configuration slice. It claims ABI-v7 exclusive ownership
+destination-prefix configuration slice. It claims ABI-v8 exclusive ownership
 of `routing`, so dangd rejects loading it together with the FRR provider. The
 portable `route-add`, `route-delete`, prefix-selected `route-update`, `rib-add`,
-`rib-delete`, `nh-add`, and `nh-delete` RPCs are implemented; both
-notifications remain incomplete. Operational reads enumerate host IPv4
+`rib-delete`, `nh-add`, and `nh-delete` RPCs are implemented. Managed
+`route-change` delivery is implemented; external route detection and
+`nexthop-resolution-status-change` remain incomplete. Operational reads enumerate host IPv4
 and IPv6 unicast routes through native kernel APIs and publish active and
 installed status as partial RFC 8431 state.
 
@@ -156,6 +157,15 @@ plan in reverse order, restores the prior registry checkpoint, and includes
 any compensation failure in the attributed RPC error. Reusable objects and all
 imperative bindings therefore survive restart without acknowledging a split
 kernel/sidecar state.
+
+The ABI-v8 provider publishes `route-change` notifications for successful
+managed route installation, replacement, and removal. Imperative RPC events
+are queued only after native execution and any registry sidecar update have
+succeeded. Datastore events are queued from successful applied-configuration
+reconciliation rather than tentative hardware apply, so a failed or rolled-back
+commit does not leak a success event. The bounded queue contains at most 1024
+events. Detection of externally initiated route changes and the separate
+`nexthop-resolution-status-change` notification remain future work.
 
 Numeric names are an intentional temporary variance: RFC 8431 RIB names are
 arbitrary strings, while Linux policy tables and FreeBSD FIBs need an explicit

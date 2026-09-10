@@ -124,6 +124,7 @@ only with one another. Packaging does not weaken dangd's duplicate-owner check.
   through `mgmtd`, with disposable validation, before-image rollback,
   reconciliation, operational state, native RPC plumbing, and deduplicated
   unsolicited events. See `plugins/frr/README.md` for the tested limitations.
-- `rib` provides the initial ABI-v7 RFC 8431 configuration provider, claims the
+- `rib` provides the ABI-v8 RFC 8431 configuration and notification provider,
+  claims the
   `routing` resource against FRR, and applies its supported route slice on Linux
   and FreeBSD. RPC, notification, and operational work remains in progress.
