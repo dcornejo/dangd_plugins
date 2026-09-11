@@ -9,6 +9,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Derived RFC 8431 `local-only` operational state from native route metadata:
+  Linux `RT_SCOPE_HOST` and FreeBSD `RTF_LOCAL`. Connected and remote host
+  routes are no longer incorrectly conflated with destinations owned locally.
+
 - Corrected operational RFC 8431 nexthops that have both a gateway and an
   outgoing interface. They now use the modeled combined IPv4 or IPv6 container
   instead of emitting two mutually exclusive choice leaves. Both forms are

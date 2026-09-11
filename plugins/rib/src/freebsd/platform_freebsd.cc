@@ -218,6 +218,11 @@ bool ObserveFreeBsdRoutesForFib(std::uint32_t fib,
     route.address_family = ipv4 ? "ipv4" : "ipv6";
     route.destination = std::string(text) + "/" + std::to_string(prefix);
     route.preference = static_cast<std::uint32_t>(message->rtm_rmx.rmx_weight);
+#if defined(RTF_LOCAL)
+    // RTF_LOCAL is set for destinations owned by the host.  Do not infer this
+    // from RTF_HOST: a host route may still point at a remote peer.
+    route.local_only = (message->rtm_flags & RTF_LOCAL) != 0;
+#endif
     if (message->rtm_index) {
       char interface_name[IF_NAMESIZE]{};
       if (if_indextoname(message->rtm_index, interface_name)) route.interface = interface_name;

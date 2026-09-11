@@ -118,6 +118,11 @@ bool ObserveLinuxRoutes(std::vector<ObservedRoute>* routes,
       route.address_family = info->rtm_family == AF_INET ? "ipv4" : "ipv6";
       route.rib = std::to_string(info->rtm_table);
       route.preference = 0;
+      // RT_SCOPE_HOST identifies routes whose destinations are local to this
+      // host (for example, addresses in Linux's local table).  It is the
+      // kernel fact corresponding to RFC 8431 local-only; link scope does not
+      // imply local-only because connected prefixes still forward off-host.
+      route.local_only = info->rtm_scope == RT_SCOPE_HOST;
       std::array<unsigned char, 16> destination{};
       unsigned table = info->rtm_table;
       unsigned interface_index = 0;

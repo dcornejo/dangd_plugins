@@ -22,7 +22,7 @@
       </route-status>
       <route-attributes>
         <route-preference>10</route-preference>
-        <local-only>false</local-only>
+        <local-only>true</local-only>
       </route-attributes>
     </route-list>
   </rib-list>

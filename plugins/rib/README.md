@@ -27,6 +27,8 @@ installed status as partial RFC 8431 state.
 Gateway-plus-interface nexthops use the schema-defined combined IPv4 or IPv6
 container; generated examples for both address families are validated as YANG
 operational data with their interface leafrefs resolved.
+Observed `local-only` state comes from Linux `RT_SCOPE_HOST` and FreeBSD
+`RTF_LOCAL`; it is not guessed from prefix length or interface scope.
 
 ## Installation status and dependencies
 

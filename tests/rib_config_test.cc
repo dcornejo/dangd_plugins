@@ -250,12 +250,13 @@ TEST(RibConfigTest, SerializesCombinedIpv6NexthopAsOneChoiceCase) {
                     .interface = "dummy0",
                     .nexthop_ref = std::nullopt,
                     .preference = 20,
-                    .local_only = false};
+                    .local_only = true};
   const std::string xml = SerializeOperationalRoutes({observed});
   EXPECT_NE(xml.find("<egress-interface-ipv6-address>"), std::string::npos);
   EXPECT_NE(xml.find("<ipv6-address>2001:db8::1</ipv6-address>"),
             std::string::npos);
   EXPECT_NE(xml.find("</egress-interface-ipv6-address>"), std::string::npos);
+  EXPECT_NE(xml.find("<local-only>true</local-only>"), std::string::npos);
 }
 
 TEST(RibConfigTest, SerializesInstalledAndRemovedRouteNotifications) {
