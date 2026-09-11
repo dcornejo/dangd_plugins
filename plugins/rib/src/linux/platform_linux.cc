@@ -110,8 +110,12 @@ bool ObserveLinuxRoutes(std::vector<ObservedRoute>* routes,
       }
       if (header->nlmsg_type != RTM_NEWROUTE) continue;
       const auto* info = reinterpret_cast<const rtmsg*>(NLMSG_DATA(header));
-      if ((info->rtm_family != AF_INET && info->rtm_family != AF_INET6) ||
-          info->rtm_type != RTN_UNICAST) continue;
+      if (info->rtm_family != AF_INET && info->rtm_family != AF_INET6) continue;
+      if (info->rtm_type != RTN_UNICAST && info->rtm_type != RTN_LOCAL &&
+          info->rtm_type != RTN_BLACKHOLE &&
+          info->rtm_type != RTN_UNREACHABLE &&
+          info->rtm_type != RTN_PROHIBIT)
+        continue;
       ObservedRoute observed;
       Route& route = observed.route;
       route.routing_instance = "default";
@@ -122,7 +126,16 @@ bool ObserveLinuxRoutes(std::vector<ObservedRoute>* routes,
       // host (for example, addresses in Linux's local table).  It is the
       // kernel fact corresponding to RFC 8431 local-only; link scope does not
       // imply local-only because connected prefixes still forward off-host.
-      route.local_only = info->rtm_scope == RT_SCOPE_HOST;
+      route.local_only = info->rtm_scope == RT_SCOPE_HOST ||
+                         info->rtm_type == RTN_LOCAL;
+      if (info->rtm_type == RTN_LOCAL)
+        route.special = "receive";
+      else if (info->rtm_type == RTN_BLACKHOLE)
+        route.special = "discard";
+      else if (info->rtm_type == RTN_UNREACHABLE ||
+               info->rtm_type == RTN_PROHIBIT)
+        route.special = "discard-with-error";
+      observed.mutable_route = info->rtm_type == RTN_UNICAST;
       std::array<unsigned char, 16> destination{};
       unsigned table = info->rtm_table;
       unsigned interface_index = 0;
@@ -153,11 +166,16 @@ bool ObserveLinuxRoutes(std::vector<ObservedRoute>* routes,
         char interface_name[IF_NAMESIZE]{};
         if (if_indextoname(interface_index, interface_name)) route.interface = interface_name;
       }
+      if (route.special) {
+        route.gateway.reset();
+        route.interface.reset();
+      }
       // FNV-1a gives a stable RFC 8431 list key without claiming that the
       // kernel supplies a native route identifier.
       const std::string key = route.rib + "|" + route.address_family + "|" +
                               route.destination + "|" + route.gateway.value_or("") +
-                              "|" + route.interface.value_or("");
+                              "|" + route.interface.value_or("") + "|" +
+                              route.special.value_or("");
       std::uint64_t hash = 1469598103934665603ULL;
       for (const char byte : key) {
         hash ^= static_cast<unsigned char>(byte);

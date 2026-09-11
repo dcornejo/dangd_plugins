@@ -30,6 +30,13 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Published native receive, discard, and discard-with-error routes as RFC 8431
+  special nexthops. Linux local/blackhole/unreachable/prohibit routes and
+  FreeBSD local/blackhole/reject routes now appear in operational state.
+  Kernel-owned special routes are explicitly non-mutable; route delete/update
+  and whole-RIB deletion fail closed instead of approximating them as ordinary
+  forwarding routes.
+
 - Completed mapped FreeBSD FIB observation. Operational reads and notification
   polling now query FIB 0 plus each explicitly configured FreeBSD FIB and map
   every result back to its unique RFC 8431 RIB name.

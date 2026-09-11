@@ -259,6 +259,22 @@ TEST(RibConfigTest, SerializesCombinedIpv6NexthopAsOneChoiceCase) {
   EXPECT_NE(xml.find("<local-only>true</local-only>"), std::string::npos);
 }
 
+TEST(RibConfigTest, SerializesNativeSpecialNexthopIdentity) {
+  ObservedRoute observed;
+  observed.route = {.routing_instance = "default",
+                    .rib = "255",
+                    .address_family = "ipv4",
+                    .index = 44,
+                    .destination = "192.0.2.7/32",
+                    .preference = 0,
+                    .local_only = true,
+                    .special = "receive"};
+  observed.mutable_route = false;
+  const std::string xml = SerializeOperationalRoutes({observed});
+  EXPECT_NE(xml.find("<special>receive</special>"), std::string::npos);
+  EXPECT_EQ(xml.find("<outgoing-interface>"), std::string::npos);
+}
+
 TEST(RibConfigTest, SerializesInstalledAndRemovedRouteNotifications) {
   Route route{.routing_instance = "default",
               .rib = "100&blue",
@@ -513,6 +529,33 @@ TEST(RibConfigTest, RouteDeleteRejectsAmbiguousObservedRoute) {
       [&](std::vector<ObservedRoute>* routes, std::string*) {
         *routes = {route, route}; return true;
       }));
+  EXPECT_NE(output.find("<error-code>0</error-code>"), std::string::npos);
+}
+
+TEST(RibConfigTest, RouteDeleteRefusesObservedKernelOwnedSpecialRoute) {
+  ObservedRoute route;
+  route.route = {.routing_instance = "default", .rib = "255",
+                 .address_family = "ipv4", .index = 9,
+                 .destination = "192.0.2.7/32", .preference = 0,
+                 .local_only = true, .special = "receive"};
+  route.mutable_route = false;
+  unsigned commands = 0;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRouteDelete(
+      NativePlatform::kLinux,
+      R"(<route-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><return-failure-detail>true</return-failure-detail><rib-name>255</rib-name><routes><route-list><route-index>9</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.7/32</dest-ipv4-prefix></ipv4></match></route-list></routes></route-delete>)",
+      &output, &error, &path,
+      [&](const NativeCommand&, std::string*) {
+        ++commands;
+        return true;
+      },
+      [&](std::vector<ObservedRoute>* routes, std::string*) {
+        *routes = {route};
+        return true;
+      })) << error;
+  EXPECT_EQ(commands, 0U);
   EXPECT_NE(output.find("<error-code>0</error-code>"), std::string::npos);
 }
 

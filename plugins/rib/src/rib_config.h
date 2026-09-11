@@ -32,6 +32,8 @@ struct Route {
   std::optional<std::uint32_t> nexthop_ref;
   std::uint32_t preference = 0;
   bool local_only = false;
+  /** RFC 8431 identity for an observed native special nexthop. */
+  std::optional<std::string> special;
 
   bool operator==(const Route&) const = default;
 };

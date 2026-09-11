@@ -32,9 +32,12 @@ std::string Escape(std::string_view value) {
 /** Emits exactly one case of the RFC 8431 nexthop-base choice. */
 void EmitBaseNexthop(std::ostringstream& xml, bool ipv4,
                      const std::optional<std::string>& gateway,
-                     const std::optional<std::string>& interface) {
+                     const std::optional<std::string>& interface,
+                     const std::optional<std::string>& special = {}) {
   const char* address = ipv4 ? "ipv4-address" : "ipv6-address";
-  if (gateway && interface) {
+  if (special) {
+    xml << "<special>" << Escape(*special) << "</special>";
+  } else if (gateway && interface) {
     const char* combined = ipv4 ? "egress-interface-ipv4-address"
                                 : "egress-interface-ipv6-address";
     xml << '<' << combined << "><outgoing-interface>"
@@ -176,7 +179,7 @@ std::string SerializeOperationalRoutes(
         << Escape(route.destination)
         << (ipv4 ? "</dest-ipv4-prefix></ipv4>" : "</dest-ipv6-prefix></ipv6>")
         << "</match><nexthop><nexthop-base>";
-    EmitBaseNexthop(xml, ipv4, route.gateway, route.interface);
+    EmitBaseNexthop(xml, ipv4, route.gateway, route.interface, route.special);
     xml << "</nexthop-base></nexthop><route-status><route-state>active</route-state>"
         << "<route-installed-state>"
         << (observed.installed ? "installed" : "uninstalled")

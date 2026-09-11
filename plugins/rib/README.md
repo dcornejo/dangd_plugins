@@ -29,6 +29,13 @@ container; generated examples for both address families are validated as YANG
 operational data with their interface leafrefs resolved.
 Observed `local-only` state comes from Linux `RT_SCOPE_HOST` and FreeBSD
 `RTF_LOCAL`; it is not guessed from prefix length or interface scope.
+Native receive, blackhole, and error-reject routes are published with the RFC
+8431 `receive`, `discard`, and `discard-with-error` special nexthop identities.
+This covers Linux `RTN_LOCAL`, `RTN_BLACKHOLE`, `RTN_UNREACHABLE`, and
+`RTN_PROHIBIT`, plus FreeBSD `RTF_LOCAL`, `RTF_BLACKHOLE`, and `RTF_REJECT`.
+These kernel-owned special routes are read-only in this portable provider.
+Route delete/update returns reserved error code 0 for them, and `rib-delete`
+fails before changing anything if the selected RIB contains one.
 
 ## Installation status and dependencies
 

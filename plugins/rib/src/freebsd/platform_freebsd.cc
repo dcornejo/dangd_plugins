@@ -222,7 +222,16 @@ bool ObserveFreeBsdRoutesForFib(std::uint32_t fib,
     // RTF_LOCAL is set for destinations owned by the host.  Do not infer this
     // from RTF_HOST: a host route may still point at a remote peer.
     route.local_only = (message->rtm_flags & RTF_LOCAL) != 0;
+    if (route.local_only) route.special = "receive";
 #endif
+#if defined(RTF_BLACKHOLE)
+    if (message->rtm_flags & RTF_BLACKHOLE) route.special = "discard";
+#endif
+#if defined(RTF_REJECT)
+    if (message->rtm_flags & RTF_REJECT)
+      route.special = "discard-with-error";
+#endif
+    observed.mutable_route = !route.special.has_value();
     if (message->rtm_index) {
       char interface_name[IF_NAMESIZE]{};
       if (if_indextoname(message->rtm_index, interface_name)) route.interface = interface_name;
@@ -234,9 +243,14 @@ bool ObserveFreeBsdRoutesForFib(std::uint32_t fib,
           : static_cast<const void*>(&reinterpret_cast<const sockaddr_in6*>(gateway)->sin6_addr);
       if (inet_ntop(gateway->sa_family, gateway_bytes, text, sizeof(text))) route.gateway = text;
     }
+    if (route.special) {
+      route.gateway.reset();
+      route.interface.reset();
+    }
     const std::string key = route.rib + "|" + route.address_family + "|" +
                             route.destination + "|" + route.gateway.value_or("") +
-                            "|" + route.interface.value_or("");
+                            "|" + route.interface.value_or("") + "|" +
+                            route.special.value_or("");
     std::uint64_t hash = 1469598103934665603ULL;
     for (const char byte : key) {
       hash ^= static_cast<unsigned char>(byte);

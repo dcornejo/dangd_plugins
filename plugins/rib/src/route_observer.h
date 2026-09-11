@@ -18,6 +18,8 @@ namespace dang::rib {
 struct ObservedRoute {
   Route route;
   bool installed = true;
+  /** False when observation is safe but native mutation is not implemented. */
+  bool mutable_route = true;
 };
 
 /**

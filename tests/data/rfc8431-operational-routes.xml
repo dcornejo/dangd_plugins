@@ -25,6 +25,21 @@
         <local-only>true</local-only>
       </route-attributes>
     </route-list>
+    <route-list>
+      <route-index>44</route-index>
+      <match>
+        <ipv4><dest-ipv4-prefix>192.0.2.7/32</dest-ipv4-prefix></ipv4>
+      </match>
+      <nexthop><nexthop-base><special>receive</special></nexthop-base></nexthop>
+      <route-status>
+        <route-state>active</route-state>
+        <route-installed-state>installed</route-installed-state>
+      </route-status>
+      <route-attributes>
+        <route-preference>0</route-preference>
+        <local-only>true</local-only>
+      </route-attributes>
+    </route-list>
   </rib-list>
   <rib-list>
     <name>red</name>

@@ -649,6 +649,10 @@ bool InvokeRouteDelete(NativePlatform platform, const char* input_xml,
         matches.push_back(&candidate);
     if (matches.empty()) { failed.emplace_back(index, 2U); continue; }
     if (matches.size() != 1U) { failed.emplace_back(index, 0U); continue; }
+    if (!matches.front()->mutable_route) {
+      failed.emplace_back(index, 0U);
+      continue;
+    }
     Route route = matches.front()->route;
     route.index = index;
     const auto native_route = NativeRoute(route, native_rib);
@@ -736,6 +740,10 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
         matches.push_back(&candidate);
     if (matches.empty()) { failed.emplace_back(index, 2U); continue; }
     if (matches.size() != 1U) { failed.emplace_back(index, 0U); continue; }
+    if (!matches.front()->mutable_route) {
+      failed.emplace_back(index, 0U);
+      continue;
+    }
     Route replacement = matches.front()->route;
     replacement.index = index;
     if (registry)
@@ -935,6 +943,12 @@ bool InvokeRibDelete(NativePlatform platform, const char* input_xml,
     *error_path = "/ietf-i2rs-rib:rib-delete/name";
     return false;
   }
+  for (const ObservedRoute& route : observed)
+    if (route.route.rib == name && !route.mutable_route) {
+      *output_xml = BooleanOutput(
+          false, "the RIB contains native route types this provider cannot mutate");
+      return true;
+    }
   std::vector<Change> deletions;
   for (const ObservedRoute& route : observed)
     if (route.route.rib == name) {
