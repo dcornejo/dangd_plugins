@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "plugins/rib/src/platform_executor.h"
+#include "plugins/rib/src/rib_persistence.h"
 
 namespace dang::rib {
 
@@ -43,6 +44,11 @@ class RibMapping {
   std::map<ForwardKey, ForwardValue> forward_;
   std::map<ReverseKey, std::string> reverse_;
 };
+
+/** Rejects durable modeled RIB identities that this mapping cannot resolve. */
+[[nodiscard]] bool ValidateRegistryRibMappings(
+    const PersistentRegistry& registry, const RibMapping& mapping,
+    NativePlatform platform, std::string* error);
 
 /** Loads a bounded versioned JSON mapping; a missing optional path is empty. */
 [[nodiscard]] bool LoadRibMapping(const std::filesystem::path& path,

@@ -238,6 +238,15 @@ On FreeBSD, operational and notification polling query FIB 0 plus every
 explicitly mapped FreeBSD FIB independently with `NET_RT_DUMP`; results are
 then translated back to their unique modeled names.
 
+When upgrading from mapping format 1 or numeric identity names, stop dangd and
+update both the mapping file and every RIB name in the private nexthop registry
+before restarting. The registry defaults to
+`/var/lib/dangd/rib-nexthops.json` and may be overridden with
+`DANG_RIB_REGISTRY_FILE`. Startup validates all persisted RIB, nexthop, and
+route-binding identities against the active platform mapping and fails with a
+migration message instead of loading ambiguous state. An unused registry may
+instead be removed while dangd is stopped.
+
 FreeBSD interface-only nexthops resolve the interface's local address through
 `getifaddrs(3)` because `route(8)` requires that address as the gateway argument
 for an Ethernet route. Resolution is restricted to the route's address family,

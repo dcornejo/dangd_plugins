@@ -80,6 +80,37 @@ TEST(RibConfigTest, LoadsVersionedRibMappingAndRejectsAmbiguousReverseNames) {
   std::filesystem::remove(path);
 }
 
+TEST(RibConfigTest, RejectsPersistedRibNamesThatViolateFamilySafeMapping) {
+  RibMapping mapping;
+  std::string error;
+  PersistentRegistry safe;
+  safe.ribs.push_back({"ipv4-100", "ipv4"});
+  safe.nexthops.push_back({.rib = "ipv4-100",
+                           .id = 1,
+                           .gateway = "192.0.2.1",
+                           .address_family = "ipv4"});
+  safe.bindings.push_back({.rib = "ipv4-100",
+                           .address_family = "ipv4",
+                           .destination = "198.51.100.0/24",
+                           .route_index = 7,
+                           .nexthop_id = 1});
+  EXPECT_TRUE(ValidateRegistryRibMappings(
+      safe, mapping, NativePlatform::kLinux, &error)) << error;
+
+  PersistentRegistry legacy = safe;
+  legacy.bindings.front().rib = "100";
+  EXPECT_FALSE(ValidateRegistryRibMappings(
+      legacy, mapping, NativePlatform::kLinux, &error));
+  EXPECT_NE(error.find("migrate bare numeric names"), std::string::npos);
+
+  PersistentRegistry unknown_family;
+  unknown_family.nexthops.push_back(
+      {.rib = "ipv4-100", .id = 1, .interface = "dummy0"});
+  EXPECT_FALSE(ValidateRegistryRibMappings(
+      unknown_family, mapping, NativePlatform::kLinux, &error));
+  EXPECT_NE(error.find("no address-family context"), std::string::npos);
+}
+
 constexpr char kBefore[] = R"xml(<config>
   <routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib">
     <name>default</name><rib-list><name>100</name>

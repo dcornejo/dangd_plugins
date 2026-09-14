@@ -81,6 +81,9 @@ bool EnsureRegistry(Context* owner, std::string* error) {
                                    &owner->load_error) &&
                     LoadRegistry(owner->registry_path, &state,
                                  &owner->load_error) &&
+                    ValidateRegistryRibMappings(
+                        state, owner->rib_mapping, kPlatform,
+                        &owner->load_error) &&
                     owner->nexthops.RestorePersistentState(
                         state, &owner->load_error);
   });

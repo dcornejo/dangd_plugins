@@ -15,6 +15,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   requires `address-family`; safe built-in names are `ipv4-N` and `ipv6-N`,
   and ambiguous bare numeric modeled names and version-1 maps are rejected.
 
+- Made startup reject durable RIB, nexthop, or route-binding identities that
+  cannot be resolved through the active family-aware mapping. Legacy numeric
+  registry entries now produce an explicit `ipv4-N`/`ipv6-N` migration error
+  instead of silently diverging from operational RIB names.
+
 - Made reusable-nexthop route bindings multipath-safe by including the modeled
   `route-index` in process and durable identities. Parallel referenced routes
   for one RIB/family/prefix no longer replace each other's binding. Registry

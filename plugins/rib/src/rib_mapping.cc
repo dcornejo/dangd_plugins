@@ -101,6 +101,46 @@ std::vector<std::uint32_t> RibMapping::NativeNumbers(
   return result;
 }
 
+bool ValidateRegistryRibMappings(const PersistentRegistry& registry,
+                                 const RibMapping& mapping,
+                                 NativePlatform platform,
+                                 std::string* error) {
+  const auto resolvable = [&](std::string_view name, std::string_view family,
+                              std::string_view kind) {
+    if (mapping.ToNative(name, platform, family)) return true;
+    std::string message = "durable " + std::string(kind) + " RIB name '" +
+                          std::string(name) + "' has no " +
+                          std::string(family) + " mapping";
+    if (Number(name))
+      message += "; migrate bare numeric names to ipv4-N or ipv6-N";
+    return Fail(std::move(message), error);
+  };
+  for (const PersistentRib& rib : registry.ribs)
+    if (!resolvable(rib.name, rib.address_family, "RIB")) return false;
+  for (const PersistentRouteBinding& binding : registry.bindings)
+    if (!resolvable(binding.rib, binding.address_family, "route binding"))
+      return false;
+  for (const PersistentNexthop& nexthop : registry.nexthops) {
+    std::string family = nexthop.address_family.value_or("");
+    if (family.empty()) {
+      const auto rib = std::ranges::find_if(
+          registry.ribs, [&](const PersistentRib& candidate) {
+            return candidate.name == nexthop.rib;
+          });
+      if (rib != registry.ribs.end()) family = rib->address_family;
+    }
+    if (family.empty() && nexthop.gateway)
+      family = nexthop.gateway->find(':') == std::string::npos ? "ipv4"
+                                                               : "ipv6";
+    if (family.empty())
+      return Fail("durable nexthop RIB name '" + nexthop.rib +
+                      "' has no address-family context",
+                  error);
+    if (!resolvable(nexthop.rib, family, "nexthop")) return false;
+  }
+  return true;
+}
+
 bool LoadRibMapping(const std::filesystem::path& path, RibMapping* mapping,
                     std::string* error) {
   if (!mapping) return false;
