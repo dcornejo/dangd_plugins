@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Rejected non-default RFC 8431 routing instances at the modeled name path.
+  The Linux and FreeBSD backends do not yet map instances to VRFs or VNETs;
+  accepting another name previously installed its routes in the host default
+  instance and silently violated isolation.
+
 - Made external route-change tracking multipath-safe by including the gateway,
   interface, and special-nexthop identity in the native route key. Distinct
   paths for one prefix no longer overwrite each other. Managed confirmation

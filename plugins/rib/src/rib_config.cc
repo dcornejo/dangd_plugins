@@ -125,6 +125,11 @@ bool ParseConfig(const char* xml, Config* config, std::string* error,
   if (instance_name.empty())
     return Fail("routing-instance name is required",
                 "/ietf-i2rs-rib:routing-instance/name", error, error_path);
+  if (instance_name != "default")
+    return Fail(
+        "the native RIB backend supports only routing-instance 'default'; "
+        "VRF or VNET instance mapping is not implemented",
+        "/ietf-i2rs-rib:routing-instance/name", error, error_path);
 
   std::set<std::tuple<std::string, std::uint64_t>> route_keys;
   for (xmlNodePtr rib : Children(instance, "rib-list")) {

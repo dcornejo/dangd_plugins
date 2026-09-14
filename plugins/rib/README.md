@@ -73,6 +73,9 @@ numeric RIB/FIB names. It must not be loaded together with the FRR plugin.
 
 The runtime foundation currently parses destination-prefix IPv4 and IPv6
 routes whose base nexthop is a gateway, an outgoing interface, or both. It
+accepts only the routing instance named `default`; VRF/VNET instance mapping is
+not implemented, so any other name fails at `/routing-instance/name` rather
+than being applied to the host default instance. It
 requires the RFC 8431 route preference and local-only fields, rejects source,
 MPLS, MAC, interface-match, chained, replicated, protected, load-balanced, and
 tunnel routes with an attributed model path, and computes replacements as an

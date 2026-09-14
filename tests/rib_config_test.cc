@@ -86,6 +86,21 @@ TEST(RibConfigTest, ParsesPortableDestinationRoute) {
   EXPECT_EQ(config.routes[0].preference, 10U);
 }
 
+TEST(RibConfigTest, RejectsUnmappedRoutingInstanceInsteadOfUsingDefault) {
+  std::string xml(kBefore);
+  const std::string modeled_name = "<name>default</name>";
+  const auto position = xml.find(modeled_name);
+  ASSERT_NE(position, std::string::npos);
+  xml.replace(position, modeled_name.size(), "<name>tenant-blue</name>");
+  Config config;
+  std::string error;
+  std::string path;
+  EXPECT_FALSE(ParseConfig(xml.c_str(), &config, &error, &path));
+  EXPECT_NE(error.find("VRF or VNET"), std::string::npos);
+  EXPECT_EQ(path, "/ietf-i2rs-rib:routing-instance/name");
+  EXPECT_TRUE(config.routes.empty());
+}
+
 TEST(RibConfigTest, RejectsUnsupportedSourceRouteWithAttributedPath) {
   std::string xml(kBefore);
   const auto prefix = xml.find("dest-ipv4-prefix");
