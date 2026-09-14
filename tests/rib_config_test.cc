@@ -387,7 +387,9 @@ TEST(RibConfigTest, TracksObservedReusableNexthopResolutionTransitions) {
               .rib = "100",
               .address_family = "ipv4",
               .index = 1,
-              .destination = "198.51.100.0/24"};
+              .destination = "198.51.100.0/24",
+              .gateway = "192.0.2.1",
+              .interface = "dummy&0"};
   NexthopResolutionTracker tracker;
   EXPECT_TRUE(tracker.Observe(registry, {}).empty());
   const auto resolved = tracker.Observe(registry, {{route, true}});
@@ -403,6 +405,31 @@ TEST(RibConfigTest, TracksObservedReusableNexthopResolutionTransitions) {
   const auto unresolved = tracker.Observe(registry, {});
   ASSERT_EQ(unresolved.size(), 1U);
   EXPECT_FALSE(unresolved[0].resolved);
+}
+
+TEST(RibConfigTest, DoesNotResolveNexthopFromDifferentInstalledPath) {
+  PersistentRegistry registry;
+  registry.nexthops.push_back(
+      {"100", 7, "192.0.2.1", "dummy0", "ipv4", true});
+  registry.bindings.push_back({"100", "ipv4", "198.51.100.0/24", 7});
+  Route other_path{.routing_instance = "default",
+                   .rib = "100",
+                   .address_family = "ipv4",
+                   .index = 2,
+                   .destination = "198.51.100.0/24",
+                   .gateway = "192.0.2.2",
+                   .interface = "dummy1"};
+  NexthopResolutionTracker tracker;
+  EXPECT_TRUE(tracker.Observe(registry, {{other_path, true}}).empty());
+
+  Route matching_path = other_path;
+  matching_path.index = 3;
+  matching_path.gateway = "192.0.2.1";
+  matching_path.interface = "dummy0";
+  const auto resolved = tracker.Observe(registry, {{other_path, true},
+                                                   {matching_path, true}});
+  ASSERT_EQ(resolved.size(), 1U);
+  EXPECT_TRUE(resolved[0].resolved);
 }
 
 TEST(RibConfigTest, IncludesDatastoreRoutesInResolutionState) {

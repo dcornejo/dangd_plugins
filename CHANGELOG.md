@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Tightened reusable-nexthop resolution to the installed native path. A route
+  with the same RIB, family, and prefix no longer resolves a binding unless its
+  gateway and/or interface also match the referenced nexthop, preventing false
+  `resolved` transitions in multipath and replacement scenarios.
+
 - Rejected non-default RFC 8431 routing instances at the modeled name path.
   The Linux and FreeBSD backends do not yet map instances to VRFs or VNETs;
   accepting another name previously installed its routes in the host default

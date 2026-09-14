@@ -192,7 +192,9 @@ a managed success with native readback because observed routes use a
 deterministic synthetic index. The separate `nexthop-resolution-status-change`
 notification is also implemented for reusable nexthops. Resolution means at
 least one imperative or datastore route bound through `nexthop-ref` is present
-and installed in the observed native RIB. Creating an unused object is not a
+and installed in the observed native RIB with the referenced gateway and/or
+interface. A different parallel path for the same prefix does not resolve the
+binding. Creating an unused object is not a
 status change; losing the final installed binding transitions it to
 `unresolved`. The notification contains the allocated ID, sharing flag, and
 complete supported base nexthop. Complex nexthops outside the portable subset

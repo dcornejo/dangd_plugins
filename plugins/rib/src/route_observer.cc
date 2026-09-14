@@ -108,17 +108,26 @@ void RouteChangeTracker::ApplyManaged(const Route& route, bool installed) {
 std::vector<NexthopResolutionChange> NexthopResolutionTracker::Observe(
     const PersistentRegistry& registry,
     const std::vector<ObservedRoute>& routes) {
-  using RouteKey = std::tuple<std::string, std::string, std::string>;
-  std::set<RouteKey> installed;
-  for (const ObservedRoute& route : routes)
-    if (route.installed)
-      installed.emplace(route.route.rib, route.route.address_family,
-                        route.route.destination);
   std::set<std::pair<std::string, std::uint32_t>> resolved;
-  for (const PersistentRouteBinding& binding : registry.bindings)
-    if (installed.contains(
-            {binding.rib, binding.address_family, binding.destination}))
-      resolved.emplace(binding.rib, binding.nexthop_id);
+  for (const PersistentRouteBinding& binding : registry.bindings) {
+    const auto nexthop = std::ranges::find_if(
+        registry.nexthops, [&](const PersistentNexthop& candidate) {
+          return candidate.rib == binding.rib &&
+                 candidate.id == binding.nexthop_id;
+        });
+    if (nexthop == registry.nexthops.end()) continue;
+    const bool installed = std::ranges::any_of(
+        routes, [&](const ObservedRoute& observed) {
+          const Route& route = observed.route;
+          return observed.installed && route.rib == binding.rib &&
+                 route.address_family == binding.address_family &&
+                 route.destination == binding.destination &&
+                 (!nexthop->gateway || route.gateway == nexthop->gateway) &&
+                 (!nexthop->interface ||
+                  route.interface == nexthop->interface);
+        });
+    if (installed) resolved.emplace(binding.rib, binding.nexthop_id);
+  }
 
   std::map<std::pair<std::string, std::uint32_t>, bool> next;
   std::vector<NexthopResolutionChange> changes;
