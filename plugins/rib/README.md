@@ -182,7 +182,11 @@ native route inventory with a synchronized baseline. The initial inventory is
 quiet; later external additions, removals, and route-property changes produce
 `route-change` events. Managed changes advance the same baseline when their
 event is queued, preventing a duplicate when the kernel subsequently reports
-the completed operation. The separate `nexthop-resolution-status-change`
+the completed operation. The tracking identity includes RIB, family, prefix,
+gateway, interface, and special-nexthop identity, so parallel paths for one
+prefix remain distinct. The modeled RPC route index is ignored when comparing
+a managed success with native readback because observed routes use a
+deterministic synthetic index. The separate `nexthop-resolution-status-change`
 notification is also implemented for reusable nexthops. Resolution means at
 least one imperative or datastore route bound through `nexthop-ref` is present
 and installed in the observed native RIB. Creating an unused object is not a

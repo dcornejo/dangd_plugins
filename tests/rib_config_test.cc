@@ -315,8 +315,10 @@ TEST(RibConfigTest, TracksExternalRouteChangesWithoutInitialFlood) {
 
   second.gateway = "198.51.100.1";
   const auto changed = tracker.Observe({{first, true}, {second, true}});
-  ASSERT_EQ(changed.size(), 1U);
-  EXPECT_EQ(changed[0].route.gateway, second.gateway);
+  ASSERT_EQ(changed.size(), 2U);
+  EXPECT_FALSE(changed[0].installed);
+  EXPECT_TRUE(changed[1].installed);
+  EXPECT_EQ(changed[1].route.gateway, second.gateway);
 
   const auto removed = tracker.Observe({{second, true}});
   ASSERT_EQ(removed.size(), 1U);
@@ -334,9 +336,31 @@ TEST(RibConfigTest, ManagedChangesAdvanceExternalNotificationBaseline) {
   RouteChangeTracker tracker;
   EXPECT_TRUE(tracker.Observe({}).empty());
   tracker.ApplyManaged(route, true);
-  EXPECT_TRUE(tracker.Observe({{route, true}}).empty());
+  Route observed = route;
+  observed.index = 0x123456789abcdef0ULL;
+  EXPECT_TRUE(tracker.Observe({{observed, true}}).empty());
   tracker.ApplyManaged(route, false);
   EXPECT_TRUE(tracker.Observe({}).empty());
+}
+
+TEST(RibConfigTest, TracksSamePrefixMultipathRoutesIndependently) {
+  Route first{.routing_instance = "default",
+              .rib = "100",
+              .address_family = "ipv4",
+              .index = 1,
+              .destination = "192.0.2.0/24",
+              .gateway = "198.51.100.1",
+              .interface = "dummy0"};
+  Route second = first;
+  second.index = 2;
+  second.gateway = "198.51.100.2";
+  RouteChangeTracker tracker;
+  EXPECT_TRUE(tracker.Observe({{first, true}, {second, true}}).empty());
+  const auto removed = tracker.Observe({{second, true}});
+  ASSERT_EQ(removed.size(), 1U);
+  EXPECT_EQ(removed[0].route.gateway, first.gateway);
+  EXPECT_FALSE(removed[0].installed);
+  EXPECT_TRUE(tracker.Observe({{second, true}}).empty());
 }
 
 TEST(RibConfigTest, TracksObservedReusableNexthopResolutionTransitions) {

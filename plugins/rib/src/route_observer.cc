@@ -51,14 +51,30 @@ void EmitBaseNexthop(std::ostringstream& xml, bool ipv4,
   }
 }
 
+auto RouteIdentity(const Route& route) {
+  return std::tuple{route.rib, route.address_family, route.destination,
+                    route.gateway.value_or(""), route.interface.value_or(""),
+                    route.special.value_or("")};
+}
+
+bool EquivalentObservedRoute(const Route& left, const Route& right) {
+  Route normalized_left = left;
+  Route normalized_right = right;
+  // route-index is a caller-owned key for managed RPCs but a deterministic
+  // synthetic key for native observations.  It must not turn confirmation of
+  // the same route into a second notification.
+  normalized_left.index = 0;
+  normalized_right.index = 0;
+  return normalized_left == normalized_right;
+}
+
 }  // namespace
 
 std::vector<ObservedRoute> RouteChangeTracker::Observe(
     const std::vector<ObservedRoute>& routes) {
   std::map<Key, ObservedRoute> next;
   for (const ObservedRoute& route : routes)
-    next[{route.route.rib, route.route.address_family,
-          route.route.destination}] = route;
+    next[RouteIdentity(route.route)] = route;
   if (!initialized_) {
     routes_ = std::move(next);
     initialized_ = true;
@@ -74,7 +90,7 @@ std::vector<ObservedRoute> RouteChangeTracker::Observe(
   for (const auto& [key, current] : next) {
     const auto previous = routes_.find(key);
     if (previous == routes_.end() ||
-        previous->second.route != current.route ||
+        !EquivalentObservedRoute(previous->second.route, current.route) ||
         previous->second.installed != current.installed)
       changes.push_back(current);
   }
@@ -84,7 +100,7 @@ std::vector<ObservedRoute> RouteChangeTracker::Observe(
 
 void RouteChangeTracker::ApplyManaged(const Route& route, bool installed) {
   if (!initialized_) return;
-  const Key key{route.rib, route.address_family, route.destination};
+  const Key key = RouteIdentity(route);
   if (installed) routes_[key] = ObservedRoute{route, true};
   else routes_.erase(key);
 }

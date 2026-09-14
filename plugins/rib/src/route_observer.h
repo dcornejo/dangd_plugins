@@ -36,7 +36,8 @@ class RouteChangeTracker {
   void ApplyManaged(const Route& route, bool installed);
 
  private:
-  using Key = std::tuple<std::string, std::string, std::string>;
+  using Key = std::tuple<std::string, std::string, std::string, std::string,
+                         std::string, std::string>;
   std::map<Key, ObservedRoute> routes_;
   bool initialized_ = false;
 };

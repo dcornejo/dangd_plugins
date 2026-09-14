@@ -9,6 +9,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Made external route-change tracking multipath-safe by including the gateway,
+  interface, and special-nexthop identity in the native route key. Distinct
+  paths for one prefix no longer overwrite each other. Managed confirmation
+  ignores the expected modeled-versus-synthetic route-index difference, so a
+  kernel readback does not duplicate an already published success event.
+
 - Derived RFC 8431 `local-only` operational state from native route metadata:
   Linux `RT_SCOPE_HOST` and FreeBSD `RTF_LOCAL`. Connected and remote host
   routes are no longer incorrectly conflated with destinations owned locally.
