@@ -77,9 +77,11 @@ class NexthopRegistry {
   std::map<std::pair<std::string, std::uint32_t>, std::size_t> references_;
   std::map<std::pair<std::string, std::uint32_t>, std::size_t>
       configuration_references_;
-  std::map<std::tuple<std::string, std::string, std::string>, std::uint32_t>
+  std::map<std::tuple<std::string, std::string, std::string, std::uint64_t>,
+           std::uint32_t>
       route_references_;
-  std::map<std::tuple<std::string, std::string, std::string>, std::uint32_t>
+  std::map<std::tuple<std::string, std::string, std::string, std::uint64_t>,
+           std::uint32_t>
       configuration_route_references_;
   std::uint32_t next_id_ = 1;
 };

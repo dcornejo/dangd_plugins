@@ -9,6 +9,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Made reusable-nexthop route bindings multipath-safe by including the modeled
+  `route-index` in process and durable identities. Parallel referenced routes
+  for one RIB/family/prefix no longer replace each other's binding. Registry
+  format version 2 persists the index; version 1 remains readable with its
+  historical single-binding behavior represented by index zero.
+
 - Tightened reusable-nexthop resolution to the installed native path. A route
   with the same RIB, family, and prefix no longer resolves a binding unless its
   gateway and/or interface also match the referenced nexthop, preventing false

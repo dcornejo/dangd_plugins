@@ -30,7 +30,7 @@ nlohmann::json OptionalJson(const std::optional<std::string>& value) {
 }
 
 nlohmann::json Encode(const PersistentRegistry& value) {
-  nlohmann::json result{{"version", 1}, {"next-id", value.next_id},
+  nlohmann::json result{{"version", 2}, {"next-id", value.next_id},
                         {"ribs", nlohmann::json::array()},
                         {"nexthops", nlohmann::json::array()},
                         {"bindings", nlohmann::json::array()}};
@@ -46,6 +46,7 @@ nlohmann::json Encode(const PersistentRegistry& value) {
   for (const auto& item : value.bindings)
     result["bindings"].push_back({{"rib", item.rib},
       {"address-family", item.address_family}, {"destination", item.destination},
+      {"route-index", item.route_index},
       {"nexthop-id", item.nexthop_id}});
   return result;
 }
@@ -117,14 +118,18 @@ bool LoadRegistry(const std::filesystem::path& path, PersistentRegistry* registr
   try {
     std::ifstream input(path);
     nlohmann::json json = nlohmann::json::parse(input);
-    if (json.at("version") != 1) return Fail("unsupported registry state version", error);
+    const unsigned version = json.at("version").get<unsigned>();
+    if (version != 1 && version != 2)
+      return Fail("unsupported registry state version", error);
     PersistentRegistry loaded;
     loaded.next_id = json.at("next-id").get<std::uint32_t>();
     if (loaded.next_id == 0) return Fail("registry next-id must be nonzero", error);
     std::set<std::string> rib_names;
     // The field is optional so version-1 files written by older builds remain
     // readable. Such files simply have no modeled family for interface-only
-    // nexthops until rib-add is invoked again.
+    // nexthops until rib-add is invoked again. Version-1 route bindings also
+    // receive index zero below because that format could retain only one
+    // binding per RIB/family/prefix.
     for (const auto& item : json.value("ribs", nlohmann::json::array())) {
       PersistentRib value{item.at("name").get<std::string>(),
                           item.at("address-family").get<std::string>()};
@@ -143,12 +148,15 @@ bool LoadRegistry(const std::filesystem::path& path, PersistentRegistry* registr
         return Fail("registry contains an invalid or duplicate nexthop", error);
       loaded.nexthops.push_back(std::move(value));
     }
-    std::set<std::tuple<std::string, std::string, std::string>> routes;
+    std::set<std::tuple<std::string, std::string, std::string, std::uint64_t>> routes;
     for (const auto& item : json.at("bindings")) {
       PersistentRouteBinding value{item.at("rib").get<std::string>(), item.at("address-family").get<std::string>(),
-        item.at("destination").get<std::string>(), item.at("nexthop-id").get<std::uint32_t>()};
+        item.at("destination").get<std::string>(),
+        version == 1 ? 0U : item.at("route-index").get<std::uint64_t>(),
+        item.at("nexthop-id").get<std::uint32_t>()};
       if (!ids.contains({value.rib, value.nexthop_id}) || value.destination.empty() ||
-          !routes.emplace(value.rib, value.address_family, value.destination).second)
+          !routes.emplace(value.rib, value.address_family, value.destination,
+                          value.route_index).second)
         return Fail("registry contains an invalid route binding", error);
       loaded.bindings.push_back(std::move(value));
     }

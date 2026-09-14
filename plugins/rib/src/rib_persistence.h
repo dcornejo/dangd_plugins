@@ -35,6 +35,7 @@ struct PersistentRouteBinding {
   std::string rib;
   std::string address_family;
   std::string destination;
+  std::uint64_t route_index = 0;
   std::uint32_t nexthop_id = 0;
   bool operator==(const PersistentRouteBinding&) const = default;
 };

@@ -258,7 +258,7 @@ void NexthopRegistry::BindRoute(
     const Route& route, std::optional<std::uint32_t> reserved_reference) {
   std::lock_guard lock(mutex_);
   const auto route_key = std::make_tuple(route.rib, route.address_family,
-                                         route.destination);
+                                         route.destination, route.index);
   const auto old = route_references_.find(route_key);
   if (old != route_references_.end()) {
     const auto reference_key = std::make_pair(route.rib, old->second);
@@ -292,7 +292,8 @@ std::optional<std::uint32_t> NexthopRegistry::RouteReference(
     const Route& route) {
   std::lock_guard lock(mutex_);
   const auto found = route_references_.find(
-      std::make_tuple(route.rib, route.address_family, route.destination));
+      std::make_tuple(route.rib, route.address_family, route.destination,
+                      route.index));
   return found == route_references_.end()
              ? std::nullopt : std::optional<std::uint32_t>(found->second);
 }
@@ -320,13 +321,14 @@ bool NexthopRegistry::ReplaceConfigurationReferences(
 bool NexthopRegistry::ReplaceConfigurationRouteBindings(
     const std::vector<Route>& routes) {
   std::lock_guard lock(mutex_);
-  std::map<std::tuple<std::string, std::string, std::string>, std::uint32_t>
-      replacement;
+  std::map<std::tuple<std::string, std::string, std::string, std::uint64_t>,
+           std::uint32_t> replacement;
   for (const Route& route : routes) {
     if (!route.nexthop_ref) continue;
     if (!entries_.contains({route.rib, *route.nexthop_ref}) ||
         !replacement.emplace(
-            std::make_tuple(route.rib, route.address_family, route.destination),
+            std::make_tuple(route.rib, route.address_family, route.destination,
+                            route.index),
             *route.nexthop_ref).second)
       return false;
   }
@@ -372,7 +374,8 @@ PersistentRegistry NexthopRegistry::PersistentState() {
   state.bindings.reserve(route_references_.size());
   for (const auto& [route, id] : route_references_) {
     state.bindings.push_back(
-        {std::get<0>(route), std::get<1>(route), std::get<2>(route), id});
+        {std::get<0>(route), std::get<1>(route), std::get<2>(route),
+         std::get<3>(route), id});
   }
   return state;
 }
@@ -389,10 +392,12 @@ PersistentRegistry NexthopRegistry::ResolutionState() {
                               entry.sharable});
   for (const auto& [route, id] : route_references_)
     state.bindings.push_back(
-        {std::get<0>(route), std::get<1>(route), std::get<2>(route), id});
+        {std::get<0>(route), std::get<1>(route), std::get<2>(route),
+         std::get<3>(route), id});
   for (const auto& [route, id] : configuration_route_references_)
     state.bindings.push_back(
-        {std::get<0>(route), std::get<1>(route), std::get<2>(route), id});
+        {std::get<0>(route), std::get<1>(route), std::get<2>(route),
+         std::get<3>(route), id});
   return state;
 }
 
@@ -425,13 +430,14 @@ bool NexthopRegistry::RestorePersistentState(const PersistentRegistry& state,
       return false;
     }
   }
-  std::map<std::tuple<std::string, std::string, std::string>, std::uint32_t>
-      bindings;
+  std::map<std::tuple<std::string, std::string, std::string, std::uint64_t>,
+           std::uint32_t> bindings;
   std::map<std::pair<std::string, std::uint32_t>, std::size_t> references;
   for (const auto& item : state.bindings) {
     const auto nexthop = std::make_pair(item.rib, item.nexthop_id);
     const auto route =
-        std::make_tuple(item.rib, item.address_family, item.destination);
+        std::make_tuple(item.rib, item.address_family, item.destination,
+                        item.route_index);
     if (!entries.contains(nexthop) || item.address_family.empty() ||
         item.destination.empty() || !bindings.emplace(route, item.nexthop_id).second) {
       *error = "registry contains an invalid route binding";

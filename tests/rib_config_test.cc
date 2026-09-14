@@ -382,7 +382,7 @@ TEST(RibConfigTest, TracksObservedReusableNexthopResolutionTransitions) {
   PersistentRegistry registry;
   registry.nexthops.push_back(
       {"100", 7, "192.0.2.1", "dummy&0", "ipv4", true});
-  registry.bindings.push_back({"100", "ipv4", "198.51.100.0/24", 7});
+  registry.bindings.push_back({"100", "ipv4", "198.51.100.0/24", 1, 7});
   Route route{.routing_instance = "default",
               .rib = "100",
               .address_family = "ipv4",
@@ -411,7 +411,7 @@ TEST(RibConfigTest, DoesNotResolveNexthopFromDifferentInstalledPath) {
   PersistentRegistry registry;
   registry.nexthops.push_back(
       {"100", 7, "192.0.2.1", "dummy0", "ipv4", true});
-  registry.bindings.push_back({"100", "ipv4", "198.51.100.0/24", 7});
+  registry.bindings.push_back({"100", "ipv4", "198.51.100.0/24", 2, 7});
   Route other_path{.routing_instance = "default",
                    .rib = "100",
                    .address_family = "ipv4",
@@ -1057,9 +1057,14 @@ TEST(RibConfigTest, PersistsAndRestoresPrivateRegistryAtomically) {
   expected.nexthops.push_back({"100", 7, "192.0.2.1", "dummy0", "ipv4", true});
   expected.nexthops.push_back(
       {"200", 8, std::nullopt, std::nullopt, std::nullopt, false});
-  expected.bindings.push_back({"100", "ipv4", "198.51.100.0/24", 7});
+  expected.bindings.push_back({"100", "ipv4", "198.51.100.0/24", 42, 7});
   std::string error;
   ASSERT_TRUE(SaveRegistry(state, expected, &error)) << error;
+  std::ifstream encoded(state);
+  const std::string encoded_text((std::istreambuf_iterator<char>(encoded)),
+                                 std::istreambuf_iterator<char>());
+  EXPECT_NE(encoded_text.find("\"version\": 2"), std::string::npos);
+  EXPECT_NE(encoded_text.find("\"route-index\": 42"), std::string::npos);
   EXPECT_EQ(std::filesystem::status(state).permissions() &
                 (std::filesystem::perms::group_all |
                  std::filesystem::perms::others_all),
@@ -1068,6 +1073,54 @@ TEST(RibConfigTest, PersistsAndRestoresPrivateRegistryAtomically) {
   ASSERT_TRUE(LoadRegistry(state, &restored, &error)) << error;
   EXPECT_EQ(restored, expected);
   std::filesystem::remove_all(directory);
+}
+
+TEST(RibConfigTest, RetainsParallelRouteBindingsByModeledIndex) {
+  NexthopRegistry registry;
+  ASSERT_EQ(registry.Add({.rib = "100", .gateway = "192.0.2.1",
+                          .address_family = "ipv4"}), 1U);
+  ASSERT_EQ(registry.Add({.rib = "100", .gateway = "192.0.2.2",
+                          .address_family = "ipv4"}), 2U);
+  ASSERT_TRUE(registry.Retain("100", 1));
+  ASSERT_TRUE(registry.Retain("100", 2));
+  Route first{.routing_instance = "default", .rib = "100",
+              .address_family = "ipv4", .index = 11,
+              .destination = "198.51.100.0/24", .gateway = "192.0.2.1",
+              .nexthop_ref = 1};
+  Route second = first;
+  second.index = 12;
+  second.gateway = "192.0.2.2";
+  second.nexthop_ref = 2;
+  registry.BindRoute(first, 1);
+  registry.BindRoute(second, 2);
+  const PersistentRegistry state = registry.PersistentState();
+  ASSERT_EQ(state.bindings.size(), 2U);
+  EXPECT_EQ(state.bindings[0].route_index, 11U);
+  EXPECT_EQ(state.bindings[1].route_index, 12U);
+  EXPECT_EQ(registry.RouteReference(first), 1U);
+  EXPECT_EQ(registry.RouteReference(second), 2U);
+  registry.ForgetRoute(first);
+  EXPECT_FALSE(registry.RouteReference(first));
+  EXPECT_EQ(registry.RouteReference(second), 2U);
+}
+
+TEST(RibConfigTest, LoadsVersionOneBindingWithHistoricalIndexZero) {
+  const auto path = std::filesystem::temp_directory_path() /
+                    ("dang-rib-v1-" + std::to_string(getpid()) + ".json");
+  {
+    std::ofstream output(path);
+    output << R"({"version":1,"next-id":2,"nexthops":[{"rib":"100","id":1,"gateway":"192.0.2.1","interface":null,"address-family":"ipv4","sharable":false}],"bindings":[{"rib":"100","address-family":"ipv4","destination":"198.51.100.0/24","nexthop-id":1}]})";
+  }
+  std::filesystem::permissions(path, std::filesystem::perms::owner_read |
+                                         std::filesystem::perms::owner_write,
+                               std::filesystem::perm_options::replace);
+  PersistentRegistry restored;
+  std::string error;
+  ASSERT_TRUE(LoadRegistry(path, &restored, &error)) << error;
+  ASSERT_EQ(restored.bindings.size(), 1U);
+  EXPECT_EQ(restored.bindings[0].route_index, 0U);
+  EXPECT_EQ(restored.bindings[0].nexthop_id, 1U);
+  std::filesystem::remove(path);
 }
 
 TEST(RibConfigTest, RebuildsRegistryObjectsBindingsAndReferences) {
@@ -1110,7 +1163,7 @@ TEST(RibConfigTest, RejectsInconsistentPersistentRegistryRecovery) {
   PersistentRegistry state;
   state.nexthops.push_back(
       {"100", 1, "192.0.2.1", std::nullopt, "ipv4", false});
-  state.bindings.push_back({"100", "ipv4", "198.51.100.0/24", 2});
+  state.bindings.push_back({"100", "ipv4", "198.51.100.0/24", 1, 2});
   NexthopRegistry registry;
   std::string error;
   EXPECT_FALSE(registry.RestorePersistentState(state, &error));

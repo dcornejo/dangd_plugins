@@ -173,6 +173,10 @@ plan in reverse order, restores the prior registry checkpoint, and includes
 any compensation failure in the attributed RPC error. Reusable objects and all
 imperative bindings therefore survive restart without acknowledging a split
 kernel/sidecar state.
+Registry format version 2 includes the modeled `route-index` in every binding,
+allowing parallel referenced routes for the same RIB, family, and prefix to
+remain independent across reconciliation and restart. Version-1 files remain
+readable and assign their historically unique binding index zero.
 
 The ABI-v8 provider publishes `route-change` notifications for successful
 managed route installation, replacement, and removal. Imperative RPC events
