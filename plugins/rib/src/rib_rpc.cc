@@ -161,7 +161,7 @@ std::optional<Route> NativeRoute(const Route& route,
                                  const RibNameResolver& resolver) {
   Route result = route;
   if (resolver) {
-    const auto native = resolver(route.rib);
+    const auto native = resolver(route.rib, route.address_family);
     if (!native) return std::nullopt;
     result.rib = *native;
   }
@@ -869,7 +869,7 @@ bool InvokeRibAdd(NativePlatform platform, const char* input_xml,
     *error_path = "/ietf-i2rs-rib:rib-add";
     return false;
   }
-  const auto native_name = native_rib ? native_rib(name)
+  const auto native_name = native_rib ? native_rib(name, family)
                                       : std::optional<std::string>(name);
   if (!native_name || !NumericRib(*native_name, platform)) {
     *output_xml = BooleanOutput(false, "the platform requires a numeric RIB/FIB name");
@@ -936,7 +936,7 @@ bool InvokeRibDelete(NativePlatform platform, const char* input_xml,
     *error_path = "/ietf-i2rs-rib:rib-delete/name";
     return false;
   }
-  const auto native_name = native_rib ? native_rib(name)
+  const auto native_name = native_rib ? native_rib(name, "")
                                       : std::optional<std::string>(name);
   if (!native_name || !NumericRib(*native_name, platform)) {
     *output_xml = BooleanOutput(false, "the platform requires a numeric RIB/FIB name");

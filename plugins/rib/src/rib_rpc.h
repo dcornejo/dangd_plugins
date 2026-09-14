@@ -93,7 +93,8 @@ using RegistryWriter =
 /** Receives a route-change only after its native and durable work succeeds. */
 using RouteEventSink = std::function<void(const Route&, bool installed)>;
 using RibNameResolver =
-    std::function<std::optional<std::string>(const std::string&)>;
+    std::function<std::optional<std::string>(const std::string&,
+                                             const std::string&)>;
 
 /** Executes the supported RFC 8431 route-add RPC and returns its output XML. */
 [[nodiscard]] bool InvokeRouteAdd(NativePlatform platform,

@@ -9,6 +9,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Made modeled-to-native RIB mapping address-family aware. One dual-stack
+  Linux table or FreeBSD FIB can now map to distinct IPv4 and IPv6 RFC 8431
+  names without producing duplicate `rib-list` keys. Mapping format version 2
+  requires `address-family`; safe built-in names are `ipv4-N` and `ipv6-N`,
+  and ambiguous bare numeric modeled names and version-1 maps are rejected.
+
 - Made reusable-nexthop route bindings multipath-safe by including the modeled
   `route-index` in process and durable identities. Parallel referenced routes
   for one RIB/family/prefix no longer replace each other's binding. Registry

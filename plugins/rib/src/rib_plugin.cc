@@ -93,7 +93,8 @@ std::optional<std::vector<Change>> NativeChanges(
     std::string* error) {
   std::vector<Change> result = changes;
   for (Change& change : result) {
-    const auto native = mapping.ToNative(change.route.rib, kPlatform);
+    const auto native = mapping.ToNative(change.route.rib, kPlatform,
+                                         change.route.address_family);
     if (!native) {
       if (error)
         *error = "RIB name '" + change.route.rib +
@@ -108,12 +109,13 @@ std::optional<std::vector<Change>> NativeChanges(
 void ModelObservedRoutes(const RibMapping& mapping,
                          std::vector<ObservedRoute>* routes) {
   for (ObservedRoute& route : *routes)
-    route.route.rib = mapping.ToModeled(route.route.rib, kPlatform);
+    route.route.rib = mapping.ToModeled(route.route.rib, kPlatform,
+                                       route.route.address_family);
 }
 
 RibNameResolver NativeRib(Context* owner) {
-  return [owner](const std::string& name) {
-    return owner->rib_mapping.ToNative(name, kPlatform);
+  return [owner](const std::string& name, const std::string& family) {
+    return owner->rib_mapping.ToNative(name, kPlatform, family);
   };
 }
 

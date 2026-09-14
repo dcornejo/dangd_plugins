@@ -210,17 +210,27 @@ with independent Linux and FreeBSD numbers, for example:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "ribs": [
-    {"name": "blue", "linux-table": 100, "freebsd-fib": 2}
+    {"name": "blue-v4", "address-family": "ipv4",
+     "linux-table": 100, "freebsd-fib": 2},
+    {"name": "blue-v6", "address-family": "ipv6",
+     "linux-table": 100, "freebsd-fib": 2}
   ]
 }
 ```
 
-Modeled names and native numbers must be one-to-one on each platform; duplicate
-or conflicting forward and reverse entries fail loading. Set
+Modeled names must be unique on each platform. Native numbers must be unique
+within an address family, but the same native table or FIB may have separate
+IPv4 and IPv6 names. This distinction is required because an RFC 8431 RIB has
+one address family and its list key is only `name`, while native RIBs are often
+dual-stack. Duplicate or conflicting entries fail loading. Mapping format 1 is
+rejected because its family-neutral aliases cannot represent this distinction.
+Set
 `DANG_RIB_MAP_FILE` to the absolute path of this file before starting dangd.
-Unmapped numeric names retain the existing identity behavior. Configuration
+Without a configured alias, use the unambiguous built-in names `ipv4-N` and
+`ipv6-N`, where `N` is the native table or FIB number; bare numeric modeled
+names are rejected. Configuration
 validation and apply/rollback, imperative route and RIB RPCs, reusable-nexthop
 scope and persistence, operational reads, and notification payloads all
 preserve the modeled name while native commands receive its platform number.

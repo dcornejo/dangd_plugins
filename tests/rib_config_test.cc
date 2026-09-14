@@ -22,19 +22,34 @@ namespace {
 TEST(RibConfigTest, MapsArbitraryRibNamesBidirectionallyPerPlatform) {
   RibMapping mapping;
   std::string error;
-  ASSERT_TRUE(mapping.Add("blue", NativePlatform::kLinux, 100, &error));
-  ASSERT_TRUE(mapping.Add("blue", NativePlatform::kFreeBsd, 2, &error));
-  EXPECT_EQ(mapping.ToNative("blue", NativePlatform::kLinux), "100");
-  EXPECT_EQ(mapping.ToNative("blue", NativePlatform::kFreeBsd), "2");
-  EXPECT_EQ(mapping.ToModeled("100", NativePlatform::kLinux), "blue");
-  EXPECT_EQ(mapping.ToModeled("2", NativePlatform::kFreeBsd), "blue");
+  ASSERT_TRUE(mapping.Add("blue-v4", "ipv4", NativePlatform::kLinux, 100,
+                          &error));
+  ASSERT_TRUE(mapping.Add("blue-v6", "ipv6", NativePlatform::kLinux, 100,
+                          &error));
+  ASSERT_TRUE(mapping.Add("blue-v4", "ipv4", NativePlatform::kFreeBsd, 2,
+                          &error));
+  EXPECT_EQ(mapping.ToNative("blue-v4", NativePlatform::kLinux, "ipv4"),
+            "100");
+  EXPECT_FALSE(mapping.ToNative("blue-v4", NativePlatform::kLinux, "ipv6"));
+  EXPECT_EQ(mapping.ToNative("blue-v4", NativePlatform::kFreeBsd, "ipv4"),
+            "2");
+  EXPECT_EQ(mapping.ToModeled("100", NativePlatform::kLinux, "ipv4"),
+            "blue-v4");
+  EXPECT_EQ(mapping.ToModeled("100", NativePlatform::kLinux, "ipv6"),
+            "blue-v6");
+  EXPECT_EQ(mapping.ToModeled("2", NativePlatform::kFreeBsd, "ipv4"),
+            "blue-v4");
   EXPECT_EQ(mapping.NativeNumbers(NativePlatform::kLinux),
             std::vector<std::uint32_t>({100U}));
   EXPECT_EQ(mapping.NativeNumbers(NativePlatform::kFreeBsd),
             std::vector<std::uint32_t>({2U}));
-  EXPECT_EQ(mapping.ToNative("77", NativePlatform::kLinux), "77");
+  EXPECT_EQ(mapping.ToNative("ipv4-77", NativePlatform::kLinux, "ipv4"),
+            "77");
+  EXPECT_FALSE(mapping.ToNative("ipv4-77", NativePlatform::kLinux, "ipv6"));
+  EXPECT_FALSE(mapping.ToNative("77", NativePlatform::kLinux, "ipv4"));
   EXPECT_FALSE(mapping.ToNative("missing", NativePlatform::kLinux));
-  EXPECT_FALSE(mapping.Add("red", NativePlatform::kLinux, 100, &error));
+  EXPECT_FALSE(mapping.Add("red", "ipv4", NativePlatform::kLinux, 100,
+                           &error));
   EXPECT_NE(error.find("multiple modeled names"), std::string::npos);
 }
 
@@ -43,15 +58,22 @@ TEST(RibConfigTest, LoadsVersionedRibMappingAndRejectsAmbiguousReverseNames) {
                     ("dang-rib-map-" + std::to_string(getpid()) + ".json");
   {
     std::ofstream output(path);
-    output << R"({"version":1,"ribs":[{"name":"blue","linux-table":100,"freebsd-fib":2}]})";
+    output << R"({"version":2,"ribs":[{"name":"blue-v4","address-family":"ipv4","linux-table":100,"freebsd-fib":2},{"name":"blue-v6","address-family":"ipv6","linux-table":100,"freebsd-fib":2}]})";
   }
   RibMapping mapping;
   std::string error;
   ASSERT_TRUE(LoadRibMapping(path, &mapping, &error)) << error;
-  EXPECT_EQ(mapping.ToNative("blue", NativePlatform::kLinux), "100");
+  EXPECT_EQ(mapping.ToNative("blue-v4", NativePlatform::kLinux, "ipv4"),
+            "100");
+  EXPECT_EQ(mapping.ToNative("blue-v6", NativePlatform::kLinux, "ipv6"),
+            "100");
+  EXPECT_EQ(mapping.ToModeled("100", NativePlatform::kLinux, "ipv4"),
+            "blue-v4");
+  EXPECT_EQ(mapping.ToModeled("100", NativePlatform::kLinux, "ipv6"),
+            "blue-v6");
   {
     std::ofstream output(path);
-    output << R"({"version":1,"ribs":[{"name":"blue","linux-table":100},{"name":"red","linux-table":100}]})";
+    output << R"({"version":2,"ribs":[{"name":"blue","address-family":"ipv4","linux-table":100},{"name":"red","address-family":"ipv4","linux-table":100}]})";
   }
   EXPECT_FALSE(LoadRibMapping(path, &mapping, &error));
   EXPECT_NE(error.find("multiple modeled names"), std::string::npos);
@@ -526,8 +548,10 @@ TEST(RibConfigTest, RouteRpcUsesNativeMappingAndPreservesModeledEventName) {
       [&](const Route& route, bool installed) {
         if (installed) events.push_back(route);
       },
-      [](const std::string& name) -> std::optional<std::string> {
-        return name == "blue" ? std::optional<std::string>("100")
+      [](const std::string& name,
+         const std::string& family) -> std::optional<std::string> {
+        return name == "blue" && family == "ipv4"
+                   ? std::optional<std::string>("100")
                               : std::nullopt;
       })) << error;
   ASSERT_EQ(commands.size(), 1U);
@@ -801,9 +825,11 @@ TEST(RibConfigTest, RibAddAcceptsMappedArbitraryNameAndRejectsUnknownName) {
   std::string output;
   std::string error;
   std::string path;
-  const auto mapping = [](const std::string& name)
+  const auto mapping = [](const std::string& name, const std::string& family)
       -> std::optional<std::string> {
-    return name == "blue" ? std::optional<std::string>("100") : std::nullopt;
+    return name == "blue" && family == "ipv4"
+               ? std::optional<std::string>("100")
+               : std::nullopt;
   };
   ASSERT_TRUE(InvokeRibAdd(
       NativePlatform::kLinux,
@@ -839,7 +865,8 @@ TEST(RibConfigTest, RouteUpdateMappingFailureDoesNotReleaseNexthop) {
       NativePlatform::kLinux,
       R"(<route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>blue</rib-name><input-routes><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><updated-nexthop><nexthop-base><nexthop-ref>1</nexthop-ref></nexthop-base></updated-nexthop></route-list></input-routes></route-update>)",
       &output, &error, &path, {}, observer, {}, &registry, {}, {},
-      [](const std::string&) -> std::optional<std::string> {
+      [](const std::string&, const std::string&)
+          -> std::optional<std::string> {
         return std::nullopt;
       })) << error;
   EXPECT_NE(output.find(">1</failed-count>"), std::string::npos);
