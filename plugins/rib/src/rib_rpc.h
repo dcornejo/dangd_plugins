@@ -156,7 +156,8 @@ using RouteObserver =
                                     std::string* output_xml,
                                     std::string* error,
                                     std::string* error_path,
-                                    const RegistryWriter& writer = {});
+                                    const RegistryWriter& writer = {},
+                                    const RibNameResolver& native_rib = {});
 
 /** Removes a previously allocated nexthop for nh-delete. */
 [[nodiscard]] bool InvokeNexthopDelete(NexthopRegistry* registry,

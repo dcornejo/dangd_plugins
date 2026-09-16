@@ -20,9 +20,11 @@ int main(int argc, char** argv) {
   }
   const std::string prefix = argv[3];
   const bool ipv6 = prefix.find(':') != std::string::npos;
+  const std::string rib_name = (ipv6 ? "ipv6-" : "ipv4-") +
+                               std::string(argv[2]);
   std::ostringstream proposed;
   proposed << "<config><routing-instance xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\">"
-              "<name>native-test</name><rib-list><name>" << argv[2]
+              "<name>default</name><rib-list><name>" << rib_name
            << "</name><address-family>"
            << (ipv6 ? "ipv6-address-family" : "ipv4-address-family")
            << "</address-family><route-list><route-index>1</route-index><match><"
@@ -53,7 +55,7 @@ int main(int argc, char** argv) {
   const DangPluginV1& base = v7.v6.v5.v4.v3.v2.v1;
   const std::string rib_add_input =
       "<rib-add xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\"><name>" +
-      std::string(argv[2]) + "</name><address-family>" +
+      rib_name + "</name><address-family>" +
       (ipv6 ? "ipv6-address-family" : "ipv4-address-family") +
       "</address-family></rib-add>";
   DangOperationV1 rib_add{"ietf-i2rs-rib", "rib-add",
@@ -73,7 +75,7 @@ int main(int argc, char** argv) {
       base.validate(base.context, prepared, &error);
   const std::string nh_add_input =
       "<nh-add xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\"><rib-name>" +
-      std::string(argv[2]) + "</rib-name><nexthop-base><outgoing-interface>" +
+      rib_name + "</rib-name><nexthop-base><outgoing-interface>" +
       argv[4] + "</outgoing-interface></nexthop-base></nh-add>";
   DangOperationV1 nh_operation{"ietf-i2rs-rib", "nh-add",
                                "/ietf-i2rs-rib:nh-add", nh_add_input.c_str()};
@@ -85,7 +87,7 @@ int main(int argc, char** argv) {
           std::string_view::npos;
   const std::string nh_delete_input =
       "<nh-delete xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\"><rib-name>" +
-      std::string(argv[2]) +
+      rib_name +
       "</rib-name><nexthop-id>1</nexthop-id></nh-delete>";
   nh_operation = {"ietf-i2rs-rib", "nh-delete", "/ietf-i2rs-rib:nh-delete",
                   nh_delete_input.c_str()};
@@ -108,7 +110,7 @@ int main(int argc, char** argv) {
   std::ostringstream rpc;
   rpc << "<route-add xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\">"
          "<return-failure-detail>true</return-failure-detail><rib-name>"
-      << argv[2] << "</rib-name><routes><route-list><route-index>1</route-index>"
+      << rib_name << "</rib-name><routes><route-list><route-index>1</route-index>"
       << "<match><" << (ipv6 ? "ipv6><dest-ipv6-prefix>" : "ipv4><dest-ipv4-prefix>")
       << prefix << (ipv6 ? "</dest-ipv6-prefix></ipv6>" : "</dest-ipv4-prefix></ipv4>")
       << "</match><route-attributes><route-preference>10</route-preference>"
@@ -145,7 +147,7 @@ int main(int argc, char** argv) {
           std::string_view::npos;
   std::ostringstream update;
   update << "<route-update xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\">"
-            "<rib-name>" << argv[2]
+            "<rib-name>" << rib_name
          << "</rib-name><input-routes><route-list><route-index>1</route-index><match><"
          << (ipv6 ? "ipv6><dest-ipv6-prefix>" : "ipv4><dest-ipv4-prefix>")
          << prefix << (ipv6 ? "</dest-ipv6-prefix></ipv6>" : "</dest-ipv4-prefix></ipv4>")
@@ -164,7 +166,7 @@ int main(int argc, char** argv) {
   std::ostringstream deletion;
   deletion << "<route-delete xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\">"
               "<return-failure-detail>true</return-failure-detail><rib-name>"
-           << argv[2] << "</rib-name><routes><route-list><route-index>1</route-index><match><"
+           << rib_name << "</rib-name><routes><route-list><route-index>1</route-index><match><"
            << (ipv6 ? "ipv6><dest-ipv6-prefix>" : "ipv4><dest-ipv4-prefix>")
            << prefix << (ipv6 ? "</dest-ipv6-prefix></ipv6>" : "</dest-ipv4-prefix></ipv4>")
            << "</match></route-list></routes></route-delete>";
@@ -172,7 +174,7 @@ int main(int argc, char** argv) {
   const bool may_empty_rib = std::string_view(argv[2]) != "0";
   const std::string rib_delete_input =
       "<rib-delete xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\"><name>" +
-      std::string(argv[2]) + "</name></rib-delete>";
+      rib_name + "</name></rib-delete>";
   operation = {"ietf-i2rs-rib", may_empty_rib ? "rib-delete" : "route-delete",
                may_empty_rib ? "/ietf-i2rs-rib:rib-delete"
                              : "/ietf-i2rs-rib:route-delete",

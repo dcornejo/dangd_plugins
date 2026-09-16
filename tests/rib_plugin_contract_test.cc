@@ -16,7 +16,7 @@ int main(int argc, char** argv) {
   const DangPluginV7& v7 = api->v7;
   const DangPluginV1& base = v7.v6.v5.v4.v3.v2.v1;
   constexpr char before[] = "<config/>";
-  constexpr char proposed[] = R"(<config><routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>default</name><rib-list><name>100</name><address-family>ipv4-address-family</address-family><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>198.18.0.0/24</dest-ipv4-prefix></ipv4></match><nexthop><nexthop-base><egress-interface-ipv4-address><outgoing-interface>dummy0</outgoing-interface><ipv4-address>192.0.2.1</ipv4-address></egress-interface-ipv4-address></nexthop-base></nexthop><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes></route-list></rib-list></routing-instance></config>)";
+  constexpr char proposed[] = R"(<config><routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>default</name><rib-list><name>ipv4-100</name><address-family>ipv4-address-family</address-family><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>198.18.0.0/24</dest-ipv4-prefix></ipv4></match><nexthop><nexthop-base><egress-interface-ipv4-address><outgoing-interface>dummy0</outgoing-interface><ipv4-address>192.0.2.1</ipv4-address></egress-interface-ipv4-address></nexthop-base></nexthop><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes></route-list></rib-list></routing-instance></config>)";
   DangTransactionV1 transaction{before, proposed, "[]"};
   DangPluginErrorV1 error{};
   void* prepared = nullptr;
@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
       std::string_view(state.data_xml).find("routing-instance") != std::string_view::npos;
   if (prepared) base.release(base.context, prepared);
 
-  constexpr char nh_add_xml[] = R"(<nh-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-base><ipv4-address>192.0.2.1</ipv4-address></nexthop-base></nh-add>)";
+  constexpr char nh_add_xml[] = R"(<nh-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>ipv4-100</rib-name><nexthop-base><ipv4-address>192.0.2.1</ipv4-address></nexthop-base></nh-add>)";
   DangOperationV1 operation{"ietf-i2rs-rib", "nh-add",
                             "/ietf-i2rs-rib:nh-add", nh_add_xml};
   DangOperationResultV1 operation_result{};
@@ -51,12 +51,12 @@ int main(int argc, char** argv) {
       std::string_view(state.data_xml).find(
           "<nexthop-member-id>1</nexthop-member-id>") !=
           std::string_view::npos;
-  constexpr char referenced[] = R"(<config><routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>default</name><rib-list><name>100</name><address-family>ipv4-address-family</address-family><route-list><route-index>8</route-index><match><ipv4><dest-ipv4-prefix>198.18.1.0/24</dest-ipv4-prefix></ipv4></match><nexthop><nexthop-base><nexthop-ref>1</nexthop-ref></nexthop-base></nexthop><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes></route-list></rib-list></routing-instance></config>)";
+  constexpr char referenced[] = R"(<config><routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>default</name><rib-list><name>ipv4-100</name><address-family>ipv4-address-family</address-family><route-list><route-index>8</route-index><match><ipv4><dest-ipv4-prefix>198.18.1.0/24</dest-ipv4-prefix></ipv4></match><nexthop><nexthop-base><nexthop-ref>1</nexthop-ref></nexthop-base></nexthop><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes></route-list></rib-list></routing-instance></config>)";
   DangTransactionV1 referenced_transaction{before, referenced, "[]"};
   void* referenced_prepared = nullptr;
   valid = valid && base.prepare(base.context, &referenced_transaction,
                                  &referenced_prepared, &error);
-  constexpr char nh_delete_xml[] = R"(<nh-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-id>1</nexthop-id></nh-delete>)";
+  constexpr char nh_delete_xml[] = R"(<nh-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>ipv4-100</rib-name><nexthop-id>1</nexthop-id></nh-delete>)";
   operation = {"ietf-i2rs-rib", "nh-delete", "/ietf-i2rs-rib:nh-delete",
                nh_delete_xml};
   operation_result = {};

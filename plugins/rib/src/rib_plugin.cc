@@ -343,7 +343,7 @@ int Invoke(void* raw_context, const DangOperationV1* operation,
   else if (std::string_view(operation->operation_name) == "nh-add")
     invoked = InvokeNexthopAdd(
         &owner->nexthops, operation->input_xml,
-        &rpc_output_xml, &why, &where, Writer(owner));
+        &rpc_output_xml, &why, &where, Writer(owner), NativeRib(owner));
   else if (std::string_view(operation->operation_name) == "nh-delete")
     invoked = InvokeNexthopDelete(
         &owner->nexthops, operation->input_xml,

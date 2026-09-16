@@ -9,6 +9,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Applied family-aware RIB identity validation to live `nh-add` before
+  identifier allocation or persistence. Unknown aliases, bare numeric names,
+  and wrong-family names no longer create state that fails recovery. Updated
+  the loadable and isolated native provider harnesses to use family-qualified
+  names and the supported `default` routing instance.
+
 - Made modeled-to-native RIB mapping address-family aware. One dual-stack
   Linux table or FreeBSD FIB can now map to distinct IPv4 and IPv6 RFC 8431
   names without producing duplicate `rib-list` keys. Mapping format version 2

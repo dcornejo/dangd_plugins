@@ -990,7 +990,8 @@ bool InvokeRibDelete(NativePlatform platform, const char* input_xml,
 bool InvokeNexthopAdd(NexthopRegistry* registry, const char* input_xml,
                        std::string* output_xml, std::string* error,
                        std::string* error_path,
-                       const RegistryWriter& writer) {
+                       const RegistryWriter& writer,
+                       const RibNameResolver& native_rib) {
   if (!registry || !input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "nh-add.xml", nullptr, XML_PARSE_NONET |
@@ -1035,6 +1036,13 @@ bool InvokeNexthopAdd(NexthopRegistry* registry, const char* input_xml,
           false, "interface-only nexthop requires a prior rib-add address family");
       return true;
     }
+  }
+  // Validate the modeled identity before allocation or durability. Otherwise
+  // nh-add could acknowledge state that the startup mapping guard rejects.
+  if (native_rib && !native_rib(entry.rib, *entry.address_family)) {
+    *output_xml = BooleanOutput(
+        false, "RIB name has no mapping for the nexthop address family");
+    return true;
   }
   const PersistentRegistry before = registry->PersistentState();
   const auto id = registry->Add(std::move(entry));

@@ -111,6 +111,44 @@ TEST(RibConfigTest, RejectsPersistedRibNamesThatViolateFamilySafeMapping) {
   EXPECT_NE(error.find("no address-family context"), std::string::npos);
 }
 
+TEST(RibConfigTest, NexthopAddChecksMappingBeforeAllocationOrPersistence) {
+  NexthopRegistry registry;
+  RibMapping mapping;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(mapping.Add("blue", "ipv4", NativePlatform::kLinux, 100,
+                          &error));
+  unsigned writes = 0;
+  const RegistryWriter writer = [&](const PersistentRegistry&, std::string*) {
+    ++writes;
+    return true;
+  };
+  const RibNameResolver resolve = [&](const std::string& name,
+                                      const std::string& family) {
+    return mapping.ToNative(name, NativePlatform::kLinux, family);
+  };
+  for (const std::string& name : {std::string("100"), std::string("ipv6-100"),
+                                  std::string("unknown")}) {
+    const std::string input =
+        "<nh-add xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\">"
+        "<rib-name>" + name + "</rib-name><nexthop-base>"
+        "<ipv4-address>192.0.2.1</ipv4-address></nexthop-base></nh-add>";
+    ASSERT_TRUE(InvokeNexthopAdd(&registry, input.c_str(), &output, &error,
+                                 &path, writer, resolve));
+    EXPECT_NE(output.find(">false</result>"), std::string::npos);
+    EXPECT_EQ(registry.PersistentState().next_id, 1U);
+    EXPECT_TRUE(registry.PersistentState().nexthops.empty());
+    EXPECT_EQ(writes, 0U);
+  }
+  ASSERT_TRUE(InvokeNexthopAdd(
+      &registry,
+      R"(<nh-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>blue</rib-name><nexthop-base><ipv4-address>192.0.2.1</ipv4-address></nexthop-base></nh-add>)",
+      &output, &error, &path, writer, resolve));
+  EXPECT_NE(output.find(">1</nexthop-id>"), std::string::npos);
+  EXPECT_EQ(writes, 1U);
+}
+
 constexpr char kBefore[] = R"xml(<config>
   <routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib">
     <name>default</name><rib-list><name>100</name>

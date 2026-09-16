@@ -128,6 +128,10 @@ plan, restoring earlier deletions if a later native operation fails.
 
 `nh-add` allocates an identifier for a base IP-address, outgoing-interface, or
 combined nexthop and retains it in a mutex-protected registry scoped by RIB.
+The live provider validates that RIB name against the active platform mapping
+and nexthop family before allocating an identifier or writing the registry.
+Unknown aliases, wrong-family aliases, and bare numeric names return a modeled
+failure without changing allocation state or durable data.
 `nh-delete` removes exactly that RIB/identifier pair and reports a modeled
 failure for an unknown pair. This portable registry is intentionally owned by
 the plugin because Linux and FreeBSD do not expose equivalent standalone
