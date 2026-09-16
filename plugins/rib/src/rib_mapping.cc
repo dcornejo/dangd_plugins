@@ -38,7 +38,10 @@ std::optional<std::uint32_t> QualifiedNumber(
   if (family != "ipv4" && family != "ipv6") return std::nullopt;
   if (!requested_family.empty() && family != requested_family)
     return std::nullopt;
-  return Number(value.substr(separator + 1));
+  const auto number = Number(value.substr(separator + 1));
+  if (!number || std::to_string(*number) != value.substr(separator + 1))
+    return std::nullopt;
+  return number;
 }
 }  // namespace
 
@@ -48,6 +51,15 @@ bool RibMapping::Add(std::string modeled_name, std::string address_family,
   if (modeled_name.empty()) return Fail("modeled RIB name is empty", error);
   if (address_family != "ipv4" && address_family != "ipv6")
     return Fail("modeled RIB address family must be ipv4 or ipv6", error);
+  // A canonical built-in spelling must never be repurposed for another
+  // native RIB, or native readback would give two meanings to the same name.
+  if ((modeled_name.starts_with("ipv4-") ||
+       modeled_name.starts_with("ipv6-")) &&
+      Number(std::string_view(modeled_name).substr(5)) &&
+      (QualifiedNumber(modeled_name, address_family) !=
+       std::optional<std::uint32_t>(native_number)))
+    return Fail("built-in RIB name conflicts with native number or family",
+                error);
   const ForwardKey forward_key{platform, modeled_name};
   const ForwardValue forward_value{native_number, address_family};
   const ReverseKey reverse_key{platform, native_number, address_family};
@@ -73,7 +85,10 @@ std::optional<std::string> RibMapping::ToNative(
     return std::to_string(configured->second.first);
   }
   const auto number = QualifiedNumber(modeled_name, address_family);
-  return number ? std::optional(std::to_string(*number)) : std::nullopt;
+  if (!number) return std::nullopt;
+  const std::string family(modeled_name.substr(0, modeled_name.find('-')));
+  if (reverse_.contains({platform, *number, family})) return std::nullopt;
+  return std::to_string(*number);
 }
 
 std::string RibMapping::ToModeled(std::string_view native_name,

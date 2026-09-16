@@ -234,7 +234,12 @@ Set
 `DANG_RIB_MAP_FILE` to the absolute path of this file before starting dangd.
 Without a configured alias, use the unambiguous built-in names `ipv4-N` and
 `ipv6-N`, where `N` is the native table or FIB number; bare numeric modeled
-names are rejected. Configuration
+names are rejected.
+If a native number/family has a configured alias, use that alias rather than
+its built-in spelling. Built-in numeric suffixes must be canonical (no leading
+zeroes), and a configured built-in name cannot refer to another number or
+family. These rules preserve one identity through native operational readback.
+Configuration
 validation and apply/rollback, imperative route and RIB RPCs, reusable-nexthop
 scope and persistence, operational reads, and notification payloads all
 preserve the modeled name while native commands receive its platform number.

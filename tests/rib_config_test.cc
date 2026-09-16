@@ -47,6 +47,16 @@ TEST(RibConfigTest, MapsArbitraryRibNamesBidirectionallyPerPlatform) {
             "77");
   EXPECT_FALSE(mapping.ToNative("ipv4-77", NativePlatform::kLinux, "ipv6"));
   EXPECT_FALSE(mapping.ToNative("77", NativePlatform::kLinux, "ipv4"));
+  EXPECT_FALSE(mapping.ToNative("ipv4-077", NativePlatform::kLinux, "ipv4"));
+  EXPECT_FALSE(mapping.Add("ipv4-077", "ipv4", NativePlatform::kLinux, 77,
+                           &error));
+  EXPECT_FALSE(mapping.ToNative("ipv4-100", NativePlatform::kLinux, "ipv4"));
+  EXPECT_FALSE(mapping.Add("ipv4-77", "ipv4", NativePlatform::kLinux, 78,
+                           &error));
+  EXPECT_FALSE(mapping.Add("ipv6-77", "ipv4", NativePlatform::kLinux, 77,
+                           &error));
+  EXPECT_EQ(mapping.ToModeled("77", NativePlatform::kLinux, "ipv4"),
+            "ipv4-77");
   EXPECT_FALSE(mapping.ToNative("missing", NativePlatform::kLinux));
   EXPECT_FALSE(mapping.Add("red", "ipv4", NativePlatform::kLinux, 100,
                            &error));

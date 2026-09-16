@@ -9,6 +9,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Enforced canonical family-qualified RIB identities: a configured alias
+  disables the alternate built-in spelling for its native number/family,
+  built-in names cannot be remapped to another number or family, and numeric
+  suffixes with leading zeroes are rejected. Native operational readback now
+  returns the same identity accepted for configuration and durable objects.
+
 - Applied family-aware RIB identity validation to live `nh-add` before
   identifier allocation or persistence. Unknown aliases, bare numeric names,
   and wrong-family names no longer create state that fails recovery. Updated
