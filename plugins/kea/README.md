@@ -109,16 +109,18 @@ The provider marks this operational result complete. Lease enumeration uses
 Kea's `lease4-get-page` and `lease6-get-page`
 commands with a 256-entry page size and the last returned address as the opaque
 continuation cursor. It rejects malformed counts, oversized pages, repeated
-cursors, more than 512 pages or 65,536 leases, more than 8 MiB of accumulated
-native lease data, and enumeration lasting more than 30 seconds. Each individual
-control exchange retains its five-second and 16 MiB limits.
+cursors including non-adjacent cycles, more than 512 pages or 65,536 leases,
+more than 8 MiB of accumulated native lease data, and enumeration lasting more
+than 30 seconds. Each individual control exchange retains its five-second and
+16 MiB limits.
 
 Host reservations use Kea's `reservation-get-page` continuation map and the
-same aggregate safeguards as leases. Supplemental statistics are queried once
-per exact subnet ID in the last successfully applied configuration, so Kea
-cannot return an unbounded all-subnet result. The provider combines those
-results under the same 512-query, 65,536-row, 8 MiB, and 30-second aggregate
-limits. Every successful reply must contain one unambiguous row whose
+same aggregate safeguards and full cursor-cycle detection as leases.
+Supplemental statistics are queried once per exact subnet ID in the last
+successfully applied configuration, so Kea cannot return an unbounded
+all-subnet result. The provider combines those results under the same 512-query,
+65,536-row, 8 MiB, and 30-second aggregate limits. Every successful reply must
+contain one unambiguous row whose
 `subnet-id` matches the exact query; mismatched identities, duplicate columns,
 or multiple rows fail the complete retrieval. Candidate validation does not
 change that inventory; successful apply

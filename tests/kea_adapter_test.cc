@@ -341,8 +341,32 @@ int main() {
       {.page_size = 1, .maximum_pages = 2, .maximum_items = 2,
        .maximum_bytes = 1024,
        .maximum_duration = std::chrono::milliseconds(100)});
-  valid &= Check(!stalled && error.find("did not advance") != std::string::npos,
+  valid &= Check(!stalled && error.find("repeated") != std::string::npos,
                  "a repeated lease paging cursor was accepted");
+
+  std::size_t lease_cycle_invocation = 0;
+  const dang::plugins::kea::ControlQuery lease_cursor_cycle =
+      [&](std::string_view, std::string_view, const nlohmann::json&,
+          std::string*) -> std::optional<nlohmann::json> {
+    static constexpr const char* addresses[]{"192.0.2.1", "192.0.2.2",
+                                              "192.0.2.1"};
+    const std::string address = addresses[lease_cycle_invocation++];
+    return nlohmann::json{
+        {"result", 0},
+        {"arguments",
+         {{"count", 1}, {"leases", {{{"ip-address", address}}}}}}};
+  };
+  error.clear();
+  auto lease_cycle = dang::plugins::kea::CollectLeasePages(
+      "/tmp/kea4.sock", false, lease_cursor_cycle, &error,
+      {.page_size = 1,
+       .maximum_pages = 4,
+       .maximum_items = 4,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(!lease_cycle && error.find("repeated") != std::string::npos &&
+                     lease_cycle_invocation == 3,
+                 "a non-adjacent lease cursor cycle was not rejected early");
 
   const dang::plugins::kea::ControlQuery oversized_page =
       [](std::string_view, std::string_view, const nlohmann::json&,
@@ -416,6 +440,31 @@ int main() {
                      host_requests[1].at("arguments").at("from") == 42 &&
                      host_requests[1].at("arguments").at("source-index") == 1,
                  "host paging did not carry Kea's continuation map forward");
+
+  std::size_t host_cycle_invocation = 0;
+  const dang::plugins::kea::ControlQuery host_cursor_cycle =
+      [&](std::string_view, std::string_view, const nlohmann::json&,
+          std::string*) -> std::optional<nlohmann::json> {
+    static constexpr std::uint64_t positions[]{1, 2, 1};
+    const auto position = positions[host_cycle_invocation++];
+    return nlohmann::json{
+        {"result", 0},
+        {"arguments",
+         {{"count", 1},
+          {"hosts", {{{"subnet-id", 4}, {"hw-address", "00:01"}}}},
+          {"next", {{"from", position}, {"source-index", 0}}}}}};
+  };
+  error.clear();
+  auto host_cycle = dang::plugins::kea::CollectHostPages(
+      "/tmp/kea4.sock", host_cursor_cycle, &error,
+      {.page_size = 1,
+       .maximum_pages = 4,
+       .maximum_items = 4,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(!host_cycle && error.find("repeated") != std::string::npos &&
+                     host_cycle_invocation == 3,
+                 "a non-adjacent host cursor cycle was not rejected early");
 
   std::vector<nlohmann::json> statistic_requests;
   const dang::plugins::kea::ControlQuery statistics =

@@ -907,6 +907,7 @@ std::optional<nlohmann::json> CollectLeasePages(
   }
   const std::string command = dhcp6 ? "lease6-get-page" : "lease4-get-page";
   std::string cursor = "start";
+  std::set<std::string, std::less<>> cursors{cursor};
   nlohmann::json collected = nlohmann::json::array();
   std::size_t collected_bytes = 0;
   const auto deadline = std::chrono::steady_clock::now() +
@@ -976,8 +977,8 @@ std::optional<nlohmann::json> CollectLeasePages(
       return std::nullopt;
     }
     const std::string next = last.at("ip-address").get<std::string>();
-    if (next.empty() || next == cursor) {
-      if (error) *error = "Kea lease paging cursor did not advance";
+    if (next.empty() || !cursors.emplace(next).second) {
+      if (error) *error = "Kea lease paging cursor is empty or repeated";
       return std::nullopt;
     }
     cursor = next;
@@ -997,6 +998,7 @@ std::optional<nlohmann::json> CollectHostPages(
   }
   nlohmann::json collected = nlohmann::json::array();
   nlohmann::json cursor = nlohmann::json::object();
+  std::set<std::pair<std::uint64_t, std::uint64_t>> cursors;
   std::size_t collected_bytes = 0;
   const auto deadline = std::chrono::steady_clock::now() + limits.maximum_duration;
   for (std::size_t page = 0; page < limits.maximum_pages; ++page) {
@@ -1065,8 +1067,8 @@ std::optional<nlohmann::json> CollectHostPages(
                     std::numeric_limits<std::int64_t>::max()) ||
         *source_index > static_cast<std::uint64_t>(
                             std::numeric_limits<std::int64_t>::max()) ||
-        *next == cursor) {
-      if (error) *error = "Kea host paging cursor is missing or did not advance";
+        !cursors.emplace(*from, *source_index).second) {
+      if (error) *error = "Kea host paging cursor is missing or repeated";
       return std::nullopt;
     }
     cursor = {{"from", next->at("from")},

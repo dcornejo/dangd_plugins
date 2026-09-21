@@ -9,6 +9,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Rejected non-adjacent cursor cycles during Kea lease and reservation paging.
+  Every cursor in a logical retrieval is now tracked, so multi-step cycles fail
+  immediately instead of consuming the full page or duration budget.
+
 - Replaced narrowing conversions for Kea page counts, host cursors, lease
   states, and DHCPv6 lease types with one checked unsigned decoder. Oversized or
   negative native values now fail validation without throwing across a callback.
