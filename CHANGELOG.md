@@ -9,6 +9,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Required exactly one Kea answer for transactional `config-test` and
+  `config-set` commands. Empty or multi-answer arrays now fail closed instead
+  of accepting the first success and ignoring ambiguous trailing results.
+
 - Upgraded the Kea provider to ABI v6 and rebuild accepted DHCPv4/DHCPv6
   subnet inventories from dangd's applied snapshot during startup
   reconciliation. Supplemental statistics are no longer silently empty after

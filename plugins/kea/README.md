@@ -57,6 +57,10 @@ For every affected commit, the plugin:
 4. restores DHCPv4 immediately if the DHCPv6 application fails; and
 5. retains both prior configurations for dangd-triggered reverse rollback.
 
+Every control exchange must return exactly one answer. Empty or multi-answer
+transaction replies fail closed, so an ambiguous response can never be treated
+as a successful `config-test` or `config-set`.
+
 The translator handles ordinary scalar leaves, decimal values, containers,
 every list and leaf-list declared by the pinned configuration models,
 JSON-valued user contexts, hook parameters, HTTP header values, and DHCP queue

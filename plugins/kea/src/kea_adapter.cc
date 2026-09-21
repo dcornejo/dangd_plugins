@@ -1043,7 +1043,13 @@ std::optional<std::string> TranslateOperationalState(
 
 bool CommandSucceeded(const nlohmann::json& response, std::string* reason) {
   const nlohmann::json* answer = &response;
-  if (response.is_array() && !response.empty()) answer = &response.front();
+  if (response.is_array()) {
+    if (response.size() != 1) {
+      if (reason) *reason = "Kea returned an ambiguous command response";
+      return false;
+    }
+    answer = &response.front();
+  }
   if (!answer->is_object() || !answer->contains("result") ||
       !(*answer)["result"].is_number_integer()) {
     if (reason) *reason = "Kea returned a response without an integer result";

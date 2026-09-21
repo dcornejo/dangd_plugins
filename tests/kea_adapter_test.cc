@@ -362,5 +362,21 @@ int main() {
   valid &= Check(!excessive_statistics &&
                      error.find("query limit") != std::string::npos,
                  "the aggregate statistics query limit was not enforced");
+
+  std::string command_reason;
+  valid &= Check(dang::plugins::kea::CommandSucceeded(
+                     nlohmann::json::array({{{"result", 0}}}),
+                     &command_reason),
+                 "a singleton successful Kea command response was rejected");
+  valid &= Check(!dang::plugins::kea::CommandSucceeded(
+                     nlohmann::json::array(), &command_reason) &&
+                     command_reason.find("ambiguous") != std::string::npos,
+                 "an empty Kea command response was accepted");
+  valid &= Check(!dang::plugins::kea::CommandSucceeded(
+                     nlohmann::json::array(
+                         {{{"result", 0}}, {{"result", 1}}}),
+                     &command_reason) &&
+                     command_reason.find("ambiguous") != std::string::npos,
+                 "a multi-answer Kea command response was accepted");
   return valid ? 0 : 1;
 }
