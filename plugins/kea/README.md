@@ -252,3 +252,33 @@ assigned-lease counters in the modeled operational XML. It verifies that no
 other interface entered the isolation boundary and removes the temporary
 memory-backed lease databases, unique sockets, PID storage, and namespace or
 jail afterward.
+
+### Cross-host VLAN interaction
+
+The bidirectional interaction additionally uses a Linux host and a FreeBSD host
+whose secondary interfaces share a sterile VLAN. It refuses an interface that
+carries an IPv4 or IPv6 default route, adds only temporary documentation-prefix
+addresses, starts memory-only Kea servers on nonstandard ports, and reverses
+the server/client roles. The client is a small Python socket implementation,
+not an operating-system DHCP client, so it cannot replace addresses, routes,
+DNS configuration, or other host state.
+
+The client sends a DHCPv4 INIT-REBOOT request and a DHCPv6 Rapid Commit solicit.
+The authoritative assertion is the serving Kea process recording completed
+IPv4 and IPv6 lease allocations. This remains reliable on isolated
+hypervisors that filter return UDP packets to the disposable nonstandard client
+ports. The test therefore proves cross-host request delivery and native server
+allocation in both role directions; it does not claim that the hypervisor
+allows the complete reply path.
+
+Both hosts need Python 3, Kea DHCPv4/DHCPv6, passwordless test-only `sudo`, and
+SSH/SCP access from the orchestrating system. For the current validation pair:
+
+```sh
+tests/platform/run_kea_cross_host.sh \
+  dev-linux-1 dev-freebsd-1 ens19 vtnet1
+```
+
+The orchestrator copies its two endpoint helpers to unique `/tmp` paths, runs
+Linux-server/FreeBSD-client and FreeBSD-server/Linux-client phases, and removes
+all remote helpers and runtime state through its exit trap.

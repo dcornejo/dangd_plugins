@@ -9,6 +9,13 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added a bidirectional cross-host Kea interaction for one Linux and one
+  FreeBSD secondary interface on an isolated VLAN. A minimal socket-level
+  client sends DHCPv4 INIT-REBOOT and DHCPv6 Rapid Commit requests, then the
+  serving host must prove completed native lease allocations before roles are
+  reversed. Default-route interfaces fail closed and all test addresses,
+  daemons, and memory-only leases are removed afterward.
+
 - Extended the isolated native Kea interaction to inject real DHCPv4 and
   DHCPv6 leases through the packaged lease-command hook and require their
   addresses, binary client identities, DHCPv6 IAID, and corresponding assigned
