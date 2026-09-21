@@ -9,6 +9,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Prevented Kea commits from removing, changing, or replacing the local UNIX
+  control socket used by dangd. Both current and deprecated Kea socket shapes
+  are recognized, but the configured management path must remain reachable.
+
 - Rejected duplicate YANG list keys in complete Kea operational publication.
   Repeated lease addresses, per-subnet statistic IDs, or composite reservation
   identities now fail closed instead of producing schema-invalid complete XML.

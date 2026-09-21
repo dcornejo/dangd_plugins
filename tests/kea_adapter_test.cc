@@ -42,6 +42,8 @@ int main() {
     <subnet6><id>6</id><pool><prefix>2001:db8:1::100/120</prefix></pool>
       <subnet>2001:db8:1::/64</subnet></subnet6>
     <interfaces-config><interfaces>dangtest0</interfaces></interfaces-config>
+    <control-sockets><socket-type>unix</socket-type>
+      <socket-name>/tmp/kea6.sock</socket-name></control-sockets>
     <host><identifier-type>duid</identifier-type><identifier>00:01</identifier>
       <ip-addresses>2001:db8:1::10</ip-addresses>
       <prefixes>2001:db8:10::/56</prefixes>
@@ -55,9 +57,51 @@ int main() {
   auto dhcp6 = dang::plugins::kea::TranslateConfiguration(
       xml, "kea-dhcp6-server", "/tmp/kea6.sock", &error);
   if (!Check(dhcp4.has_value() && dhcp6.has_value(), error.c_str())) return 1;
+  constexpr char missing_socket_xml[] = R"xml(
+    <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+      <valid-lifetime>600</valid-lifetime>
+    </config>)xml";
+  error.clear();
+  auto missing_socket = dang::plugins::kea::TranslateConfiguration(
+      missing_socket_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  bool valid = Check(!missing_socket &&
+                         error.find("preserve the managed UNIX control socket") !=
+                             std::string::npos,
+                     "configuration without the managed socket was accepted");
+  constexpr char deprecated_socket_xml[] = R"xml(
+    <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+      <control-socket><socket-type>unix</socket-type>
+        <socket-name>/tmp/kea4.sock</socket-name></control-socket>
+    </config>)xml";
+  error.clear();
+  auto deprecated_socket = dang::plugins::kea::TranslateConfiguration(
+      deprecated_socket_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  valid &= Check(deprecated_socket.has_value(),
+                 "deprecated managed control-socket was rejected");
+  std::string wrong_socket_xml(xml);
+  const auto socket_name = wrong_socket_xml.find("/tmp/kea4.sock");
+  wrong_socket_xml.replace(socket_name, std::string("/tmp/kea4.sock").size(),
+                           "/tmp/other.sock");
+  error.clear();
+  auto wrong_socket = dang::plugins::kea::TranslateConfiguration(
+      wrong_socket_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  valid &= Check(!wrong_socket && error.find("/tmp/kea4.sock") !=
+                                      std::string::npos,
+                 "configuration replacing the managed socket was accepted");
+  std::string http_socket_xml(xml);
+  const auto socket_type = http_socket_xml.find("<socket-type>unix</socket-type>");
+  http_socket_xml.replace(socket_type,
+                          std::string("<socket-type>unix</socket-type>").size(),
+                          "<socket-type>http</socket-type>");
+  error.clear();
+  auto http_socket = dang::plugins::kea::TranslateConfiguration(
+      http_socket_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  valid &= Check(!http_socket &&
+                     error.find("preserve the managed UNIX control socket") !=
+                         std::string::npos,
+                 "non-UNIX socket was accepted as the managed socket");
   const auto& four = dhcp4->arguments.at("Dhcp4");
   const auto& six = dhcp6->arguments.at("Dhcp6");
-  bool valid = true;
   valid &= Check(four.at("subnet4").is_array(), "subnet4 is not an array");
   valid &= Check(four.at("subnet4").at(0).at("id") == 4,
                  "subnet4 ID is not numeric");

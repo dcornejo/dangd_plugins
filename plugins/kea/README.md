@@ -61,6 +61,12 @@ Every control exchange must return exactly one answer. Empty or multi-answer
 transaction replies fail closed, so an ambiguous response can never be treated
 as a successful `config-test` or `config-set`.
 
+Each complete replacement must retain a `unix` control socket whose
+`socket-name` exactly matches the corresponding `DANG_KEA_*_SOCKET` path. The
+plugin accepts both Kea's current `control-sockets` list and its deprecated
+singular `control-socket` container, but rejects a candidate that would remove
+or redirect its own management channel before sending `config-test`.
+
 The translator handles ordinary scalar leaves, decimal values, containers,
 every list and leaf-list declared by the pinned configuration models,
 JSON-valued user contexts, hook parameters, HTTP header values, and DHCP queue
@@ -118,9 +124,10 @@ export DANG_KEA_DHCP4_SOCKET=/run/kea/kea4-ctrl-socket
 export DANG_KEA_DHCP6_SOCKET=/run/kea/kea6-ctrl-socket
 ```
 
-Use `/var/run/kea` on the tested FreeBSD package. The same paths should appear
+Use `/var/run/kea` on the tested FreeBSD package. The same paths must appear
 in each modeled `control-sockets` list so a successful `config-set` keeps the
-management channel available. The plugin refuses missing or overlong paths and
+management channel available. The plugin rejects a replacement that omits or
+changes that UNIX socket, and refuses missing or overlong environment paths and
 uses a single five-second deadline plus a 16 MiB response ceiling for each local
 exchange.
 

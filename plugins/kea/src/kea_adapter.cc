@@ -257,6 +257,26 @@ const nlohmann::json* Answer(const nlohmann::json& response) {
   return response.is_object() ? &response : nullptr;
 }
 
+bool IsRequiredControlSocket(const nlohmann::json& socket,
+                             std::string_view socket_path) {
+  if (!socket.is_object()) return false;
+  const auto type = socket.find("socket-type");
+  const auto name = socket.find("socket-name");
+  return type != socket.end() && type->is_string() && *type == "unix" &&
+      name != socket.end() && name->is_string() && *name == socket_path;
+}
+
+bool PreservesControlSocket(const nlohmann::json& body,
+                            std::string_view socket_path) {
+  const auto sockets = body.find("control-sockets");
+  if (sockets != body.end() && sockets->is_array())
+    for (const auto& socket : *sockets)
+      if (IsRequiredControlSocket(socket, socket_path)) return true;
+  const auto deprecated = body.find("control-socket");
+  return deprecated != body.end() &&
+      IsRequiredControlSocket(*deprecated, socket_path);
+}
+
 std::string XmlEscape(std::string_view value) {
   std::string escaped;
   escaped.reserve(value.size());
@@ -723,6 +743,13 @@ std::optional<ServerConfiguration> TranslateConfiguration(
                                              expected_namespace);
   nlohmann::json body = config ? ConvertNode(config) : nlohmann::json::object();
   xmlFreeDoc(document);
+  if (!PreservesControlSocket(body, socket_path)) {
+    if (error)
+      *error = "Kea configuration must preserve the managed UNIX control "
+               "socket " +
+          std::string(socket_path);
+    return std::nullopt;
+  }
   const std::string service = dhcp4 ? "Dhcp4" : "Dhcp6";
   return ServerConfiguration{std::string(module_name), service,
                              std::string(socket_path),
