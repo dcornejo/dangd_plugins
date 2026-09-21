@@ -203,6 +203,31 @@ int main() {
                          std::string::npos,
                  "DHCPv6 host addresses were not translated");
 
+  auto duplicate_leases = leases4;
+  duplicate_leases["arguments"]["leases"].push_back(
+      duplicate_leases["arguments"]["leases"].front());
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", duplicate_leases, stats4, hosts4,
+                     &error) &&
+                     error.find("duplicate IP address") != std::string::npos,
+                 "duplicate lease keys were accepted as complete state");
+  auto duplicate_statistics = stats4;
+  duplicate_statistics["arguments"]["result-set"]["rows"].push_back(
+      duplicate_statistics["arguments"]["result-set"]["rows"].front());
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", leases4, duplicate_statistics, hosts4,
+                     &error) &&
+                     error.find("duplicate subnet-id") != std::string::npos,
+                 "duplicate statistic keys were accepted as complete state");
+  auto duplicate_hosts = hosts4;
+  duplicate_hosts["arguments"]["hosts"].push_back(
+      duplicate_hosts["arguments"]["hosts"].front());
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", leases4, stats4, duplicate_hosts,
+                     &error) &&
+                     error.find("duplicate key") != std::string::npos,
+                 "duplicate host keys were accepted as complete state");
+
   std::vector<nlohmann::json> requests;
   std::size_t invocation = 0;
   const dang::plugins::kea::ControlQuery pages = [&](std::string_view,

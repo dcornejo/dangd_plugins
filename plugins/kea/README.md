@@ -80,6 +80,8 @@ and supplemental per-subnet lease statistics in its `state` container. Operation
 queries use the local control sockets and convert Kea identifiers, lease types,
 states, lifetimes, prefix lengths, and binary identifiers to their modeled XML
 forms. Kea's empty-set result is exposed as an empty collection.
+Duplicate lease addresses, statistic subnet IDs, or composite reservation keys
+fail the retrieval rather than producing schema-invalid complete state.
 
 The provider marks this operational result complete. Lease enumeration uses
 Kea's `lease4-get-page` and `lease6-get-page`

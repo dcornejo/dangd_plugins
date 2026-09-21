@@ -9,6 +9,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Rejected duplicate YANG list keys in complete Kea operational publication.
+  Repeated lease addresses, per-subnet statistic IDs, or composite reservation
+  identities now fail closed instead of producing schema-invalid complete XML.
+
 - Preserved the declared YANG string type when translating pinned Kea
   configuration leaves. Boolean-looking and numeric-looking hostnames, tags,
   identifiers, names, paths, and other string leaves no longer become JSON

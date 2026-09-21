@@ -30,6 +30,7 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -351,9 +352,18 @@ std::optional<std::string> BuildLeases(const nlohmann::json& response,
     return std::nullopt;
   }
   std::string xml = "<leases>";
+  std::set<std::string, std::less<>> addresses;
   for (const auto& lease : *leases) {
     if (!lease.is_object()) {
       if (error) *error = "Kea lease reply contains a non-object entry";
+      return std::nullopt;
+    }
+    const auto address = lease.find("ip-address");
+    if (address == lease.end() || !address->is_string() ||
+        !addresses.emplace(address->get<std::string>()).second) {
+      if (error)
+        *error =
+            "Kea lease reply contains a missing, invalid, or duplicate IP address";
       return std::nullopt;
     }
     xml += "<lease>";
@@ -467,8 +477,18 @@ std::optional<std::string> BuildStatistics(const nlohmann::json& response,
         : std::vector<std::string_view>{"subnet-id", "total-addresses",
                                         "assigned-addresses", "declined-addresses"};
     std::string xml = "<lease-stats>";
+    std::set<std::uint32_t> subnet_ids;
     for (const auto& row : rows) {
       if (!row.is_array()) throw std::runtime_error("row is not an array");
+      const auto subnet_position = indexes.find("subnet-id");
+      if (subnet_position == indexes.end() ||
+          subnet_position->second >= row.size() ||
+          !row[subnet_position->second].is_number_unsigned() ||
+          row[subnet_position->second].get<std::uint64_t>() >
+              std::numeric_limits<std::uint32_t>::max() ||
+          !subnet_ids.emplace(row[subnet_position->second]
+                                  .get<std::uint32_t>()).second)
+        throw std::runtime_error("missing, invalid, or duplicate subnet-id");
       xml += "<subnet>";
       for (const auto name : required) {
         const auto position = indexes.find(name);
@@ -557,6 +577,7 @@ std::optional<std::string> BuildHosts(const nlohmann::json& response,
     return std::nullopt;
   }
   std::string xml = "<hosts>";
+  std::set<std::tuple<std::uint32_t, std::string, std::string>> identities;
   for (const auto& host : *hosts) {
     if (!host.is_object()) {
       if (error) *error = "Kea host reply contains a non-object entry";
@@ -578,6 +599,16 @@ std::optional<std::string> BuildHosts(const nlohmann::json& response,
     }
     if (identifier_type.empty()) {
       if (error) *error = "Kea host reply omits its identifier";
+      return std::nullopt;
+    }
+    const auto subnet = host.find("subnet-id");
+    if (subnet == host.end() || !subnet->is_number_unsigned() ||
+        subnet->get<std::uint64_t>() >
+            std::numeric_limits<std::uint32_t>::max() ||
+        !identities.emplace(subnet->get<std::uint32_t>(), identifier_type,
+                            identifier).second) {
+      if (error)
+        *error = "Kea host reply contains a missing, invalid, or duplicate key";
       return std::nullopt;
     }
     xml += "<host>";
