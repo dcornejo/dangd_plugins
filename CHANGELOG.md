@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Rejected oversized native Kea result codes without narrowing them to C++
+  `int`. Malformed transaction, paging, and operational replies now produce
+  controlled plugin failures instead of allowing numeric conversion exceptions
+  to cross the callback boundary.
+
 - Correlated every successful Kea supplemental-statistics reply with the exact
   configured subnet ID that was queried. Missing or duplicate columns, multiple
   rows, and mismatched subnet IDs now fail closed instead of contaminating a

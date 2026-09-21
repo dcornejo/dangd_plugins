@@ -65,7 +65,9 @@ any restoration failure is appended to the primary transaction error.
 
 Every control exchange must return exactly one answer. Empty or multi-answer
 transaction replies fail closed, so an ambiguous response can never be treated
-as a successful `config-test` or `config-set`.
+as a successful `config-test` or `config-set`. Native result codes are compared
+without narrowing integer conversions; oversized malformed values fail through
+the ordinary error path rather than escaping the plugin callback.
 
 Each complete replacement must retain a `unix` control socket whose
 `socket-name` exactly matches the corresponding `DANG_KEA_*_SOCKET` path. The

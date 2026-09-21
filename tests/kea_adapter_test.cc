@@ -4,7 +4,9 @@
 #include "kea_adapter.h"
 
 #include <chrono>
+#include <cstdint>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -539,6 +541,42 @@ int main() {
                      &command_reason) &&
                      command_reason.find("ambiguous") != std::string::npos,
                  "a multi-answer Kea command response was accepted");
+  const nlohmann::json oversized_result{
+      {"result", std::numeric_limits<std::uint64_t>::max()}};
+  valid &= Check(!dang::plugins::kea::CommandSucceeded(oversized_result,
+                                                        &command_reason),
+                 "an oversized Kea transaction result was accepted");
+  error.clear();
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", oversized_result, stats4, hosts4,
+                     &error),
+                 "an oversized Kea lease result escaped controlled failure");
+  error.clear();
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", leases4, oversized_result, hosts4,
+                     &error),
+                 "an oversized Kea statistics result escaped controlled failure");
+  error.clear();
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", leases4, stats4, oversized_result,
+                     &error),
+                 "an oversized Kea host result escaped controlled failure");
+
+  const dang::plugins::kea::ControlQuery oversized_page_result =
+      [&](std::string_view, std::string_view, const nlohmann::json&,
+          std::string*) -> std::optional<nlohmann::json> {
+    return oversized_result;
+  };
+  error.clear();
+  auto rejected_oversized_page = dang::plugins::kea::CollectLeasePages(
+      "/tmp/kea4.sock", false, oversized_page_result, &error,
+      {.page_size = 1,
+       .maximum_pages = 1,
+       .maximum_items = 1,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(!rejected_oversized_page,
+                 "an oversized Kea page result escaped controlled failure");
 
   const std::vector<dang::plugins::kea::ServerConfiguration> transaction_before{
       {"kea-dhcp4-server", "Dhcp4", "/tmp/kea4.sock", {{"image", "before4"}}},

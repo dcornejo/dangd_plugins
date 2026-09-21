@@ -257,6 +257,14 @@ const nlohmann::json* Answer(const nlohmann::json& response) {
   return response.is_object() ? &response : nullptr;
 }
 
+bool IsResultCode(const nlohmann::json& value, int expected) {
+  if (value.is_number_unsigned())
+    return expected >= 0 && value.get<std::uint64_t>() ==
+        static_cast<std::uint64_t>(expected);
+  return value.is_number_integer() &&
+      value.get<std::int64_t>() == static_cast<std::int64_t>(expected);
+}
+
 bool IsRequiredControlSocket(const nlohmann::json& socket,
                              std::string_view socket_path) {
   if (!socket.is_object()) return false;
@@ -379,9 +387,8 @@ std::optional<std::string> BuildLeases(const nlohmann::json& response,
     if (error) *error = "Kea lease reply omits an integer result";
     return std::nullopt;
   }
-  const int result = answer->at("result").get<int>();
-  if (result == 3) return "<leases/>";
-  if (result != 0) {
+  if (IsResultCode(answer->at("result"), 3)) return "<leases/>";
+  if (!IsResultCode(answer->at("result"), 0)) {
     if (error) *error = answer->value("text", "Kea rejected the lease query");
     return std::nullopt;
   }
@@ -499,9 +506,8 @@ std::optional<std::string> BuildStatistics(const nlohmann::json& response,
     if (error) *error = "Kea statistics reply omits an integer result";
     return std::nullopt;
   }
-  const int result = answer->at("result").get<int>();
-  if (result == 3) return "<lease-stats/>";
-  if (result != 0) {
+  if (IsResultCode(answer->at("result"), 3)) return "<lease-stats/>";
+  if (!IsResultCode(answer->at("result"), 0)) {
     if (error)
       *error = answer->value("text", "Kea rejected the statistics query");
     return std::nullopt;
@@ -605,8 +611,8 @@ std::optional<std::string> BuildHosts(const nlohmann::json& response,
     if (error) *error = "Kea host reply omits an integer result";
     return std::nullopt;
   }
-  if (answer->at("result").get<int>() == 3) return "<hosts/>";
-  if (answer->at("result").get<int>() != 0) {
+  if (IsResultCode(answer->at("result"), 3)) return "<hosts/>";
+  if (!IsResultCode(answer->at("result"), 0)) {
     if (error) *error = answer->value("text", "Kea rejected the host query");
     return std::nullopt;
   }
@@ -903,13 +909,12 @@ std::optional<nlohmann::json> CollectLeasePages(
       if (error) *error = "Kea lease page omits an integer result";
       return std::nullopt;
     }
-    const int status = answer->at("result").get<int>();
-    if (status == 3) {
+    if (IsResultCode(answer->at("result"), 3)) {
       return std::optional<nlohmann::json>(nlohmann::json{
           {"result", collected.empty() ? 3 : 0},
           {"arguments", {{"leases", collected}}}});
     }
-    if (status != 0) {
+    if (!IsResultCode(answer->at("result"), 0)) {
       if (error) *error = answer->value("text", "Kea rejected the lease page");
       return std::nullopt;
     }
@@ -991,12 +996,11 @@ std::optional<nlohmann::json> CollectHostPages(
       if (error) *error = "Kea host page omits an integer result";
       return std::nullopt;
     }
-    const int status = answer->at("result").get<int>();
-    if (status == 3)
+    if (IsResultCode(answer->at("result"), 3))
       return std::optional<nlohmann::json>(nlohmann::json{
           {"result", collected.empty() ? 3 : 0},
           {"arguments", {{"hosts", collected}}}});
-    if (status != 0) {
+    if (!IsResultCode(answer->at("result"), 0)) {
       if (error) *error = answer->value("text", "Kea rejected the host page");
       return std::nullopt;
     }
@@ -1089,9 +1093,8 @@ std::optional<nlohmann::json> CollectStatistics(
       if (error) *error = "Kea statistics reply omits an integer result";
       return std::nullopt;
     }
-    const int status = answer->at("result").get<int>();
-    if (status == 3) continue;
-    if (status != 0) {
+    if (IsResultCode(answer->at("result"), 3)) continue;
+    if (!IsResultCode(answer->at("result"), 0)) {
       if (error) *error = answer->value("text", "Kea rejected statistics query");
       return std::nullopt;
     }
@@ -1186,7 +1189,7 @@ bool CommandSucceeded(const nlohmann::json& response, std::string* reason) {
     if (reason) *reason = "Kea returned a response without an integer result";
     return false;
   }
-  if ((*answer)["result"].get<int>() == 0) return true;
+  if (IsResultCode((*answer)["result"], 0)) return true;
   if (reason)
     *reason = answer->value("text", std::string("Kea rejected the command"));
   return false;
