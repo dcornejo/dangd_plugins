@@ -67,6 +67,8 @@ JSON-valued user contexts, hook parameters, HTTP header values, and DHCP queue
 control, IPv4 and IPv6 address pools, and Kea's JSON naming differences for
 reservations, databases, hooks, shared networks, loggers, output options, and
 prefix-delegation pools. Singleton lists and leaf-lists remain JSON arrays.
+Scalar typing follows the pinned YANG declarations: string leaves remain JSON
+strings even when their value looks like `true`, `false`, or a number.
 Kea remains the final implementation-specific validator; a newly introduced
 model structure must gain a focused translation test before it is treated as
 production-supported.

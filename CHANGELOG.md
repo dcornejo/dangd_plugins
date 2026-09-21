@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Preserved the declared YANG string type when translating pinned Kea
+  configuration leaves. Boolean-looking and numeric-looking hostnames, tags,
+  identifiers, names, paths, and other string leaves no longer become JSON
+  booleans or numbers through lexical guessing.
+
 - Required exactly one Kea answer for transactional `config-test` and
   `config-set` commands. Empty or multi-answer arrays now fail closed instead
   of accepting the first success and ignoring ambiguous trailing results.

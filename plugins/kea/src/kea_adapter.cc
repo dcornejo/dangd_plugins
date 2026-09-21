@@ -113,6 +113,24 @@ nlohmann::json Scalar(const xmlNode* node, const std::string& value) {
       return value;
     }
   }
+  // These leaves are declared directly as YANG string in the pinned module
+  // family. Preserve their type even when their lexical value resembles a
+  // JSON boolean or number (for example hostname "true" or server-tag "123").
+  static const std::set<std::string, std::less<>> string_names{
+      "allocator", "auth-key", "boot-file-name", "cert-file", "cipher-list",
+      "client-class", "client-classes", "data", "data-directory",
+      "database-type", "ddns-generated-prefix", "ddns-qualifying-suffix",
+      "ddns-replace-client-name", "directory", "encapsulate",
+      "evaluate-additional-classes", "host", "hostname",
+      "hostname-char-replacement", "hostname-char-set", "hw-address",
+      "identifier", "interface", "interface-id", "interfaces", "key-file",
+      "library", "mac-sources", "name", "on-fail", "output", "password",
+      "password-file", "pattern", "pd-allocator", "realm", "record-types",
+      "relay-supplied-options", "require-client-classes", "server-hostname",
+      "server-tag", "socket-address", "socket-name", "space", "ssl-mode",
+      "subnet-4o6-interface", "subnet-4o6-interface-id", "template-test",
+      "test", "trust-anchor", "type", "user", "user-file", "value"};
+  if (string_names.contains(name)) return value;
   static const std::set<std::string, std::less<>> decimal_names{
       "adaptive-lease-time-threshold", "cache-threshold", "ddns-ttl-percent",
       "t1-percent", "t2-percent"};

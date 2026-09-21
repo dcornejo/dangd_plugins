@@ -20,6 +20,7 @@ bool Check(bool condition, const char* message) {
 int main() {
   constexpr char xml[] = R"xml(<config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
   <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+    <server-tag>123</server-tag>
     <subnet4><id>4</id><pool><start-address>192.0.2.10</start-address>
       <end-address>192.0.2.20</end-address></pool><subnet>192.0.2.0/24</subnet></subnet4>
     <interfaces-config><interfaces>dangtest0</interfaces></interfaces-config>
@@ -29,7 +30,8 @@ int main() {
     <hook-library><library>/usr/lib/kea/hooks/libdhcp_test.so</library>
       <parameters>{"mode":"strict"}</parameters></hook-library>
     <host><identifier-type>hw-address</identifier-type>
-      <identifier>00:01:02:03:04:05</identifier></host>
+      <identifier>00:01:02:03:04:05</identifier>
+      <hostname>true</hostname></host>
     <t1-percent>0.5</t1-percent>
     <dhcp-queue-control>{"enable-queue":true,"queue-type":"kea-ring4"}</dhcp-queue-control>
     <control-sockets><socket-type>unix</socket-type><socket-name>/tmp/kea4.sock</socket-name>
@@ -86,6 +88,11 @@ int main() {
                  "decimal64 value is not numeric");
   valid &= Check(four.at("dhcp-queue-control").at("enable-queue") == true,
                  "DHCP queue control JSON was not translated");
+  valid &= Check(four.at("server-tag").is_string() &&
+                     four.at("server-tag") == "123" &&
+                     four.at("reservations").at(0).at("hostname").is_string() &&
+                     four.at("reservations").at(0).at("hostname") == "true",
+                 "YANG strings resembling JSON scalars changed type");
   valid &= Check(four.at("control-sockets").at(0).at("http-headers").at(0)
                          .at("value") == true,
                  "HTTP header JSON value was not translated");
