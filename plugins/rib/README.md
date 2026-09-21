@@ -84,7 +84,9 @@ and FreeBSD `route` argv planners require numeric RIB/FIB names and never invoke
 a shell. The shared executor uses `posix_spawnp(3)`, stops on the first failed
 operation, and compensates completed changes in reverse order. Linux state is
 read through rtnetlink and FreeBSD state through `NET_RT_DUMP`; command output
-is never parsed. Kernel routes receive deterministic synthetic `route-index`
+is never parsed. Installed observations are `active`; an explicitly
+uninstalled observation is `inactive`, so contradictory status pairs are never
+emitted. Kernel routes receive deterministic synthetic `route-index`
 values because neither native API exposes the model's list key. Unit tests cover
 successful execution, apply failure, complete rollback, and incomplete
 rollback reporting.

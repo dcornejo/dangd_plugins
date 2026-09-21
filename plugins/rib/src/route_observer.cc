@@ -205,7 +205,9 @@ std::string SerializeOperationalRoutes(
         << (ipv4 ? "</dest-ipv4-prefix></ipv4>" : "</dest-ipv6-prefix></ipv6>")
         << "</match><nexthop><nexthop-base>";
     EmitBaseNexthop(xml, ipv4, route.gateway, route.interface, route.special);
-    xml << "</nexthop-base></nexthop><route-status><route-state>active</route-state>"
+    xml << "</nexthop-base></nexthop><route-status><route-state>"
+        << (observed.installed ? "active" : "inactive")
+        << "</route-state>"
         << "<route-installed-state>"
         << (observed.installed ? "installed" : "uninstalled")
         << "</route-installed-state></route-status><route-attributes>"

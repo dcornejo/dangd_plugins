@@ -9,6 +9,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Kept RFC 8431 operational route status internally consistent. An observed
+  uninstalled route is now serialized as `inactive` instead of the impossible
+  `active`/`uninstalled` combination; installed routes remain `active`.
+
 - Enforced canonical family-qualified RIB identities: a configured alias
   disables the alternate built-in spelling for its native number/family,
   built-in names cannot be remapped to another number or family, and numeric

@@ -375,6 +375,24 @@ TEST(RibConfigTest, SerializesCombinedIpv6NexthopAsOneChoiceCase) {
   EXPECT_NE(xml.find("<local-only>true</local-only>"), std::string::npos);
 }
 
+TEST(RibConfigTest, SerializesUninstalledOperationalRouteAsInactive) {
+  ObservedRoute observed;
+  observed.route = {.routing_instance = "default",
+                    .rib = "ipv4-100",
+                    .address_family = "ipv4",
+                    .index = 45,
+                    .destination = "198.51.100.0/24",
+                    .gateway = "192.0.2.1"};
+  observed.installed = false;
+  const std::string xml = SerializeOperationalRoutes({observed});
+  EXPECT_NE(xml.find("<route-state>inactive</route-state>"),
+            std::string::npos);
+  EXPECT_NE(xml.find(
+                "<route-installed-state>uninstalled</route-installed-state>"),
+            std::string::npos);
+  EXPECT_EQ(xml.find("<route-state>active</route-state>"), std::string::npos);
+}
+
 TEST(RibConfigTest, SerializesNativeSpecialNexthopIdentity) {
   ObservedRoute observed;
   observed.route = {.routing_instance = "default",
