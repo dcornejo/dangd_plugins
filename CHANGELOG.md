@@ -9,6 +9,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Handled malformed non-string Kea error `text` fields through a shared safe
+  fallback across transaction, paging, and operational replies. Native error
+  metadata can no longer trigger a JSON type exception at the plugin boundary.
+
 - Rejected oversized native Kea result codes without narrowing them to C++
   `int`. Malformed transaction, paging, and operational replies now produce
   controlled plugin failures instead of allowing numeric conversion exceptions

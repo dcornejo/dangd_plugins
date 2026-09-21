@@ -577,6 +577,35 @@ int main() {
        .maximum_duration = std::chrono::milliseconds(100)});
   valid &= Check(!rejected_oversized_page,
                  "an oversized Kea page result escaped controlled failure");
+  const nlohmann::json malformed_error_text{
+      {"result", 1}, {"text", {{"unexpected", true}}}};
+  command_reason.clear();
+  valid &= Check(!dang::plugins::kea::CommandSucceeded(malformed_error_text,
+                                                        &command_reason) &&
+                     command_reason.find("non-string text") != std::string::npos,
+                 "non-string transaction error text escaped controlled failure");
+  error.clear();
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", malformed_error_text, stats4, hosts4,
+                     &error) &&
+                     error.find("non-string text") != std::string::npos,
+                 "non-string operational error text escaped controlled failure");
+  const dang::plugins::kea::ControlQuery malformed_error_page =
+      [&](std::string_view, std::string_view, const nlohmann::json&,
+          std::string*) -> std::optional<nlohmann::json> {
+    return malformed_error_text;
+  };
+  error.clear();
+  auto rejected_error_page = dang::plugins::kea::CollectLeasePages(
+      "/tmp/kea4.sock", false, malformed_error_page, &error,
+      {.page_size = 1,
+       .maximum_pages = 1,
+       .maximum_items = 1,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(!rejected_error_page &&
+                     error.find("non-string text") != std::string::npos,
+                 "non-string page error text escaped controlled failure");
 
   const std::vector<dang::plugins::kea::ServerConfiguration> transaction_before{
       {"kea-dhcp4-server", "Dhcp4", "/tmp/kea4.sock", {{"image", "before4"}}},

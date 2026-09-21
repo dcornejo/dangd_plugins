@@ -265,6 +265,14 @@ bool IsResultCode(const nlohmann::json& value, int expected) {
       value.get<std::int64_t>() == static_cast<std::int64_t>(expected);
 }
 
+std::string RejectionReason(const nlohmann::json& answer,
+                            std::string_view fallback) {
+  const auto text = answer.find("text");
+  if (text == answer.end()) return std::string(fallback);
+  if (text->is_string()) return text->get<std::string>();
+  return std::string(fallback) + " (Kea reply contains non-string text)";
+}
+
 bool IsRequiredControlSocket(const nlohmann::json& socket,
                              std::string_view socket_path) {
   if (!socket.is_object()) return false;
@@ -389,7 +397,7 @@ std::optional<std::string> BuildLeases(const nlohmann::json& response,
   }
   if (IsResultCode(answer->at("result"), 3)) return "<leases/>";
   if (!IsResultCode(answer->at("result"), 0)) {
-    if (error) *error = answer->value("text", "Kea rejected the lease query");
+    if (error) *error = RejectionReason(*answer, "Kea rejected the lease query");
     return std::nullopt;
   }
   const auto arguments = answer->find("arguments");
@@ -509,7 +517,7 @@ std::optional<std::string> BuildStatistics(const nlohmann::json& response,
   if (IsResultCode(answer->at("result"), 3)) return "<lease-stats/>";
   if (!IsResultCode(answer->at("result"), 0)) {
     if (error)
-      *error = answer->value("text", "Kea rejected the statistics query");
+      *error = RejectionReason(*answer, "Kea rejected the statistics query");
     return std::nullopt;
   }
   try {
@@ -613,7 +621,7 @@ std::optional<std::string> BuildHosts(const nlohmann::json& response,
   }
   if (IsResultCode(answer->at("result"), 3)) return "<hosts/>";
   if (!IsResultCode(answer->at("result"), 0)) {
-    if (error) *error = answer->value("text", "Kea rejected the host query");
+    if (error) *error = RejectionReason(*answer, "Kea rejected the host query");
     return std::nullopt;
   }
   const auto arguments = answer->find("arguments");
@@ -915,7 +923,7 @@ std::optional<nlohmann::json> CollectLeasePages(
           {"arguments", {{"leases", collected}}}});
     }
     if (!IsResultCode(answer->at("result"), 0)) {
-      if (error) *error = answer->value("text", "Kea rejected the lease page");
+      if (error) *error = RejectionReason(*answer, "Kea rejected the lease page");
       return std::nullopt;
     }
     const auto arguments_node = answer->find("arguments");
@@ -1001,7 +1009,7 @@ std::optional<nlohmann::json> CollectHostPages(
           {"result", collected.empty() ? 3 : 0},
           {"arguments", {{"hosts", collected}}}});
     if (!IsResultCode(answer->at("result"), 0)) {
-      if (error) *error = answer->value("text", "Kea rejected the host page");
+      if (error) *error = RejectionReason(*answer, "Kea rejected the host page");
       return std::nullopt;
     }
     const auto arguments_node = answer->find("arguments");
@@ -1095,7 +1103,8 @@ std::optional<nlohmann::json> CollectStatistics(
     }
     if (IsResultCode(answer->at("result"), 3)) continue;
     if (!IsResultCode(answer->at("result"), 0)) {
-      if (error) *error = answer->value("text", "Kea rejected statistics query");
+      if (error)
+        *error = RejectionReason(*answer, "Kea rejected statistics query");
       return std::nullopt;
     }
     try {
@@ -1190,8 +1199,7 @@ bool CommandSucceeded(const nlohmann::json& response, std::string* reason) {
     return false;
   }
   if (IsResultCode((*answer)["result"], 0)) return true;
-  if (reason)
-    *reason = answer->value("text", std::string("Kea rejected the command"));
+  if (reason) *reason = RejectionReason(*answer, "Kea rejected the command");
   return false;
 }
 
