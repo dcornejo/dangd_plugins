@@ -89,6 +89,8 @@ JSON-valued user contexts, hook parameters, HTTP header values, and DHCP queue
 control, IPv4 and IPv6 address pools, and Kea's JSON naming differences for
 reservations, databases, hooks, shared networks, loggers, output options, and
 prefix-delegation pools. Singleton lists and leaf-lists remain JSON arrays.
+The modeled `database-type` leaf is emitted as Kea's native `type` member for
+lease, host, and configuration database objects.
 Scalar typing follows the pinned YANG declarations: string leaves remain JSON
 strings even when their value looks like `true`, `false`, or a number.
 Kea remains the final implementation-specific validator; a newly introduced
@@ -245,6 +247,8 @@ Each interaction proves DHCPv4 and DHCPv6 `config-test`, `config-set`, rollback,
 paged-command lease and host retrieval, and supplemental-statistics retrieval
 against the native packaged daemon. After apply, it injects one real lease into
 each daemon through the lease-command hook and requires both addresses plus the
-DHCPv6 IAID in the modeled operational XML. It verifies that no other interface
-entered the isolation boundary and removes the temporary memory-backed lease
-databases, unique sockets, PID storage, and namespace or jail afterward.
+binary hardware address and DUID, DHCPv6 IAID, and incremented per-subnet
+assigned-lease counters in the modeled operational XML. It verifies that no
+other interface entered the isolation boundary and removes the temporary
+memory-backed lease databases, unique sockets, PID storage, and namespace or
+jail afterward.

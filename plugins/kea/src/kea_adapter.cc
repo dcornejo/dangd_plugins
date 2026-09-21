@@ -89,6 +89,7 @@ bool IsLeafList(std::string_view name) {
 std::string JsonName(std::string_view yang_name) {
   static const std::map<std::string, std::string, std::less<>> names{
       {"config-database", "config-databases"},
+      {"database-type", "type"},
       {"hook-library", "hooks-libraries"},
       {"hosts-database", "hosts-databases"},
       {"logger", "loggers"},

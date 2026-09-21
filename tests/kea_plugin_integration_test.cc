@@ -113,10 +113,17 @@ int main(int argc, char** argv) {
         xml.find("<leases") != std::string::npos &&
         xml.find("<ip-address>192.0.2.80</ip-address>") !=
             std::string::npos &&
+        xml.find("<hw-address>AgAAAAQB</hw-address>") !=
+            std::string::npos &&
         xml.find("<ip-address>2001:db8:6::180</ip-address>") !=
+            std::string::npos &&
+        xml.find("<duid>AAEAAQIDBAUGBwgJ</duid>") !=
             std::string::npos &&
         xml.find("<iaid>1234</iaid>") != std::string::npos &&
         xml.find("<lease-stats") != std::string::npos &&
+        xml.find("<assigned-addresses>1</assigned-addresses>") !=
+            std::string::npos &&
+        xml.find("<assigned-nas>1</assigned-nas>") != std::string::npos &&
         xml.find("<hosts") != std::string::npos &&
         xml.find("<subnet-id>401</subnet-id>") != std::string::npos &&
         xml.find("<subnet-id>601</subnet-id>") != std::string::npos &&

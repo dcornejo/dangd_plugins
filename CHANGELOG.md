@@ -11,9 +11,15 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 - Extended the isolated native Kea interaction to inject real DHCPv4 and
   DHCPv6 leases through the packaged lease-command hook and require their
-  addresses and DHCPv6 IAID in the plugin's complete operational XML.
+  addresses, binary client identities, DHCPv6 IAID, and corresponding assigned
+  lease counters in the plugin's complete operational XML.
 
 ### Fixed
+
+- Translated the YANG `database-type` leaf to Kea's native `type` member for
+  lease, host, and configuration databases. The isolated transaction fixtures
+  now explicitly retain memory-only non-persistent lease databases across
+  `config-set`, preventing one native test run from contaminating the next.
 
 - Rejected non-adjacent cursor cycles during Kea lease and reservation paging.
   Every cursor in a logical retrieval is now tracked, so multi-step cycles fail

@@ -26,6 +26,8 @@ int main() {
     <subnet4><id>4</id><pool><start-address>192.0.2.10</start-address>
       <end-address>192.0.2.20</end-address></pool><subnet>192.0.2.0/24</subnet></subnet4>
     <interfaces-config><interfaces>dangtest0</interfaces></interfaces-config>
+    <lease-database><database-type>memfile</database-type>
+      <persist>false</persist></lease-database>
     <hosts-database><database-type>memfile</database-type></hosts-database>
     <config-control><config-database><database-type>mysql</database-type>
       <host>db.example</host></config-database></config-control>
@@ -47,6 +49,8 @@ int main() {
     <subnet6><id>6</id><pool><prefix>2001:db8:1::100/120</prefix></pool>
       <subnet>2001:db8:1::/64</subnet></subnet6>
     <interfaces-config><interfaces>dangtest0</interfaces></interfaces-config>
+    <lease-database><database-type>memfile</database-type>
+      <persist>false</persist></lease-database>
     <control-sockets><socket-type>unix</socket-type>
       <socket-name>/tmp/kea6.sock</socket-name></control-sockets>
     <hook-library><library>/usr/local/lib/kea/hooks/libdhcp_lease_cmds.so</library></hook-library>
@@ -136,8 +140,14 @@ int main() {
                  "subnet prefix leaf was confused with a state list");
   valid &= Check(four.at("interfaces-config").at("interfaces").is_array(),
                  "single interface leaf-list is not an array");
+  valid &= Check(four.at("lease-database").at("type") == "memfile" &&
+                     four.at("lease-database").at("persist") == false &&
+                     !four.at("lease-database").contains("database-type"),
+                 "lease database fields were not converted to Kea form");
   valid &= Check(four.at("hosts-databases").is_array(),
                  "singleton hosts-database is not an array");
+  valid &= Check(four.at("hosts-databases").at(0).at("type") == "memfile",
+                 "host database type was not converted to Kea form");
   valid &= Check(four.at("config-control").at("config-databases").is_array(),
                  "singleton config-database is not an array");
   valid &= Check(four.at("config-control").at("config-databases").at(0)
@@ -175,6 +185,9 @@ int main() {
                  "singleton excluded-prefix leaf-list is not an array");
   valid &= Check(six.at("relay-supplied-options").is_array(),
                  "singleton relay option leaf-list is not an array");
+  valid &= Check(six.at("lease-database").at("type") == "memfile" &&
+                     six.at("lease-database").at("persist") == false,
+                 "DHCPv6 lease database was not converted to Kea form");
   valid &= Check(dang::plugins::kea::ExtractSubnetIds(*dhcp4) ==
                      std::vector<std::uint32_t>{4},
                  "DHCPv4 subnet IDs were not extracted from translated JSON");
