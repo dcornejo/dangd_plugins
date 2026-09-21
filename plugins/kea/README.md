@@ -66,6 +66,10 @@ Each complete replacement must retain a `unix` control socket whose
 plugin accepts both Kea's current `control-sockets` list and its deprecated
 singular `control-socket` container, but rejects a candidate that would remove
 or redirect its own management channel before sending `config-test`.
+It likewise requires `libdhcp_lease_cmds.so`, `libdhcp_host_cmds.so`, and
+`libdhcp_stat_cmds.so` in every replacement because complete operational
+retrieval depends on their native commands. Only the basenames are fixed;
+Linux and FreeBSD may install them in different directories.
 
 The translator handles ordinary scalar leaves, decimal values, containers,
 every list and leaf-list declared by the pinned configuration models,
@@ -157,8 +161,10 @@ Use the equivalent `Dhcp6` object and `kea6-ctrl-socket` in the DHCPv6 file.
 On FreeBSD use `/var/run/kea/...` consistently and find the hooks under
 `/usr/local/lib/kea/hooks`. Distribution paths can differ; verify the installed
 locations rather than copying these examples blindly. All hook entries must
-also be represented in the modeled configuration so `config-set` retains the
-operational commands. Validate both native files before restarting the servers:
+also be represented in the modeled configuration; the plugin rejects a
+replacement missing any required command hook so `config-set` cannot silently
+remove operational retrieval. Validate both native files before restarting the
+servers:
 
 ```sh
 kea-dhcp4 -t /etc/kea/kea-dhcp4.conf

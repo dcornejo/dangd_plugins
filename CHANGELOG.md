@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Prevented Kea commits from removing the lease-command, host-command, or
+  supplemental-statistics hook libraries required by complete operational
+  retrieval. Validation uses portable library basenames across Linux and
+  FreeBSD installation directories.
+
 - Prevented Kea commits from removing, changing, or replacing the local UNIX
   control socket used by dangd. Both current and deprecated Kea socket shapes
   are recognized, but the configured management path must remain reachable.

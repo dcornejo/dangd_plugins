@@ -277,6 +277,30 @@ bool PreservesControlSocket(const nlohmann::json& body,
       IsRequiredControlSocket(*deprecated, socket_path);
 }
 
+std::string_view BaseName(std::string_view path) {
+  const auto separator = path.find_last_of('/');
+  return separator == std::string_view::npos ? path : path.substr(separator + 1);
+}
+
+std::optional<std::string> MissingRequiredHook(const nlohmann::json& body) {
+  static constexpr std::string_view required[]{
+      "libdhcp_lease_cmds.so", "libdhcp_stat_cmds.so",
+      "libdhcp_host_cmds.so"};
+  std::set<std::string, std::less<>> libraries;
+  const auto hooks = body.find("hooks-libraries");
+  if (hooks != body.end() && hooks->is_array()) {
+    for (const auto& hook : *hooks) {
+      if (!hook.is_object()) continue;
+      const auto library = hook.find("library");
+      if (library != hook.end() && library->is_string())
+        libraries.emplace(BaseName(library->get_ref<const std::string&>()));
+    }
+  }
+  for (const auto library : required)
+    if (!libraries.contains(library)) return std::string(library);
+  return std::nullopt;
+}
+
 std::string XmlEscape(std::string_view value) {
   std::string escaped;
   escaped.reserve(value.size());
@@ -748,6 +772,12 @@ std::optional<ServerConfiguration> TranslateConfiguration(
       *error = "Kea configuration must preserve the managed UNIX control "
                "socket " +
           std::string(socket_path);
+    return std::nullopt;
+  }
+  if (const auto missing_hook = MissingRequiredHook(body); missing_hook) {
+    if (error)
+      *error = "Kea configuration must preserve required command hook " +
+          *missing_hook;
     return std::nullopt;
   }
   const std::string service = dhcp4 ? "Dhcp4" : "Dhcp6";

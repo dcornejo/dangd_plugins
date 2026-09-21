@@ -29,6 +29,9 @@ int main() {
       <host>db.example</host></config-database></config-control>
     <hook-library><library>/usr/lib/kea/hooks/libdhcp_test.so</library>
       <parameters>{"mode":"strict"}</parameters></hook-library>
+    <hook-library><library>/usr/lib/kea/hooks/libdhcp_lease_cmds.so</library></hook-library>
+    <hook-library><library>/usr/lib/kea/hooks/libdhcp_stat_cmds.so</library></hook-library>
+    <hook-library><library>/usr/lib/kea/hooks/libdhcp_host_cmds.so</library></hook-library>
     <host><identifier-type>hw-address</identifier-type>
       <identifier>00:01:02:03:04:05</identifier>
       <hostname>true</hostname></host>
@@ -44,6 +47,9 @@ int main() {
     <interfaces-config><interfaces>dangtest0</interfaces></interfaces-config>
     <control-sockets><socket-type>unix</socket-type>
       <socket-name>/tmp/kea6.sock</socket-name></control-sockets>
+    <hook-library><library>/usr/local/lib/kea/hooks/libdhcp_lease_cmds.so</library></hook-library>
+    <hook-library><library>/usr/local/lib/kea/hooks/libdhcp_stat_cmds.so</library></hook-library>
+    <hook-library><library>/usr/local/lib/kea/hooks/libdhcp_host_cmds.so</library></hook-library>
     <host><identifier-type>duid</identifier-type><identifier>00:01</identifier>
       <ip-addresses>2001:db8:1::10</ip-addresses>
       <prefixes>2001:db8:10::/56</prefixes>
@@ -72,12 +78,28 @@ int main() {
     <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
       <control-socket><socket-type>unix</socket-type>
         <socket-name>/tmp/kea4.sock</socket-name></control-socket>
+      <hook-library><library>/opt/kea/libdhcp_lease_cmds.so</library></hook-library>
+      <hook-library><library>/opt/kea/libdhcp_stat_cmds.so</library></hook-library>
+      <hook-library><library>/opt/kea/libdhcp_host_cmds.so</library></hook-library>
     </config>)xml";
   error.clear();
   auto deprecated_socket = dang::plugins::kea::TranslateConfiguration(
       deprecated_socket_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
   valid &= Check(deprecated_socket.has_value(),
                  "deprecated managed control-socket was rejected");
+  constexpr char missing_hook_xml[] = R"xml(
+    <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+      <control-sockets><socket-type>unix</socket-type>
+        <socket-name>/tmp/kea4.sock</socket-name></control-sockets>
+      <hook-library><library>/opt/kea/libdhcp_lease_cmds.so</library></hook-library>
+      <hook-library><library>/opt/kea/libdhcp_host_cmds.so</library></hook-library>
+    </config>)xml";
+  error.clear();
+  auto missing_hook = dang::plugins::kea::TranslateConfiguration(
+      missing_hook_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  valid &= Check(!missing_hook &&
+                     error.find("libdhcp_stat_cmds.so") != std::string::npos,
+                 "configuration removing a required hook was accepted");
   std::string wrong_socket_xml(xml);
   const auto socket_name = wrong_socket_xml.find("/tmp/kea4.sock");
   wrong_socket_xml.replace(socket_name, std::string("/tmp/kea4.sock").size(),
