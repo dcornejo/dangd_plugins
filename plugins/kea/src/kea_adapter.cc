@@ -265,6 +265,14 @@ bool IsResultCode(const nlohmann::json& value, int expected) {
       value.get<std::int64_t>() == static_cast<std::int64_t>(expected);
 }
 
+std::optional<std::uint64_t> UnsignedValue(const nlohmann::json& value) {
+  if (value.is_number_unsigned()) return value.get<std::uint64_t>();
+  if (!value.is_number_integer()) return std::nullopt;
+  const auto signed_value = value.get<std::int64_t>();
+  if (signed_value < 0) return std::nullopt;
+  return static_cast<std::uint64_t>(signed_value);
+}
+
 std::string RejectionReason(const nlohmann::json& answer,
                             std::string_view fallback) {
   const auto text = answer.find("text");
@@ -466,9 +474,9 @@ std::optional<std::string> BuildLeases(const nlohmann::json& response,
       }
       std::string lease_type;
       if (type->is_string()) lease_type = type->get<std::string>();
-      else if (type->is_number_unsigned() && type->get<unsigned int>() == 0)
+      else if (UnsignedValue(*type) == 0)
         lease_type = "IA_NA";
-      else if (type->is_number_unsigned() && type->get<unsigned int>() == 2)
+      else if (UnsignedValue(*type) == 2)
         lease_type = "IA_PD";
       else {
         if (error) *error = "Kea lease reply contains an unknown lease type";
@@ -487,11 +495,12 @@ std::optional<std::string> BuildLeases(const nlohmann::json& response,
     if (state != lease.end()) {
       static constexpr const char* states[]{"default", "declined",
                                              "expired-reclaimed"};
-      if (!state->is_number_unsigned() || state->get<unsigned int>() > 2) {
+      const auto state_value = UnsignedValue(*state);
+      if (!state_value || *state_value > 2) {
         if (error) *error = "Kea lease reply contains an unknown state";
         return std::nullopt;
       }
-      xml += "<state>" + std::string(states[state->get<unsigned int>()]) +
+      xml += "<state>" + std::string(states[*state_value]) +
           "</state>";
     }
     if (const auto context = lease.find("user-context");
@@ -933,11 +942,12 @@ std::optional<nlohmann::json> CollectLeasePages(
     }
     const auto leases = arguments_node->find("leases");
     const auto count = arguments_node->find("count");
+    const auto count_value = count == arguments_node->end()
+        ? std::nullopt
+        : UnsignedValue(*count);
     if (leases == arguments_node->end() || !leases->is_array() ||
-        count == arguments_node->end() || !count->is_number_integer() ||
-        count->get<std::int64_t>() < 0 ||
-        static_cast<std::uint64_t>(count->get<std::int64_t>()) !=
-            leases->size() || leases->size() > limits.page_size) {
+        !count_value || *count_value != leases->size() ||
+        leases->size() > limits.page_size) {
       if (error) *error = "Kea lease page has an invalid leases/count result";
       return std::nullopt;
     }
@@ -1016,17 +1026,16 @@ std::optional<nlohmann::json> CollectHostPages(
     if (arguments_node == answer->end() || !arguments_node->is_object() ||
         !arguments_node->contains("hosts") ||
         !arguments_node->at("hosts").is_array() ||
-        !arguments_node->contains("count") ||
-        !arguments_node->at("count").is_number_integer() ||
-        arguments_node->at("count").get<std::int64_t>() < 0 ||
-        static_cast<std::uint64_t>(
-            arguments_node->at("count").get<std::int64_t>()) !=
-            arguments_node->at("hosts").size() ||
-        arguments_node->at("hosts").size() > limits.page_size) {
+        !arguments_node->contains("count")) {
       if (error) *error = "Kea host page has an invalid hosts result";
       return std::nullopt;
     }
     const auto& hosts = arguments_node->at("hosts");
+    const auto count = UnsignedValue(arguments_node->at("count"));
+    if (!count || *count != hosts.size() || hosts.size() > limits.page_size) {
+      if (error) *error = "Kea host page has an invalid hosts result";
+      return std::nullopt;
+    }
     if (collected.size() + hosts.size() > limits.maximum_items) {
       if (error) *error = "Kea host enumeration exceeds the item limit";
       return std::nullopt;
@@ -1041,12 +1050,22 @@ std::optional<nlohmann::json> CollectHostPages(
       collected.push_back(host);
     }
     const auto next = arguments_node->find("next");
+    const auto from = next == arguments_node->end() || !next->is_object() ||
+            !next->contains("from")
+        ? std::nullopt
+        : UnsignedValue(next->at("from"));
+    const auto source_index =
+        next == arguments_node->end() || !next->is_object() ||
+                !next->contains("source-index")
+            ? std::nullopt
+            : UnsignedValue(next->at("source-index"));
     if (next == arguments_node->end() || !next->is_object() ||
-        !next->contains("from") || !next->at("from").is_number_integer() ||
-        next->at("from").get<std::int64_t>() < 0 ||
-        !next->contains("source-index") ||
-        !next->at("source-index").is_number_integer() ||
-        next->at("source-index").get<std::int64_t>() < 0 || *next == cursor) {
+        !from || !source_index ||
+        *from > static_cast<std::uint64_t>(
+                    std::numeric_limits<std::int64_t>::max()) ||
+        *source_index > static_cast<std::uint64_t>(
+                            std::numeric_limits<std::int64_t>::max()) ||
+        *next == cursor) {
       if (error) *error = "Kea host paging cursor is missing or did not advance";
       return std::nullopt;
     }

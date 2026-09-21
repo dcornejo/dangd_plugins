@@ -9,6 +9,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Replaced narrowing conversions for Kea page counts, host cursors, lease
+  states, and DHCPv6 lease types with one checked unsigned decoder. Oversized or
+  negative native values now fail validation without throwing across a callback.
+
 - Handled malformed non-string Kea error `text` fields through a shared safe
   fallback across transaction, paging, and operational replies. Native error
   metadata can no longer trigger a JSON type exception at the plugin boundary.

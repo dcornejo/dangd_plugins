@@ -577,6 +577,67 @@ int main() {
        .maximum_duration = std::chrono::milliseconds(100)});
   valid &= Check(!rejected_oversized_page,
                  "an oversized Kea page result escaped controlled failure");
+  const dang::plugins::kea::ControlQuery oversized_count_page =
+      [](std::string_view, std::string_view, const nlohmann::json&,
+         std::string*) -> std::optional<nlohmann::json> {
+    return nlohmann::json{
+        {"result", 0},
+        {"arguments",
+         {{"count", std::numeric_limits<std::uint64_t>::max()},
+          {"leases", nlohmann::json::array()}}}};
+  };
+  error.clear();
+  auto rejected_oversized_count = dang::plugins::kea::CollectLeasePages(
+      "/tmp/kea4.sock", false, oversized_count_page, &error,
+      {.page_size = 1,
+       .maximum_pages = 1,
+       .maximum_items = 1,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(!rejected_oversized_count &&
+                     error.find("leases/count") != std::string::npos,
+                 "an oversized lease count escaped controlled failure");
+  const dang::plugins::kea::ControlQuery oversized_host_cursor =
+      [](std::string_view, std::string_view, const nlohmann::json&,
+         std::string*) -> std::optional<nlohmann::json> {
+    return nlohmann::json{
+        {"result", 0},
+        {"arguments",
+         {{"count", 1},
+          {"hosts", {{{"subnet-id", 4}, {"hw-address", "00:01"}}}},
+          {"next",
+           {{"from", std::numeric_limits<std::uint64_t>::max()},
+            {"source-index", 0}}}}}};
+  };
+  error.clear();
+  auto rejected_host_cursor = dang::plugins::kea::CollectHostPages(
+      "/tmp/kea4.sock", oversized_host_cursor, &error,
+      {.page_size = 1,
+       .maximum_pages = 2,
+       .maximum_items = 2,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(!rejected_host_cursor &&
+                     error.find("cursor") != std::string::npos,
+                 "an oversized host cursor escaped controlled failure");
+  auto oversized_state = leases4;
+  oversized_state["arguments"]["leases"][0]["state"] =
+      std::numeric_limits<std::uint64_t>::max();
+  error.clear();
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", oversized_state, stats4, hosts4,
+                     &error) &&
+                     error.find("unknown state") != std::string::npos,
+                 "an oversized lease state escaped controlled failure");
+  auto oversized_type = leases6;
+  oversized_type["arguments"]["leases"][0]["type"] =
+      std::numeric_limits<std::uint64_t>::max();
+  error.clear();
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp6-server", oversized_type, stats6, hosts6,
+                     &error) &&
+                     error.find("unknown lease type") != std::string::npos,
+                 "an oversized lease type escaped controlled failure");
   const nlohmann::json malformed_error_text{
       {"result", 1}, {"text", {{"unexpected", true}}}};
   command_reason.clear();

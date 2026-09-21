@@ -69,7 +69,9 @@ as a successful `config-test` or `config-set`. Native result codes are compared
 without narrowing integer conversions; oversized malformed values fail through
 the ordinary error path rather than escaping the plugin callback. A malformed
 non-string native error `text` field is replaced with a descriptive fallback
-instead of triggering a JSON type exception.
+instead of triggering a JSON type exception. Page counts, host cursors, lease
+states, and DHCPv6 lease types use checked unsigned decoding so negative and
+oversized values are rejected without narrowing.
 
 Each complete replacement must retain a `unix` control socket whose
 `socket-name` exactly matches the corresponding `DANG_KEA_*_SOCKET` path. The
