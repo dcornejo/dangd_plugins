@@ -3,12 +3,16 @@
 
 #include "dangd/plugin_api.h"
 
+#include "kea_adapter.h"
+
 #include <dlfcn.h>
 
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <string_view>
 
 namespace {
 
@@ -24,6 +28,17 @@ bool Report(const char* phase, const DangPluginErrorV1& error) {
             << (error.message ? error.message : "no plugin message");
   if (error.instance_path) std::cerr << " at " << error.instance_path;
   std::cerr << '\n';
+  return false;
+}
+
+bool NativeCommand(const char* socket, std::string_view command,
+                   const nlohmann::json& arguments) {
+  std::string reason;
+  auto response = dang::plugins::kea::SendControlQuery(
+      socket ? socket : "", command, arguments, &reason);
+  if (response && dang::plugins::kea::CommandSucceeded(*response, &reason))
+    return true;
+  std::cerr << command << " failed: " << reason << '\n';
   return false;
 }
 
@@ -74,6 +89,17 @@ int main(int argc, char** argv) {
         plugin5->v4.apply_hardware_action(plugin->context, prepared,
                                           action.action_id, &error))
         || Report("apply", error);
+  if (valid)
+    valid = NativeCommand(std::getenv("DANG_KEA_DHCP4_SOCKET"), "lease4-add",
+                          {{"subnet-id", 401},
+                           {"ip-address", "192.0.2.80"},
+                           {"hw-address", "02:00:00:00:04:01"}});
+  if (valid)
+    valid = NativeCommand(std::getenv("DANG_KEA_DHCP6_SOCKET"), "lease6-add",
+                          {{"subnet-id", 601},
+                           {"ip-address", "2001:db8:6::180"},
+                           {"duid", "00:01:00:01:02:03:04:05:06:07:08:09"},
+                           {"iaid", 1234}});
   if (valid) {
     DangOperationalDataV2 state{};
     valid = plugin5->get_operational_data_v2(plugin->context, &state, &error)
@@ -85,6 +111,11 @@ int main(int argc, char** argv) {
         xml.find("urn:ietf:params:xml:ns:yang:kea-dhcp6-server") !=
             std::string::npos &&
         xml.find("<leases") != std::string::npos &&
+        xml.find("<ip-address>192.0.2.80</ip-address>") !=
+            std::string::npos &&
+        xml.find("<ip-address>2001:db8:6::180</ip-address>") !=
+            std::string::npos &&
+        xml.find("<iaid>1234</iaid>") != std::string::npos &&
         xml.find("<lease-stats") != std::string::npos &&
         xml.find("<hosts") != std::string::npos &&
         xml.find("<subnet-id>401</subnet-id>") != std::string::npos &&

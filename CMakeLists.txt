@@ -638,11 +638,12 @@ if(BUILD_TESTING)
   endif()
 
   add_executable(kea_plugin_integration_test
-    tests/kea_plugin_integration_test.cc)
+    tests/kea_plugin_integration_test.cc plugins/kea/src/kea_adapter.cc)
   target_compile_features(kea_plugin_integration_test PRIVATE cxx_std_20)
   target_include_directories(kea_plugin_integration_test PRIVATE
-    "${DANGD_INCLUDE_DIR}")
-  target_link_libraries(kea_plugin_integration_test PRIVATE "${CMAKE_DL_LIBS}")
+    "${DANGD_INCLUDE_DIR}" plugins/kea/src)
+  target_link_libraries(kea_plugin_integration_test PRIVATE
+    "${CMAKE_DL_LIBS}" LibXml2::LibXml2 nlohmann_json::nlohmann_json)
   target_compile_options(kea_plugin_integration_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 endif()

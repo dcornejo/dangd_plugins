@@ -7,6 +7,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Extended the isolated native Kea interaction to inject real DHCPv4 and
+  DHCPv6 leases through the packaged lease-command hook and require their
+  addresses and DHCPv6 IAID in the plugin's complete operational XML.
+
 ### Fixed
 
 - Rejected non-adjacent cursor cycles during Kea lease and reservation paging.

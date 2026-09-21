@@ -243,6 +243,8 @@ sudo tests/platform/freebsd/run_kea_isolated.sh "$PWD"
 
 Each interaction proves DHCPv4 and DHCPv6 `config-test`, `config-set`, rollback,
 paged-command lease and host retrieval, and supplemental-statistics retrieval
-against the native packaged daemon. It verifies that no other interface entered the isolation
-boundary and removes its unique sockets, PID storage, and namespace or jail
-afterward.
+against the native packaged daemon. After apply, it injects one real lease into
+each daemon through the lease-command hook and requires both addresses plus the
+DHCPv6 IAID in the modeled operational XML. It verifies that no other interface
+entered the isolation boundary and removes the temporary memory-backed lease
+databases, unique sockets, PID storage, and namespace or jail afterward.
