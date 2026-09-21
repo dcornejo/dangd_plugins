@@ -37,19 +37,28 @@ int main(int argc, char** argv) {
   const std::string before = Read(argv[2]);
   const std::string proposed = Read(argv[3]);
   void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
-  auto initialize = library ? reinterpret_cast<DangPluginInitV5>(
-      dlsym(library, "dang_plugin_init_v5")) : nullptr;
-  const DangPluginV5* plugin5 = initialize ? initialize() : nullptr;
+  auto initialize = library ? reinterpret_cast<DangPluginInitV6>(
+      dlsym(library, "dang_plugin_init_v6")) : nullptr;
+  const DangPluginV6* plugin6 = initialize ? initialize() : nullptr;
+  const DangPluginV5* plugin5 = plugin6 ? &plugin6->v5 : nullptr;
   const DangPluginV1* plugin = plugin5 ? &plugin5->v4.v3.v2.v1 : nullptr;
-  if (!plugin5) {
+  if (!plugin6) {
     std::cerr << (library ? "missing plugin initializer" : dlerror()) << '\n';
     return 1;
   }
   DangTransactionV1 transaction{before.c_str(), proposed.c_str(), "[]"};
   DangPluginErrorV1 error{};
+  DangAppliedConfigurationV1 reconciled{};
+  bool valid = plugin6->reconcile_applied_configuration(
+                   plugin->context, nullptr, before.c_str(), &reconciled,
+                   &error) ||
+               Report("startup reconciliation", error);
+  valid = valid && reconciled.applied_xml == before.c_str() &&
+          reconciled.outcomes == nullptr && reconciled.outcome_count == 0;
   void* prepared = nullptr;
-  bool valid = plugin->prepare(plugin->context, &transaction, &prepared, &error)
-      || Report("prepare", error);
+  if (valid)
+    valid = plugin->prepare(plugin->context, &transaction, &prepared, &error)
+        || Report("prepare", error);
   if (valid)
     valid = plugin->validate(plugin->context, prepared, &error)
         || Report("validate", error);

@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Upgraded the Kea provider to ABI v6 and rebuild accepted DHCPv4/DHCPv6
+  subnet inventories from dangd's applied snapshot during startup
+  reconciliation. Supplemental statistics are no longer silently empty after
+  a process restart before the next configuration commit.
+
 - Kept RFC 8431 operational route status internally consistent. An observed
   uninstalled route is now serialized as `inactive` instead of the impossible
   `active`/`uninstalled` combination; installed routes remain `active`.

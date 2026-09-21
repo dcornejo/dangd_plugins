@@ -355,8 +355,24 @@ int OperationalV2(void* context, DangOperationalDataV2* result,
   return 1;
 }
 
-const DangPluginV5 kPlugin{
-    .v4 = {.v3 = {.v2 = {.v1 = {.abi_version = DANG_PLUGIN_ABI_V5,
+int ReconcileAppliedConfiguration(void*, void*, const char* current_xml,
+                                  DangAppliedConfigurationV1* result,
+                                  DangPluginErrorV1* error) {
+  if (!result || !current_xml) {
+    SetError(error, "the applied Kea configuration snapshot is missing", "/");
+    return 0;
+  }
+  auto accepted = TranslateBoth(current_xml, error);
+  if (!accepted) return 0;
+  RememberAcceptedSubnets(*accepted);
+  *result = {.applied_xml = current_xml,
+             .outcomes = nullptr,
+             .outcome_count = 0};
+  return 1;
+}
+
+const DangPluginV6 kPlugin{
+    .v5 = {.v4 = {.v3 = {.v2 = {.v1 = {.abi_version = DANG_PLUGIN_ABI_V6,
                   .plugin_name = "dang-kea",
                   .context = nullptr,
                   .yang_source_count = SourceCount,
@@ -375,14 +391,16 @@ const DangPluginV5 kPlugin{
            .hardware_action_at = HardwareActionAt,
            .apply_hardware_action = ApplyHardwareAction,
            .rollback_hardware_action = RollbackHardwareAction},
-    .get_operational_data_v2 = OperationalV2};
+    .get_operational_data_v2 = OperationalV2},
+    .reconcile_applied_configuration = ReconcileAppliedConfiguration};
 
 }  // namespace
 
-extern "C" const DangPluginV5* dang_plugin_init_v5() { return &kPlugin; }
+extern "C" const DangPluginV6* dang_plugin_init_v6() { return &kPlugin; }
+extern "C" const DangPluginV5* dang_plugin_init_v5() { return &kPlugin.v5; }
 extern "C" const DangPluginV3* dang_plugin_init_v3() {
-  return &kPlugin.v4.v3;
+  return &kPlugin.v5.v4.v3;
 }
 extern "C" const DangPluginV1* dang_plugin_init_v1() {
-  return &kPlugin.v4.v3.v2.v1;
+  return &kPlugin.v5.v4.v3.v2.v1;
 }

@@ -68,7 +68,7 @@ model structure must gain a focused translation test before it is treated as
 production-supported.
 
 The provider implements the complete configuration and state trees of the two
-pinned modules. Through ABI v5 it owns configuration and publishes each
+pinned modules. Through ABI v6 it owns configuration and publishes each
 server's complete lease inventory, host reservations (including option data),
 and supplemental per-subnet lease statistics in its `state` container. Operational
 queries use the local control sockets and convert Kea identifiers, lease types,
@@ -89,7 +89,10 @@ per exact subnet ID in the last successfully applied configuration, so Kea
 cannot return an unbounded all-subnet result. The provider combines those
 results under the same 512-query, 65,536-row, 8 MiB, and 30-second aggregate
 limits. Candidate validation does not change that inventory; successful apply
-and rollback callbacks update it atomically. The pinned modules declare no
+and rollback callbacks update it atomically. On startup, ABI-v6 applied-state
+reconciliation rebuilds both subnet inventories from dangd's accepted snapshot
+before operational retrieval, so a restart cannot silently omit statistics.
+The pinned modules declare no
 RPC or notification surface.
 
 The plugin deliberately exposes one ABI-v4 hardware action for the entire Kea
