@@ -476,5 +476,63 @@ int main() {
                      &command_reason) &&
                      command_reason.find("ambiguous") != std::string::npos,
                  "a multi-answer Kea command response was accepted");
+
+  const std::vector<dang::plugins::kea::ServerConfiguration> transaction_before{
+      {"kea-dhcp4-server", "Dhcp4", "/tmp/kea4.sock", {{"image", "before4"}}},
+      {"kea-dhcp6-server", "Dhcp6", "/tmp/kea6.sock", {{"image", "before6"}}}};
+  const std::vector<dang::plugins::kea::ServerConfiguration> transaction_after{
+      {"kea-dhcp4-server", "Dhcp4", "/tmp/kea4.sock", {{"image", "after4"}}},
+      {"kea-dhcp6-server", "Dhcp6", "/tmp/kea6.sock", {{"image", "after6"}}}};
+  std::vector<std::string> transaction_calls;
+  const dang::plugins::kea::ConfigurationCommand ambiguous_apply =
+      [&](const dang::plugins::kea::ServerConfiguration& server,
+          std::string_view command, std::string* reason) {
+        const std::string image = server.arguments.at("image");
+        transaction_calls.push_back(image + ":" + std::string(command));
+        if (image == "after6") {
+          if (reason) *reason = "reply lost after send";
+          return false;
+        }
+        return true;
+      };
+  std::string failed_module;
+  command_reason.clear();
+  valid &= Check(!dang::plugins::kea::ApplyWithCompensation(
+                     transaction_before, transaction_after, ambiguous_apply,
+                     &failed_module, &command_reason) &&
+                     failed_module == "kea-dhcp6-server" &&
+                     transaction_calls ==
+                         std::vector<std::string>{"after4:config-set",
+                                                  "after6:config-set",
+                                                  "before6:config-set",
+                                                  "before4:config-set"},
+                 "ambiguous apply did not restore every possible target");
+  valid &= Check(command_reason.find("reply lost after send") !=
+                     std::string::npos,
+                 "ambiguous apply failure reason was not preserved");
+
+  transaction_calls.clear();
+  const dang::plugins::kea::ConfigurationCommand failed_compensation =
+      [&](const dang::plugins::kea::ServerConfiguration& server,
+          std::string_view command, std::string* reason) {
+        const std::string image = server.arguments.at("image");
+        transaction_calls.push_back(image + ":" + std::string(command));
+        if (image == "after4" || image == "before4") {
+          if (reason)
+            *reason = image == "after4" ? "outcome unknown" : "restore failed";
+          return false;
+        }
+        return true;
+      };
+  command_reason.clear();
+  valid &= Check(!dang::plugins::kea::ApplyWithCompensation(
+                     transaction_before, transaction_after,
+                     failed_compensation, &failed_module, &command_reason) &&
+                     transaction_calls ==
+                         std::vector<std::string>{"after4:config-set",
+                                                  "before4:config-set"} &&
+                     command_reason.find("rollback of kea-dhcp4-server failed: "
+                                         "restore failed") != std::string::npos,
+                 "failed compensation was not attempted and reported");
   return valid ? 0 : 1;
 }

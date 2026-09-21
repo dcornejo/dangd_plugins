@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Treated every failed Kea `config-set` as outcome-unknown and reapplied that
+  daemon's before-image before compensating earlier daemons. Lost replies can no
+  longer leave an unacknowledged configuration active, and restoration failures
+  remain attached to the primary transaction error.
+
 - Prevented Kea commits from removing the lease-command, host-command, or
   supplemental-statistics hook libraries required by complete operational
   retrieval. Validation uses portable library basenames across Linux and

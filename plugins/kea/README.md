@@ -54,8 +54,14 @@ For every affected commit, the plugin:
 1. converts the complete before and proposed XML snapshots to Kea's native JSON;
 2. sends `config-test` to both servers before making any change;
 3. sends `config-set` to DHCPv4 and then DHCPv6;
-4. restores DHCPv4 immediately if the DHCPv6 application fails; and
+4. treats a failed call as outcome-unknown and restores that daemon followed by
+   every earlier changed daemon in reverse order; and
 5. retains both prior configurations for dangd-triggered reverse rollback.
+
+This conservative restoration includes a daemon that returned an explicit
+error because the same path must also be safe when a reply is lost after Kea
+accepted the request. Reapplying the complete before-image is idempotent, and
+any restoration failure is appended to the primary transaction error.
 
 Every control exchange must return exactly one answer. Empty or multi-answer
 transaction replies fail closed, so an ambiguous response can never be treated

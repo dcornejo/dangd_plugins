@@ -39,6 +39,11 @@ using ControlQuery = std::function<std::optional<nlohmann::json>(
     std::string_view socket_path, std::string_view command,
     const nlohmann::json& arguments, std::string* error)>;
 
+/** Injectable configuration command used to verify apply compensation. */
+using ConfigurationCommand = std::function<bool(
+    const ServerConfiguration& server, std::string_view command,
+    std::string* error)>;
+
 /**
  * Converts one official Kea configuration container into control JSON.
  * Returns no value when XML is malformed, the requested module is unsupported,
@@ -90,6 +95,16 @@ using ControlQuery = std::function<std::optional<nlohmann::json>(
 /** Extracts Kea's result/text fields and accepts only result code zero. */
 [[nodiscard]] bool CommandSucceeded(const nlohmann::json& response,
                                     std::string* reason);
+
+/**
+ * Applies paired server images in order and restores every possibly changed
+ * server in reverse order after failure, including the ambiguous failed call.
+ */
+[[nodiscard]] bool ApplyWithCompensation(
+    const std::vector<ServerConfiguration>& before,
+    const std::vector<ServerConfiguration>& proposed,
+    const ConfigurationCommand& command, std::string* failed_module,
+    std::string* reason);
 
 }  // namespace dang::plugins::kea
 

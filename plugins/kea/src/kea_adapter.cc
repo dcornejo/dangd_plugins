@@ -1167,4 +1167,39 @@ bool CommandSucceeded(const nlohmann::json& response, std::string* reason) {
   return false;
 }
 
+bool ApplyWithCompensation(
+    const std::vector<ServerConfiguration>& before,
+    const std::vector<ServerConfiguration>& proposed,
+    const ConfigurationCommand& command, std::string* failed_module,
+    std::string* reason) {
+  if (failed_module) failed_module->clear();
+  if (reason) reason->clear();
+  if (!command || before.size() != proposed.size() || proposed.empty()) {
+    if (reason) *reason = "invalid Kea configuration transaction";
+    return false;
+  }
+  for (std::size_t index = 0; index < proposed.size(); ++index) {
+    std::string apply_error;
+    if (command(proposed[index], "config-set", &apply_error)) continue;
+    if (apply_error.empty()) apply_error = "configuration command failed";
+    if (failed_module) *failed_module = proposed[index].module_name;
+    std::string failure = proposed[index].module_name + ": " + apply_error;
+    // A missing or malformed response does not prove config-set was rejected.
+    // Restore the failed target as well as all earlier successful targets.
+    for (std::size_t restore = index + 1; restore > 0; --restore) {
+      const auto& server = before[restore - 1];
+      std::string rollback_error;
+      if (!command(server, "config-set", &rollback_error)) {
+        if (rollback_error.empty())
+          rollback_error = "configuration rollback command failed";
+        failure += "; rollback of " + server.module_name + " failed: " +
+            rollback_error;
+      }
+    }
+    if (reason) *reason = std::move(failure);
+    return false;
+  }
+  return true;
+}
+
 }  // namespace dang::plugins::kea

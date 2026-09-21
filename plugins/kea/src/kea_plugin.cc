@@ -26,6 +26,7 @@
 
 namespace {
 
+using dang::plugins::kea::ApplyWithCompensation;
 using dang::plugins::kea::CommandSucceeded;
 using dang::plugins::kea::CollectHostPages;
 using dang::plugins::kea::CollectLeasePages;
@@ -199,25 +200,14 @@ int ApplyConfiguration(void*, void* opaque, DangPluginErrorV1* error) {
     SetError(error, "the prepared Kea transaction is missing");
     return 0;
   }
-  std::size_t completed = 0;
-  for (; completed < prepared->proposed.size(); ++completed) {
-    const ServerConfiguration& server = prepared->proposed[completed];
-    std::string reason;
-    if (Execute(server, "config-set", &reason)) continue;
-    // Restore only services already changed in this callback.  The service
-    // whose config-set failed is assumed not to have accepted the new image.
-    std::string compensation;
-    while (completed > 0) {
-      --completed;
-      std::string rollback_reason;
-      if (!Execute(prepared->before[completed], "config-set", &rollback_reason))
-        compensation += "; rollback of " +
-            prepared->before[completed].module_name + " failed: " +
-            rollback_reason;
-    }
-    SetError(error, server.module_name + ": " + reason + compensation,
-             "/{urn:ietf:params:xml:ns:yang:" + server.module_name +
-                 "}config");
+  std::string failed_module;
+  std::string reason;
+  if (!ApplyWithCompensation(prepared->before, prepared->proposed, Execute,
+                             &failed_module, &reason)) {
+    const std::string path = failed_module.empty()
+        ? "/"
+        : "/{urn:ietf:params:xml:ns:yang:" + failed_module + "}config";
+    SetError(error, std::move(reason), path);
     return 0;
   }
   RememberAcceptedSubnets(prepared->proposed);
