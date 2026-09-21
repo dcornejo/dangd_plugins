@@ -112,7 +112,10 @@ same aggregate safeguards as leases. Supplemental statistics are queried once
 per exact subnet ID in the last successfully applied configuration, so Kea
 cannot return an unbounded all-subnet result. The provider combines those
 results under the same 512-query, 65,536-row, 8 MiB, and 30-second aggregate
-limits. Candidate validation does not change that inventory; successful apply
+limits. Every successful reply must contain one unambiguous row whose
+`subnet-id` matches the exact query; mismatched identities, duplicate columns,
+or multiple rows fail the complete retrieval. Candidate validation does not
+change that inventory; successful apply
 and rollback callbacks update it atomically. On startup, ABI-v6 applied-state
 reconciliation rebuilds both subnet inventories from dangd's accepted snapshot
 before operational retrieval, so a restart cannot silently omit statistics.

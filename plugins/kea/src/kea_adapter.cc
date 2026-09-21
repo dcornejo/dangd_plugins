@@ -1101,6 +1101,31 @@ std::optional<nlohmann::json> CollectStatistics(
       const auto& response_rows = set.at("rows");
       if (!response_columns.is_array() || !response_rows.is_array())
         throw std::runtime_error("columns or rows are not arrays");
+      std::optional<std::size_t> subnet_column;
+      std::set<std::string, std::less<>> column_names;
+      for (std::size_t index = 0; index < response_columns.size(); ++index) {
+        if (!response_columns[index].is_string())
+          throw std::runtime_error("column name is not a string");
+        const std::string name = response_columns[index].get<std::string>();
+        if (!column_names.emplace(name).second)
+          throw std::runtime_error("duplicate column " + name);
+        if (name == "subnet-id") subnet_column = index;
+      }
+      if (!subnet_column)
+        throw std::runtime_error("subnet-id column is missing");
+      if (response_rows.size() != 1 || !response_rows.front().is_array() ||
+          *subnet_column >= response_rows.front().size())
+        throw std::runtime_error("expected one complete subnet row");
+      const auto& returned_id = response_rows.front()[*subnet_column];
+      const bool matching_unsigned = returned_id.is_number_unsigned() &&
+          returned_id.get<std::uint64_t>() == subnet_id;
+      const bool matching_signed = returned_id.is_number_integer() &&
+          !returned_id.is_number_unsigned() &&
+          returned_id.get<std::int64_t>() >= 0 &&
+          static_cast<std::uint64_t>(returned_id.get<std::int64_t>()) ==
+              subnet_id;
+      if (!matching_unsigned && !matching_signed)
+        throw std::runtime_error("subnet-id does not match the query");
       if (columns.is_null()) columns = response_columns;
       if (columns != response_columns)
         throw std::runtime_error("columns changed between subnet queries");

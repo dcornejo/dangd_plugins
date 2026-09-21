@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Correlated every successful Kea supplemental-statistics reply with the exact
+  configured subnet ID that was queried. Missing or duplicate columns, multiple
+  rows, and mismatched subnet IDs now fail closed instead of contaminating a
+  complete operational result.
+
 - Treated every failed Kea `config-set` as outcome-unknown and reapplied that
   daemon's before-image before compensating earlier daemons. Lost replies can no
   longer leave an unacknowledged configuration active, and restoration failures

@@ -461,6 +461,69 @@ int main() {
                      error.find("query limit") != std::string::npos,
                  "the aggregate statistics query limit was not enforced");
 
+  const dang::plugins::kea::ControlQuery wrong_statistics =
+      [](std::string_view, std::string_view, const nlohmann::json&,
+         std::string*) -> std::optional<nlohmann::json> {
+    return nlohmann::json{
+        {"result", 0},
+        {"arguments", {{"result-set",
+                         {{"columns", {"subnet-id", "total-addresses"}},
+                          {"rows", {{99, 32}}}}}}}};
+  };
+  error.clear();
+  auto mismatched_statistics = dang::plugins::kea::CollectStatistics(
+      "/tmp/kea4.sock", false, {4}, wrong_statistics, &error,
+      {.page_size = 1,
+       .maximum_pages = 1,
+       .maximum_items = 1,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(!mismatched_statistics &&
+                     error.find("does not match the query") != std::string::npos,
+                 "statistics from the wrong subnet were accepted");
+
+  const dang::plugins::kea::ControlQuery ambiguous_statistics =
+      [](std::string_view, std::string_view, const nlohmann::json&,
+         std::string*) -> std::optional<nlohmann::json> {
+    return nlohmann::json{
+        {"result", 0},
+        {"arguments", {{"result-set",
+                         {{"columns", {"subnet-id", "subnet-id"}},
+                          {"rows", {{4, 4}}}}}}}};
+  };
+  error.clear();
+  auto duplicate_statistic_columns = dang::plugins::kea::CollectStatistics(
+      "/tmp/kea4.sock", false, {4}, ambiguous_statistics, &error,
+      {.page_size = 1,
+       .maximum_pages = 1,
+       .maximum_items = 1,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(!duplicate_statistic_columns &&
+                     error.find("duplicate column") != std::string::npos,
+                 "ambiguous statistics columns were accepted");
+
+  const dang::plugins::kea::ControlQuery multiple_statistics =
+      [](std::string_view, std::string_view, const nlohmann::json&,
+         std::string*) -> std::optional<nlohmann::json> {
+    return nlohmann::json{
+        {"result", 0},
+        {"arguments", {{"result-set",
+                         {{"columns", {"subnet-id", "total-addresses"}},
+                          {"rows", {{4, 32}, {4, 33}}}}}}}};
+  };
+  error.clear();
+  auto multiple_statistic_rows = dang::plugins::kea::CollectStatistics(
+      "/tmp/kea4.sock", false, {4}, multiple_statistics, &error,
+      {.page_size = 1,
+       .maximum_pages = 1,
+       .maximum_items = 2,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(!multiple_statistic_rows &&
+                     error.find("one complete subnet row") != std::string::npos,
+                 "multiple rows for an exact statistics query were accepted");
+
   std::string command_reason;
   valid &= Check(dang::plugins::kea::CommandSucceeded(
                      nlohmann::json::array({{{"result", 0}}}),
