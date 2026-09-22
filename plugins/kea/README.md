@@ -75,7 +75,8 @@ oversized values are rejected without narrowing.
 Control-socket writes suppress `SIGPIPE`; a Kea process that disconnects while
 receiving a command produces a normal plugin error and cannot terminate dangd.
 Serialized requests and replies each have a 16 MiB ceiling, and a socket write
-that reports zero progress fails immediately rather than spinning.
+that reports zero progress fails immediately rather than spinning. Request JSON
+serialization errors are contained before connecting to Kea.
 
 Each complete replacement must retain a `unix` control socket whose
 `socket-name` exactly matches the corresponding `DANG_KEA_*_SOCKET` path. The

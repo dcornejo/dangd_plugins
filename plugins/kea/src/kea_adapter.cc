@@ -949,7 +949,14 @@ std::optional<nlohmann::json> SendControlQuery(
   }
   nlohmann::json request_object{{"command", command}};
   if (!arguments.is_null()) request_object["arguments"] = arguments;
-  const std::string request = request_object.dump();
+  std::string request;
+  try {
+    request = request_object.dump();
+  } catch (const std::exception& exception) {
+    if (error)
+      *error = std::string("invalid Kea request: ") + exception.what();
+    return std::nullopt;
+  }
   if (request.size() > kMaximumControlBytes) {
     if (error) *error = "Kea request exceeds the plugin limit";
     return std::nullopt;
@@ -1030,7 +1037,8 @@ std::optional<nlohmann::json> SendControlQuery(
       close(descriptor);
       return std::nullopt;
     }
-    if (reply.size() + static_cast<std::size_t>(count) > kMaximumControlBytes) {
+    if (static_cast<std::size_t>(count) >
+        kMaximumControlBytes - reply.size()) {
       if (error) *error = "Kea response exceeds the plugin limit";
       close(descriptor);
       return std::nullopt;

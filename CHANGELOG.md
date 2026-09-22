@@ -29,6 +29,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Contained Kea request-serialization failures such as malformed UTF-8 before
+  opening the control socket, preventing JSON exceptions from crossing the
+  plugin boundary. Reply-limit accounting now also avoids additive overflow.
+
 - Added a 16 MiB ceiling to serialized Kea control requests before opening a
   socket, matching the existing reply ceiling, and made zero-progress writes
   fail immediately. Oversized configurations and stalled peers can no longer

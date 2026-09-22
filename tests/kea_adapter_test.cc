@@ -971,6 +971,13 @@ int main() {
   valid &= Check(!oversized_request &&
                      error.find("request exceeds") != std::string::npos,
                  "oversized Kea request reached the transport");
+  error.clear();
+  auto malformed_request = dang::plugins::kea::SendControlQuery(
+      "/tmp/dang-kea-unused.sock", "malformed-request-test",
+      {{"payload", std::string(1, static_cast<char>(0xff))}}, &error);
+  valid &= Check(!malformed_request &&
+                     error.find("invalid Kea request") != std::string::npos,
+                 "malformed Kea request escaped controlled failure");
 
   const std::string closed_socket =
       "/tmp/dang-kea-closed-" + std::to_string(getpid()) + ".sock";
