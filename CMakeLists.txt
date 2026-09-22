@@ -393,7 +393,7 @@ if(BUILD_TESTING)
   target_compile_features(kea_adapter_test PRIVATE cxx_std_20)
   target_include_directories(kea_adapter_test PRIVATE plugins/kea/src)
   target_link_libraries(kea_adapter_test PRIVATE
-    LibXml2::LibXml2 nlohmann_json::nlohmann_json)
+    LibXml2::LibXml2 nlohmann_json::nlohmann_json Threads::Threads)
   target_compile_options(kea_adapter_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME kea_xml_to_control_json COMMAND kea_adapter_test)

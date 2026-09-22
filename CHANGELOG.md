@@ -29,6 +29,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Suppressed `SIGPIPE` on Kea control-socket writes using the native Linux/
+  FreeBSD send flag or the per-socket BSD fallback. If Kea disconnects during a
+  command, dangd now receives a controlled plugin error instead of risking
+  process termination. Kea callback fixtures now also construct optional JSON
+  replies explicitly for compatibility with the packaged nlohmann JSON 3.11.
+
 - Rejected duplicate Kea reservation option-data keys and duplicate values in
   reservation address, prefix, excluded-prefix, and client-class leaf-lists.
   Complete operational state can no longer contain repeated YANG list or

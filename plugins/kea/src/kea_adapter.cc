@@ -965,6 +965,19 @@ std::optional<nlohmann::json> SendControlQuery(
     close(descriptor);
     return std::nullopt;
   }
+#if !defined(MSG_NOSIGNAL) && defined(SO_NOSIGPIPE)
+  // Darwin and some BSD socket stacks suppress SIGPIPE per descriptor rather
+  // than per send. A disappearing Kea peer must become a plugin error, never a
+  // process-wide signal that terminates dangd.
+  const int suppress_sigpipe = 1;
+  if (setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &suppress_sigpipe,
+                 sizeof(suppress_sigpipe)) != 0) {
+    if (error) *error = std::string("cannot protect Kea control socket: ") +
+        std::strerror(errno);
+    close(descriptor);
+    return std::nullopt;
+  }
+#endif
   nlohmann::json request_object{{"command", command}};
   if (!arguments.is_null()) request_object["arguments"] = arguments;
   const std::string request = request_object.dump();
@@ -976,7 +989,13 @@ std::optional<nlohmann::json> SendControlQuery(
       return std::nullopt;
     }
     const ssize_t count = send(descriptor, request.data() + sent,
-                               request.size() - sent, 0);
+                               request.size() - sent,
+#ifdef MSG_NOSIGNAL
+                               MSG_NOSIGNAL
+#else
+                               0
+#endif
+    );
     if (count > 0) {
       sent += static_cast<std::size_t>(count);
     } else if (count < 0 && errno != EINTR) {

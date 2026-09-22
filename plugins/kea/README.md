@@ -72,6 +72,8 @@ non-string native error `text` field is replaced with a descriptive fallback
 instead of triggering a JSON type exception. Page counts, host cursors, lease
 states, and DHCPv6 lease types use checked unsigned decoding so negative and
 oversized values are rejected without narrowing.
+Control-socket writes suppress `SIGPIPE`; a Kea process that disconnects while
+receiving a command produces a normal plugin error and cannot terminate dangd.
 
 Each complete replacement must retain a `unix` control socket whose
 `socket-name` exactly matches the corresponding `DANG_KEA_*_SOCKET` path. The

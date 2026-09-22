@@ -3,12 +3,20 @@
 
 #include "kea_adapter.h"
 
+#include <cerrno>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <limits>
 #include <string>
+#include <thread>
 #include <vector>
+
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
 
 namespace {
 
@@ -819,7 +827,7 @@ int main() {
   const dang::plugins::kea::ControlQuery oversized_page_result =
       [&](std::string_view, std::string_view, const nlohmann::json&,
           std::string*) -> std::optional<nlohmann::json> {
-    return oversized_result;
+    return std::optional<nlohmann::json>(oversized_result);
   };
   error.clear();
   auto rejected_oversized_page = dang::plugins::kea::CollectLeasePages(
@@ -908,7 +916,7 @@ int main() {
   const dang::plugins::kea::ControlQuery malformed_error_page =
       [&](std::string_view, std::string_view, const nlohmann::json&,
           std::string*) -> std::optional<nlohmann::json> {
-    return malformed_error_text;
+    return std::optional<nlohmann::json>(malformed_error_text);
   };
   error.clear();
   auto rejected_error_page = dang::plugins::kea::CollectLeasePages(
@@ -955,6 +963,44 @@ int main() {
   valid &= Check(command_reason.find("reply lost after send") !=
                      std::string::npos,
                  "ambiguous apply failure reason was not preserved");
+
+  const std::string closed_socket =
+      "/tmp/dang-kea-closed-" + std::to_string(getpid()) + ".sock";
+  const int listener = socket(AF_UNIX, SOCK_STREAM, 0);
+  sockaddr_un closed_address{};
+  closed_address.sun_family = AF_UNIX;
+  std::memcpy(closed_address.sun_path, closed_socket.data(),
+              closed_socket.size());
+  closed_address.sun_path[closed_socket.size()] = '\0';
+  const auto closed_address_size = static_cast<socklen_t>(
+      offsetof(sockaddr_un, sun_path) + closed_socket.size() + 1);
+  unlink(closed_socket.c_str());
+  const bool listening = listener >= 0 &&
+      bind(listener, reinterpret_cast<const sockaddr*>(&closed_address),
+           closed_address_size) == 0 && listen(listener, 1) == 0;
+  const int listen_error = listening ? 0 : errno;
+  if (!listening && listen_error != EPERM && listen_error != EACCES)
+    valid &= Check(false, "could not create the closed-peer socket fixture");
+  if (!listening && (listen_error == EPERM || listen_error == EACCES))
+    std::cerr << "closed-peer fixture skipped: UNIX socket bind is denied\n";
+  if (listening) {
+    std::thread closed_peer([listener]() {
+      const int connection = accept(listener, nullptr, nullptr);
+      if (connection >= 0) {
+        (void)shutdown(connection, SHUT_RDWR);
+        close(connection);
+      }
+    });
+    error.clear();
+    auto closed_response = dang::plugins::kea::SendControlQuery(
+        closed_socket, "closed-peer-test",
+        {{"payload", std::string(8 * 1024 * 1024, 'x')}}, &error);
+    closed_peer.join();
+    valid &= Check(!closed_response && !error.empty(),
+                   "a closed Kea peer did not return a controlled error");
+  }
+  if (listener >= 0) close(listener);
+  unlink(closed_socket.c_str());
 
   transaction_calls.clear();
   const dang::plugins::kea::ConfigurationCommand failed_compensation =
