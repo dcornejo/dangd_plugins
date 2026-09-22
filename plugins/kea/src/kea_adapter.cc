@@ -1525,6 +1525,20 @@ bool ApplyWithCompensation(
     if (reason) *reason = "invalid Kea configuration transaction";
     return false;
   }
+  std::set<std::string, std::less<>> modules;
+  for (std::size_t index = 0; index < proposed.size(); ++index) {
+    const auto& old_server = before[index];
+    const auto& new_server = proposed[index];
+    if (old_server.module_name.empty() || old_server.service_name.empty() ||
+        old_server.socket_path.empty() ||
+        old_server.module_name != new_server.module_name ||
+        old_server.service_name != new_server.service_name ||
+        old_server.socket_path != new_server.socket_path ||
+        !modules.emplace(old_server.module_name).second) {
+      if (reason) *reason = "invalid Kea configuration transaction pairing";
+      return false;
+    }
+  }
   for (std::size_t index = 0; index < proposed.size(); ++index) {
     std::string apply_error;
     if (command(proposed[index], "config-set", &apply_error)) continue;

@@ -29,6 +29,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Validated Kea before/proposed transaction pairings before issuing any native
+  command. Reordered, identity-mismatched, or duplicate daemon targets now fail
+  without side effects instead of risking compensation against the wrong
+  before-image.
+
 - Validated UTF-8 and XML 1.0 character ranges for every Kea string emitted as
   operational XML. Native control characters, malformed byte sequences, and
   forbidden code points now fail complete retrieval with the affected field

@@ -1017,6 +1017,28 @@ int main() {
   valid &= Check(command_reason.find("reply lost after send") !=
                      std::string::npos,
                  "ambiguous apply failure reason was not preserved");
+  auto reordered_after = transaction_after;
+  std::swap(reordered_after[0], reordered_after[1]);
+  transaction_calls.clear();
+  command_reason.clear();
+  valid &= Check(!dang::plugins::kea::ApplyWithCompensation(
+                     transaction_before, reordered_after, ambiguous_apply,
+                     &failed_module, &command_reason) &&
+                     transaction_calls.empty() && failed_module.empty() &&
+                     command_reason.find("pairing") != std::string::npos,
+                 "reordered Kea transaction reached a daemon");
+  auto duplicate_before = transaction_before;
+  auto duplicate_after = transaction_after;
+  duplicate_before[1] = duplicate_before[0];
+  duplicate_after[1] = duplicate_after[0];
+  transaction_calls.clear();
+  command_reason.clear();
+  valid &= Check(!dang::plugins::kea::ApplyWithCompensation(
+                     duplicate_before, duplicate_after, ambiguous_apply,
+                     &failed_module, &command_reason) &&
+                     transaction_calls.empty() &&
+                     command_reason.find("pairing") != std::string::npos,
+                 "duplicate Kea transaction target reached a daemon");
 
   error.clear();
   auto oversized_request = dang::plugins::kea::SendControlQuery(
