@@ -152,8 +152,9 @@ commands with a 256-entry page size and the last returned address as the opaque
 continuation cursor. It rejects malformed counts, oversized pages, repeated
 cursors including non-adjacent cycles, more than 512 pages or 65,536 leases,
 more than 8 MiB of accumulated native lease data, and enumeration lasting more
-than 30 seconds. Each individual control exchange retains its five-second and
-16 MiB limits.
+than 30 seconds. The aggregate deadline is checked both before and after every
+control call, so a slow final reply cannot be accepted after the budget. Each
+individual control exchange retains its five-second and 16 MiB limits.
 
 Host reservations use Kea's `reservation-get-page` continuation map and the
 same aggregate safeguards and full cursor-cycle detection as leases.

@@ -29,6 +29,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Enforced Kea aggregate operational deadlines after every lease, reservation,
+  and statistics control call as well as before it. A slow final reply can no
+  longer be accepted after the configured collection budget expires.
+
 - Contained exceptions from Kea configuration command implementations. Apply
   exceptions now enter outcome-unknown reverse compensation, while rollback
   exceptions are reported without preventing restoration of earlier daemons.

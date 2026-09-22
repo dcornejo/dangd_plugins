@@ -593,6 +593,22 @@ int main() {
                      requests[1].at("arguments").at("from") == "192.0.2.2" &&
                      requests[1].at("command") == "lease4-get-page",
                  "lease paging did not carry the last address forward");
+  const dang::plugins::kea::ControlQuery slow_empty_lease_page =
+      [](std::string_view, std::string_view, const nlohmann::json&,
+         std::string*) -> std::optional<nlohmann::json> {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    return nlohmann::json{{"result", 3}};
+  };
+  error.clear();
+  auto late_lease_page = dang::plugins::kea::CollectLeasePages(
+      "/tmp/kea4.sock", false, slow_empty_lease_page, &error,
+      {.page_size = 1,
+       .maximum_pages = 1,
+       .maximum_items = 1,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(1)});
+  valid &= Check(!late_lease_page && error.find("deadline") != std::string::npos,
+                 "a lease reply arriving after the deadline was accepted");
 
   const dang::plugins::kea::ControlQuery repeated_cursor =
       [](std::string_view, std::string_view, const nlohmann::json&,
@@ -707,6 +723,22 @@ int main() {
                      host_requests[1].at("arguments").at("from") == 42 &&
                      host_requests[1].at("arguments").at("source-index") == 1,
                  "host paging did not carry Kea's continuation map forward");
+  const dang::plugins::kea::ControlQuery slow_empty_host_page =
+      [](std::string_view, std::string_view, const nlohmann::json&,
+         std::string*) -> std::optional<nlohmann::json> {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    return nlohmann::json{{"result", 3}};
+  };
+  error.clear();
+  auto late_host_page = dang::plugins::kea::CollectHostPages(
+      "/tmp/kea4.sock", slow_empty_host_page, &error,
+      {.page_size = 1,
+       .maximum_pages = 1,
+       .maximum_items = 1,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(1)});
+  valid &= Check(!late_host_page && error.find("deadline") != std::string::npos,
+                 "a host reply arriving after the deadline was accepted");
 
   std::size_t host_cycle_invocation = 0;
   const dang::plugins::kea::ControlQuery host_cursor_cycle =
@@ -766,6 +798,22 @@ int main() {
                      statistic_requests[0].at("arguments").at("subnet-id") == 4 &&
                      statistic_requests[1].at("arguments").at("subnet-id") == 9,
                  "statistics queries did not use exact configured subnet IDs");
+  const dang::plugins::kea::ControlQuery slow_empty_statistics =
+      [](std::string_view, std::string_view, const nlohmann::json&,
+         std::string*) -> std::optional<nlohmann::json> {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    return nlohmann::json{{"result", 3}};
+  };
+  error.clear();
+  auto late_statistics = dang::plugins::kea::CollectStatistics(
+      "/tmp/kea4.sock", false, {4}, slow_empty_statistics, &error,
+      {.page_size = 1,
+       .maximum_pages = 1,
+       .maximum_items = 1,
+       .maximum_bytes = 1024,
+       .maximum_duration = std::chrono::milliseconds(1)});
+  valid &= Check(!late_statistics && error.find("deadline") != std::string::npos,
+                 "a statistics reply arriving after the deadline was accepted");
 
   error.clear();
   auto excessive_statistics = dang::plugins::kea::CollectStatistics(

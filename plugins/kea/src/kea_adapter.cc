@@ -1209,6 +1209,10 @@ std::optional<nlohmann::json> CollectLeasePages(
                                    {"limit", limits.page_size}};
     auto response = query(socket_path, command, arguments, error);
     if (!response) return std::nullopt;
+    if (std::chrono::steady_clock::now() >= deadline) {
+      if (error) *error = "Kea lease enumeration exceeded its deadline";
+      return std::nullopt;
+    }
     const nlohmann::json* answer = Answer(*response);
     if (!answer || !answer->contains("result") ||
         !answer->at("result").is_number_integer()) {
@@ -1299,6 +1303,10 @@ std::optional<nlohmann::json> CollectHostPages(
     arguments.update(cursor);
     auto response = query(socket_path, "reservation-get-page", arguments, error);
     if (!response) return std::nullopt;
+    if (std::chrono::steady_clock::now() >= deadline) {
+      if (error) *error = "Kea host enumeration exceeded its deadline";
+      return std::nullopt;
+    }
     const nlohmann::json* answer = Answer(*response);
     if (!answer || !answer->contains("result") ||
         !answer->at("result").is_number_integer()) {
@@ -1406,6 +1414,10 @@ std::optional<nlohmann::json> CollectStatistics(
     auto response = query(socket_path, command,
                           nlohmann::json{{"subnet-id", subnet_id}}, error);
     if (!response) return std::nullopt;
+    if (std::chrono::steady_clock::now() >= deadline) {
+      if (error) *error = "Kea statistics collection exceeded its deadline";
+      return std::nullopt;
+    }
     const nlohmann::json* answer = Answer(*response);
     if (!answer || !answer->contains("result") ||
         !answer->at("result").is_number_integer()) {
