@@ -29,6 +29,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Rejected empty or non-string Kea host-reservation identifiers even when a
+  second valid identifier is present, rather than silently omitting malformed
+  native state. DHCPv6 reservation state now also rejects the DHCPv4-only
+  `circuit-id` and `client-id` types before publishing a complete result.
+
 - Required native Kea hardware addresses, client IDs, and DUIDs to use either
   strict colon-separated hexadecimal octets or a strict contiguous hexadecimal
   string. Empty values and leading, trailing, doubled, or missing separators

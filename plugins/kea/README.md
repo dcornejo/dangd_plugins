@@ -110,6 +110,11 @@ instead of being normalized into a different identity. Kea's empty-set result
 is exposed as an empty collection.
 Duplicate lease addresses, statistic subnet IDs, or composite reservation keys
 fail the retrieval rather than producing schema-invalid complete state.
+Reservation identifiers must be non-empty strings, including every identifier
+field present in a native host record; malformed secondary identifiers are not
+silently discarded. DHCPv6 reservations reject the DHCPv4-only `circuit-id`
+and `client-id` types because they cannot be represented by the pinned DHCPv6
+model.
 
 The provider marks this operational result complete. Lease enumeration uses
 Kea's `lease4-get-page` and `lease6-get-page`

@@ -664,14 +664,27 @@ std::optional<std::string> BuildHosts(const nlohmann::json& response,
     for (const std::string_view candidate :
          {"duid", "hw-address", "circuit-id", "client-id", "flex-id"}) {
       const auto found = host.find(candidate);
-      if (found != host.end() && found->is_string() && !found->empty()) {
-        if (!identifier_type.empty()) {
-          if (error) *error = "Kea host reply contains multiple identifiers";
-          return std::nullopt;
-        }
-        identifier_type = candidate;
-        identifier = found->get<std::string>();
+      if (found == host.end()) continue;
+      // The DHCPv6 model deliberately has no circuit-id or client-id enum.
+      // Publishing either under a complete result would create invalid XML.
+      if (dhcp6 && (candidate == "circuit-id" || candidate == "client-id")) {
+        if (error)
+          *error = "Kea DHCPv6 host reply contains unsupported identifier " +
+              std::string(candidate);
+        return std::nullopt;
       }
+      if (!found->is_string() || found->get_ref<const std::string&>().empty()) {
+        if (error)
+          *error = "Kea host reply contains malformed identifier " +
+              std::string(candidate);
+        return std::nullopt;
+      }
+      if (!identifier_type.empty()) {
+        if (error) *error = "Kea host reply contains multiple identifiers";
+        return std::nullopt;
+      }
+      identifier_type = candidate;
+      identifier = found->get<std::string>();
     }
     if (identifier_type.empty()) {
       if (error) *error = "Kea host reply omits its identifier";

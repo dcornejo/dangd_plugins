@@ -322,6 +322,32 @@ int main() {
                      &error) &&
                      error.find("malformed hw-address") != std::string::npos,
                  "empty hardware address was accepted");
+  auto malformed_host_identifier = hosts4;
+  malformed_host_identifier["arguments"]["hosts"][0]["duid"] = 7;
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", leases4, stats4,
+                     malformed_host_identifier, &error) &&
+                     error.find("malformed identifier duid") !=
+                         std::string::npos,
+                 "malformed secondary host identifier was ignored");
+  auto empty_host_identifier = hosts4;
+  empty_host_identifier["arguments"]["hosts"][0].erase("hw-address");
+  empty_host_identifier["arguments"]["hosts"][0]["flex-id"] = "";
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", leases4, stats4,
+                     empty_host_identifier, &error) &&
+                     error.find("malformed identifier flex-id") !=
+                         std::string::npos,
+                 "empty host identifier was accepted");
+  auto unsupported_dhcp6_identifier = hosts6;
+  unsupported_dhcp6_identifier["arguments"]["hosts"][0]["client-id"] =
+      "01:02";
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp6-server", leases6, stats6,
+                     unsupported_dhcp6_identifier, &error) &&
+                     error.find("unsupported identifier client-id") !=
+                         std::string::npos,
+                 "DHCPv4-only identifier was published in DHCPv6 state");
 
   auto duplicate_leases = leases4;
   duplicate_leases["arguments"]["leases"].push_back(
