@@ -66,6 +66,9 @@ Before sending any command, the transaction helper requires each before-image
 and proposed image to have the same module, service, and socket identity at its
 index and requires module targets to be unique. A malformed or reordered plan
 therefore cannot apply one daemon and compensate a different daemon.
+An exception from the command implementation is contained as an outcome-
+unknown failure and triggers reverse compensation. An exception while restoring
+one daemon is reported without preventing restoration of earlier daemons.
 
 Every control exchange must return exactly one answer. Empty or multi-answer
 transaction replies fail closed, so an ambiguous response can never be treated

@@ -29,6 +29,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Contained exceptions from Kea configuration command implementations. Apply
+  exceptions now enter outcome-unknown reverse compensation, while rollback
+  exceptions are reported without preventing restoration of earlier daemons.
+
 - Validated Kea before/proposed transaction pairings before issuing any native
   command. Reordered, identity-mismatched, or duplicate daemon targets now fail
   without side effects instead of risking compensation against the wrong

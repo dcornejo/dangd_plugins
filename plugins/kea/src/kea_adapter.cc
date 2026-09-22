@@ -1514,6 +1514,22 @@ bool CommandSucceeded(const nlohmann::json& response, std::string* reason) {
   return false;
 }
 
+bool RunConfigurationCommand(const ConfigurationCommand& command,
+                             const ServerConfiguration& server,
+                             std::string_view operation,
+                             std::string* reason) {
+  try {
+    return command(server, operation, reason);
+  } catch (const std::exception& exception) {
+    if (reason)
+      *reason = std::string("configuration command threw: ") + exception.what();
+    return false;
+  } catch (...) {
+    if (reason) *reason = "configuration command threw an unknown exception";
+    return false;
+  }
+}
+
 bool ApplyWithCompensation(
     const std::vector<ServerConfiguration>& before,
     const std::vector<ServerConfiguration>& proposed,
@@ -1541,7 +1557,9 @@ bool ApplyWithCompensation(
   }
   for (std::size_t index = 0; index < proposed.size(); ++index) {
     std::string apply_error;
-    if (command(proposed[index], "config-set", &apply_error)) continue;
+    if (RunConfigurationCommand(command, proposed[index], "config-set",
+                                &apply_error))
+      continue;
     if (apply_error.empty()) apply_error = "configuration command failed";
     if (failed_module) *failed_module = proposed[index].module_name;
     std::string failure = proposed[index].module_name + ": " + apply_error;
@@ -1550,7 +1568,8 @@ bool ApplyWithCompensation(
     for (std::size_t restore = index + 1; restore > 0; --restore) {
       const auto& server = before[restore - 1];
       std::string rollback_error;
-      if (!command(server, "config-set", &rollback_error)) {
+      if (!RunConfigurationCommand(command, server, "config-set",
+                                   &rollback_error)) {
         if (rollback_error.empty())
           rollback_error = "configuration rollback command failed";
         failure += "; rollback of " + server.module_name + " failed: " +

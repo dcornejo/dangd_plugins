@@ -10,6 +10,7 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -1017,6 +1018,28 @@ int main() {
   valid &= Check(command_reason.find("reply lost after send") !=
                      std::string::npos,
                  "ambiguous apply failure reason was not preserved");
+  transaction_calls.clear();
+  const dang::plugins::kea::ConfigurationCommand throwing_apply =
+      [&](const dang::plugins::kea::ServerConfiguration& server,
+          std::string_view command, std::string*) {
+        const std::string image = server.arguments.at("image");
+        transaction_calls.push_back(image + ":" + std::string(command));
+        if (image == "after6")
+          throw std::runtime_error("transport implementation failed");
+        return true;
+      };
+  command_reason.clear();
+  valid &= Check(!dang::plugins::kea::ApplyWithCompensation(
+                     transaction_before, transaction_after, throwing_apply,
+                     &failed_module, &command_reason) &&
+                     transaction_calls ==
+                         std::vector<std::string>{"after4:config-set",
+                                                  "after6:config-set",
+                                                  "before6:config-set",
+                                                  "before4:config-set"} &&
+                     command_reason.find("transport implementation failed") !=
+                         std::string::npos,
+                 "throwing apply escaped reverse compensation");
   auto reordered_after = transaction_after;
   std::swap(reordered_after[0], reordered_after[1]);
   transaction_calls.clear();
@@ -1144,5 +1167,31 @@ int main() {
                      command_reason.find("rollback of kea-dhcp4-server failed: "
                                          "restore failed") != std::string::npos,
                  "failed compensation was not attempted and reported");
+  transaction_calls.clear();
+  const dang::plugins::kea::ConfigurationCommand throwing_compensation =
+      [&](const dang::plugins::kea::ServerConfiguration& server,
+          std::string_view command, std::string* reason) {
+        const std::string image = server.arguments.at("image");
+        transaction_calls.push_back(image + ":" + std::string(command));
+        if (image == "after6") {
+          if (reason) *reason = "apply outcome unknown";
+          return false;
+        }
+        if (image == "before6")
+          throw std::runtime_error("rollback implementation failed");
+        return true;
+      };
+  command_reason.clear();
+  valid &= Check(!dang::plugins::kea::ApplyWithCompensation(
+                     transaction_before, transaction_after,
+                     throwing_compensation, &failed_module, &command_reason) &&
+                     transaction_calls ==
+                         std::vector<std::string>{"after4:config-set",
+                                                  "after6:config-set",
+                                                  "before6:config-set",
+                                                  "before4:config-set"} &&
+                     command_reason.find("rollback implementation failed") !=
+                         std::string::npos,
+                 "throwing rollback stopped remaining compensation");
   return valid ? 0 : 1;
 }
