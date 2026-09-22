@@ -49,9 +49,8 @@ def packet4(message_type: int, xid: int, client: bytes,
     return header + options + b"\xff"
 
 
-def dhcp4(server: str) -> None:
+def dhcp4(server: str, client: bytes) -> None:
     xid = int.from_bytes(os.urandom(4), "big")
-    client = bytes.fromhex("020000009401")
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(1)
     sock.bind(("192.0.2.2", 1068))
@@ -62,18 +61,22 @@ def dhcp4(server: str) -> None:
         offer, _ = sock.recvfrom(4096)
         if len(offer) < 240 or struct.unpack_from("!I", offer, 4)[0] != xid:
             raise RuntimeError("DHCPv4 offer has the wrong transaction ID")
+        offered = offer[16:20]
         parsed = options4(offer)
         if parsed.get(53) != b"\x02" or len(parsed.get(54, b"")) != 4:
             raise RuntimeError("expected a DHCPv4 offer with server identifier")
-        offered = offer[16:20]
         server_id = parsed[54]
     except TimeoutError:
-        # Some isolated hypervisors filter the nonstandard-port return packet.
-        # An INIT-REBOOT request still requires Kea to allocate and acknowledge
-        # the requested lease; the server-side verifier is authoritative.
         pass
     sock.sendto(packet4(3, xid, client, offered, server_id), (server, 1067))
-    print(f"DHCPv4 request sent for {ipaddress.ip_address(offered)}")
+    try:
+        ack, _ = sock.recvfrom(4096)
+        if (len(ack) < 240 or struct.unpack_from("!I", ack, 4)[0] != xid or
+                options4(ack).get(53) != b"\x05"):
+            raise RuntimeError("expected a matching DHCPv4 acknowledgement")
+        print(f"DHCPv4 lease {ipaddress.ip_address(offered)} acknowledged")
+    except TimeoutError:
+        print(f"DHCPv4 request sent for {ipaddress.ip_address(offered)}")
 
 
 def encode6(code: int, value: bytes) -> bytes:
@@ -95,14 +98,12 @@ def options6(packet: bytes) -> dict[int, bytes]:
     return result
 
 
-def dhcp6(interface: str) -> None:
+def dhcp6(interface: str, client: bytes) -> None:
     xid = os.urandom(3)
-    duid = bytes.fromhex("00030001020000009601")
+    duid = b"\x00\x03\x00\x01" + client
     iaid = 9601
     ia_na = struct.pack("!III", iaid, 0, 0)
-    # Rapid Commit lets the server allocate directly from SOLICIT, so the
-    # cross-host assertion does not depend on a return packet reaching the
-    # disposable client UDP port.
+    # Rapid Commit performs the allocation and reply in one exchange.
     solicit = (b"\x01" + xid + encode6(1, duid) + encode6(3, ia_na) +
                encode6(14, b""))
     sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
@@ -113,13 +114,17 @@ def dhcp6(interface: str) -> None:
         reply, _ = sock.recvfrom(8192)
         if reply[:1] != b"\x07" or reply[1:4] != xid or 3 not in options6(reply):
             raise RuntimeError("expected a matching rapid-commit DHCPv6 reply")
+        print("DHCPv6 rapid-commit reply received")
     except TimeoutError:
-        pass
-    print("DHCPv6 rapid-commit solicit sent")
+        print("DHCPv6 rapid-commit solicit sent")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
-        raise SystemExit(f"usage: {sys.argv[0]} SERVER4 SERVER6 INTERFACE")
-    dhcp4(sys.argv[1])
-    dhcp6(sys.argv[3])
+    if len(sys.argv) != 5:
+        raise SystemExit(
+            f"usage: {sys.argv[0]} SERVER4 SERVER6 INTERFACE CLIENT_MAC")
+    client = bytes.fromhex(sys.argv[4].replace(":", ""))
+    if len(client) != 6:
+        raise SystemExit("CLIENT_MAC must contain exactly six octets")
+    dhcp4(sys.argv[1], client)
+    dhcp6(sys.argv[3], client)

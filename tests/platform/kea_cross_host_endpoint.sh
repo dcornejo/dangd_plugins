@@ -36,6 +36,7 @@ case "$(uname -s)" in
     dhcp4=$(command -v kea-dhcp4)
     dhcp6=$(command -v kea-dhcp6)
     python=$(command -v python3 || command -v python3.12 || command -v python3.11)
+    client_mac=$(cat "/sys/class/net/$interface/address")
     add_addresses() {
       ip link set "$interface" up
       ip address add "$address4/24" dev "$interface"
@@ -67,6 +68,7 @@ case "$(uname -s)" in
     dhcp4=/usr/local/sbin/kea-dhcp4
     dhcp6=/usr/local/sbin/kea-dhcp6
     python=$(command -v python3 || command -v python3.12 || command -v python3.11)
+    client_mac=$(ifconfig "$interface" | awk '$1 == "ether" {print $2; exit}')
     add_addresses() {
       ifconfig "$interface" up
       ifconfig "$interface" inet "$address4/24" alias
@@ -113,7 +115,7 @@ case "$action" in
       dhcp6=$runtime/kea-dhcp6
     fi
     cat >"$runtime/kea4.json" <<EOF
-{"Dhcp4":{"interfaces-config":{"interfaces":["$interface"]},"lease-database":{"type":"memfile","persist":false},"subnet4":[{"id":9401,"subnet":"192.0.2.0/24","pools":[{"pool":"192.0.2.100 - 192.0.2.120"}]}],"valid-lifetime":600,"loggers":[{"name":"kea-dhcp4","severity":"INFO","output-options":[{"output":"stderr"}]}]}}
+{"Dhcp4":{"interfaces-config":{"interfaces":["$interface"],"dhcp-socket-type":"udp"},"lease-database":{"type":"memfile","persist":false},"subnet4":[{"id":9401,"subnet":"192.0.2.0/24","pools":[{"pool":"192.0.2.100 - 192.0.2.120"}]}],"valid-lifetime":600,"loggers":[{"name":"kea-dhcp4","severity":"INFO","output-options":[{"output":"stderr"}]}]}}
 EOF
     cat >"$runtime/kea6.json" <<EOF
 {"Dhcp6":{"interfaces-config":{"interfaces":["$interface"]},"lease-database":{"type":"memfile","persist":false},"subnet6":[{"id":9601,"rapid-commit":true,"subnet":"2001:db8:6::/64","pools":[{"pool":"2001:db8:6::100 - 2001:db8:6::120"}]}],"preferred-lifetime":300,"valid-lifetime":600,"loggers":[{"name":"kea-dhcp6","severity":"INFO","output-options":[{"output":"stderr"}]}]}}
@@ -138,7 +140,8 @@ EOF
     # client socket. FreeBSD normally completes immediately; Linux does not.
     sleep 1
     ping -c 1 "$address4" >/dev/null
-    "$python" "$client_program" "$address4" "$address6" "$interface"
+    "$python" "$client_program" "$address4" "$address6" "$interface" \
+      "$client_mac"
     remove_client_addresses
     trap - EXIT INT TERM
     echo "DHCPv4 and DHCPv6 client exchanges passed on $interface"

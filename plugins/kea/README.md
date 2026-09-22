@@ -268,8 +268,12 @@ The authoritative assertion is the serving Kea process recording completed
 IPv4 and IPv6 lease allocations. This remains reliable on isolated
 hypervisors that filter return UDP packets to the disposable nonstandard client
 ports. The test therefore proves cross-host request delivery and native server
-allocation in both role directions; it does not claim that the hypervisor
-allows the complete reply path.
+allocation in both role directions. Client identifiers use the selected
+interface's actual MAC address, IPv4 uses Kea's UDP socket mode, and a visible
+DHCPv6 Rapid Commit reply is validated whenever it reaches the client. On the
+current VLAN the IPv6 reply passes in both directions, while the nonstandard-
+port IPv4 return packet remains filtered; completed Kea allocation is therefore
+the portable IPv4 pass criterion.
 
 Both hosts need Python 3, Kea DHCPv4/DHCPv6, passwordless test-only `sudo`, and
 SSH/SCP access from the orchestrating system. For the current validation pair:
