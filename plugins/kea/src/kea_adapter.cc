@@ -37,7 +37,7 @@
 namespace dang::plugins::kea {
 namespace {
 
-constexpr std::size_t kMaximumReplyBytes = 16 * 1024 * 1024;
+constexpr std::size_t kMaximumControlBytes = 16 * 1024 * 1024;
 constexpr auto kSocketTimeout = std::chrono::seconds(5);
 
 std::string LocalName(const xmlNode* node) {
@@ -943,6 +943,17 @@ std::optional<nlohmann::json> SendControlCommand(
 std::optional<nlohmann::json> SendControlQuery(
     std::string_view socket_path, std::string_view command,
     const nlohmann::json& arguments, std::string* error) {
+  if (socket_path.empty() || socket_path.size() >= sizeof(sockaddr_un::sun_path)) {
+    if (error) *error = "Kea control socket path is empty or too long";
+    return std::nullopt;
+  }
+  nlohmann::json request_object{{"command", command}};
+  if (!arguments.is_null()) request_object["arguments"] = arguments;
+  const std::string request = request_object.dump();
+  if (request.size() > kMaximumControlBytes) {
+    if (error) *error = "Kea request exceeds the plugin limit";
+    return std::nullopt;
+  }
   const int descriptor = socket(AF_UNIX, SOCK_STREAM, 0);
   if (descriptor < 0) {
     if (error) *error = std::string("cannot create Kea control socket: ") +
@@ -951,11 +962,6 @@ std::optional<nlohmann::json> SendControlQuery(
   }
   sockaddr_un address{};
   address.sun_family = AF_UNIX;
-  if (socket_path.empty() || socket_path.size() >= sizeof(address.sun_path)) {
-    if (error) *error = "Kea control socket path is empty or too long";
-    close(descriptor);
-    return std::nullopt;
-  }
   std::memcpy(address.sun_path, socket_path.data(), socket_path.size());
   address.sun_path[socket_path.size()] = '\0';
   if (connect(descriptor, reinterpret_cast<const sockaddr*>(&address),
@@ -978,9 +984,6 @@ std::optional<nlohmann::json> SendControlQuery(
     return std::nullopt;
   }
 #endif
-  nlohmann::json request_object{{"command", command}};
-  if (!arguments.is_null()) request_object["arguments"] = arguments;
-  const std::string request = request_object.dump();
   const auto deadline = std::chrono::steady_clock::now() + kSocketTimeout;
   std::size_t sent = 0;
   while (sent < request.size()) {
@@ -998,6 +1001,10 @@ std::optional<nlohmann::json> SendControlQuery(
     );
     if (count > 0) {
       sent += static_cast<std::size_t>(count);
+    } else if (count == 0) {
+      if (error) *error = "Kea control socket write made no progress";
+      close(descriptor);
+      return std::nullopt;
     } else if (count < 0 && errno != EINTR) {
       if (error) *error = std::string("cannot write Kea command: ") +
           std::strerror(errno);
@@ -1023,7 +1030,7 @@ std::optional<nlohmann::json> SendControlQuery(
       close(descriptor);
       return std::nullopt;
     }
-    if (reply.size() + static_cast<std::size_t>(count) > kMaximumReplyBytes) {
+    if (reply.size() + static_cast<std::size_t>(count) > kMaximumControlBytes) {
       if (error) *error = "Kea response exceeds the plugin limit";
       close(descriptor);
       return std::nullopt;

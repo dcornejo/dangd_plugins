@@ -964,6 +964,14 @@ int main() {
                      std::string::npos,
                  "ambiguous apply failure reason was not preserved");
 
+  error.clear();
+  auto oversized_request = dang::plugins::kea::SendControlQuery(
+      "/tmp/dang-kea-unused.sock", "oversized-request-test",
+      {{"payload", std::string(16 * 1024 * 1024, 'x')}}, &error);
+  valid &= Check(!oversized_request &&
+                     error.find("request exceeds") != std::string::npos,
+                 "oversized Kea request reached the transport");
+
   const std::string closed_socket =
       "/tmp/dang-kea-closed-" + std::to_string(getpid()) + ".sock";
   const int listener = socket(AF_UNIX, SOCK_STREAM, 0);

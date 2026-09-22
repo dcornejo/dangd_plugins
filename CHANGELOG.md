@@ -29,6 +29,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Added a 16 MiB ceiling to serialized Kea control requests before opening a
+  socket, matching the existing reply ceiling, and made zero-progress writes
+  fail immediately. Oversized configurations and stalled peers can no longer
+  consume unbounded transport memory or spin until the deadline.
+
 - Suppressed `SIGPIPE` on Kea control-socket writes using the native Linux/
   FreeBSD send flag or the per-socket BSD fallback. If Kea disconnects during a
   command, dangd now receives a controlled plugin error instead of risking
