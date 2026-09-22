@@ -273,7 +273,10 @@ interface's actual MAC address, IPv4 uses Kea's UDP socket mode, and a visible
 DHCPv6 Rapid Commit reply is validated whenever it reaches the client. On the
 current VLAN the IPv6 reply passes in both directions, while the nonstandard-
 port IPv4 return packet remains filtered; completed Kea allocation is therefore
-the portable IPv4 pass criterion.
+the portable IPv4 pass criterion. A visible reply must match the request
+transaction and expected server endpoint. DHCPv4 additionally checks the
+server identifier and exact configured address range; DHCPv6 checks the client
+DUID, server identifier presence, IAID, and allocated address range.
 
 Both hosts need Python 3, Kea DHCPv4/DHCPv6, passwordless test-only `sudo`, and
 SSH/SCP access from the orchestrating system. For the current validation pair:

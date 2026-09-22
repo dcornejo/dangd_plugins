@@ -18,6 +18,9 @@ All notable changes to the external dangd plugin collection are recorded here.
   Client identifiers are derived from the selected interface's real MAC, Kea
   uses UDP socket mode for IPv4, and both platforms require a client-visible
   DHCPv6 Rapid Commit reply in addition to the server allocation evidence.
+  Visible replies are correlated by endpoint and transaction and must carry
+  the expected server/client identifiers, IAID, and an address from the exact
+  configured pool.
 
 - Extended the isolated native Kea interaction to inject real DHCPv4 and
   DHCPv6 leases through the packaged lease-command hook and require their

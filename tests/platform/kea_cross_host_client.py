@@ -58,7 +58,9 @@ def dhcp4(server: str, client: bytes) -> None:
     offered = ipaddress.ip_address("192.0.2.100").packed
     server_id = ipaddress.ip_address(server).packed
     try:
-        offer, _ = sock.recvfrom(4096)
+        offer, peer = sock.recvfrom(4096)
+        if peer != (server, 1067):
+            raise RuntimeError("DHCPv4 offer came from an unexpected endpoint")
         if len(offer) < 240 or struct.unpack_from("!I", offer, 4)[0] != xid:
             raise RuntimeError("DHCPv4 offer has the wrong transaction ID")
         offered = offer[16:20]
@@ -66,13 +68,21 @@ def dhcp4(server: str, client: bytes) -> None:
         if parsed.get(53) != b"\x02" or len(parsed.get(54, b"")) != 4:
             raise RuntimeError("expected a DHCPv4 offer with server identifier")
         server_id = parsed[54]
+        if server_id != ipaddress.ip_address(server).packed:
+            raise RuntimeError("DHCPv4 offer contains the wrong server identifier")
+        offered_address = ipaddress.ip_address(offered)
+        if not (ipaddress.ip_address("192.0.2.100") <= offered_address <=
+                ipaddress.ip_address("192.0.2.120")):
+            raise RuntimeError("DHCPv4 offer is outside the configured pool")
     except TimeoutError:
         pass
     sock.sendto(packet4(3, xid, client, offered, server_id), (server, 1067))
     try:
-        ack, _ = sock.recvfrom(4096)
+        ack, peer = sock.recvfrom(4096)
+        parsed_ack = options4(ack)
         if (len(ack) < 240 or struct.unpack_from("!I", ack, 4)[0] != xid or
-                options4(ack).get(53) != b"\x05"):
+                peer != (server, 1067) or parsed_ack.get(53) != b"\x05" or
+                parsed_ack.get(54) != server_id or ack[16:20] != offered):
             raise RuntimeError("expected a matching DHCPv4 acknowledgement")
         print(f"DHCPv4 lease {ipaddress.ip_address(offered)} acknowledged")
     except TimeoutError:
@@ -111,9 +121,20 @@ def dhcp6(interface: str, client: bytes) -> None:
     sock.bind(("2001:db8:6::2", 1546))
     sock.sendto(solicit, ("ff02::1:2", 1547, 0, socket.if_nametoindex(interface)))
     try:
-        reply, _ = sock.recvfrom(8192)
-        if reply[:1] != b"\x07" or reply[1:4] != xid or 3 not in options6(reply):
+        reply, peer = sock.recvfrom(8192)
+        parsed = options6(reply)
+        ia_na_reply = parsed.get(3, b"")
+        if (reply[:1] != b"\x07" or reply[1:4] != xid or peer[1] != 1547 or
+                parsed.get(1) != duid or not parsed.get(2) or
+                len(ia_na_reply) < 12 or
+                struct.unpack_from("!I", ia_na_reply)[0] != iaid):
             raise RuntimeError("expected a matching rapid-commit DHCPv6 reply")
+        ia_options = options6(b"\0\0\0\0" + ia_na_reply[12:])
+        ia_address = ia_options.get(5, b"")
+        if (len(ia_address) < 24 or
+                ipaddress.ip_address(ia_address[:16]) not in
+                ipaddress.ip_network("2001:db8:6::100/120")):
+            raise RuntimeError("DHCPv6 reply omits an address from the pool")
         print("DHCPv6 rapid-commit reply received")
     except TimeoutError:
         print("DHCPv6 rapid-commit solicit sent")
