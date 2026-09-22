@@ -29,6 +29,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Required native Kea hardware addresses, client IDs, and DUIDs to use either
+  strict colon-separated hexadecimal octets or a strict contiguous hexadecimal
+  string. Empty values and leading, trailing, doubled, or missing separators
+  now fail closed instead of being silently normalized to another identity.
+
 - Translated the YANG `database-type` leaf to Kea's native `type` member for
   lease, host, and configuration databases. The isolated transaction fixtures
   now explicitly retain memory-only non-persistent lease databases across

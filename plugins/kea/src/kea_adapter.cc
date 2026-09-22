@@ -343,12 +343,14 @@ std::string XmlEscape(std::string_view value) {
 }
 
 std::optional<std::string> BinaryBase64(std::string_view hexadecimal) {
+  // Kea normally renders binary identities as colon-separated octets, while
+  // some control-command producers use one contiguous hexadecimal string.
+  // Accept either complete spelling, but never normalize missing, empty, or
+  // repeated octets into a different identity.
+  if (hexadecimal.empty()) return std::nullopt;
+  const bool separated = hexadecimal.find(':') != std::string_view::npos;
   std::vector<std::uint8_t> bytes;
   for (std::size_t offset = 0; offset < hexadecimal.size();) {
-    if (hexadecimal[offset] == ':') {
-      ++offset;
-      continue;
-    }
     if (offset + 2 > hexadecimal.size()) return std::nullopt;
     unsigned int byte = 0;
     const auto [end, error] = std::from_chars(
@@ -358,6 +360,12 @@ std::optional<std::string> BinaryBase64(std::string_view hexadecimal) {
       return std::nullopt;
     bytes.push_back(static_cast<std::uint8_t>(byte));
     offset += 2;
+    if (offset == hexadecimal.size()) break;
+    if (separated) {
+      if (hexadecimal[offset] != ':') return std::nullopt;
+      ++offset;
+      if (offset == hexadecimal.size()) return std::nullopt;
+    }
   }
   static constexpr char alphabet[] =
       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

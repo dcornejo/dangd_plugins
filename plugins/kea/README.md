@@ -103,7 +103,11 @@ server's complete lease inventory, host reservations (including option data),
 and supplemental per-subnet lease statistics in its `state` container. Operational
 queries use the local control sockets and convert Kea identifiers, lease types,
 states, lifetimes, prefix lengths, and binary identifiers to their modeled XML
-forms. Kea's empty-set result is exposed as an empty collection.
+forms. Native hardware addresses, client IDs, and DUIDs must be either complete
+colon-separated hexadecimal octets or a complete contiguous hexadecimal
+string. Empty values and malformed separators fail the complete retrieval
+instead of being normalized into a different identity. Kea's empty-set result
+is exposed as an empty collection.
 Duplicate lease addresses, statistic subnet IDs, or composite reservation keys
 fail the retrieval rather than producing schema-invalid complete state.
 

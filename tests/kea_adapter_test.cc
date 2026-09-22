@@ -284,6 +284,45 @@ int main() {
                          std::string::npos,
                  "DHCPv6 host addresses were not translated");
 
+  auto contiguous_identity = leases4;
+  contiguous_identity["arguments"]["leases"][0]["hw-address"] =
+      "000102030405";
+  auto contiguous_state = dang::plugins::kea::TranslateOperationalState(
+      "kea-dhcp4-server", contiguous_identity, stats4, hosts4, &error);
+  valid &= Check(contiguous_state &&
+                     contiguous_state->find(
+                         "<hw-address>AAECAwQF</hw-address>") !=
+                         std::string::npos,
+                 "contiguous DHCPv4 hardware address was not decoded");
+  auto malformed_hardware = leases4;
+  malformed_hardware["arguments"]["leases"][0]["hw-address"] = "00::01";
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", malformed_hardware, stats4, hosts4,
+                     &error) &&
+                     error.find("malformed hw-address") != std::string::npos,
+                 "doubled hardware-address separator was accepted");
+  auto malformed_client = leases4;
+  malformed_client["arguments"]["leases"][0]["client-id"] = ":01";
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", malformed_client, stats4, hosts4,
+                     &error) &&
+                     error.find("malformed client-id") != std::string::npos,
+                 "leading client-id separator was accepted");
+  auto malformed_duid = leases6;
+  malformed_duid["arguments"]["leases"][0]["duid"] = "00:01:";
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp6-server", malformed_duid, stats6, hosts6,
+                     &error) &&
+                     error.find("malformed duid") != std::string::npos,
+                 "trailing DUID separator was accepted");
+  auto empty_identity = leases4;
+  empty_identity["arguments"]["leases"][0]["hw-address"] = "";
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", empty_identity, stats4, hosts4,
+                     &error) &&
+                     error.find("malformed hw-address") != std::string::npos,
+                 "empty hardware address was accepted");
+
   auto duplicate_leases = leases4;
   duplicate_leases["arguments"]["leases"].push_back(
       duplicate_leases["arguments"]["leases"].front());
