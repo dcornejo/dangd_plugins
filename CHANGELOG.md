@@ -29,6 +29,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Contained JSON serialization failures for Kea lease, host, and option
+  user-context values and for paged lease/host byte accounting. Malformed
+  in-memory native values now fail their operational request instead of
+  throwing across the plugin boundary.
+
 - Moved Kea UNIX-socket connection establishment under the exchange's single
   five-second deadline using a nonblocking connect and `SO_ERROR` completion
   check. A stalled socket backlog can no longer block dangd before the bounded

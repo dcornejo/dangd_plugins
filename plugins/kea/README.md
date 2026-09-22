@@ -115,6 +115,8 @@ instead of being normalized into a different identity. Lease scalars retain
 their pinned YANG types and integer ranges; arrays, objects, wrong primitive
 types, and out-of-range integers fail rather than being omitted or stringified.
 Kea's empty-set result is exposed as an empty collection.
+JSON serialization of lease, host, and option user contexts and paged entries
+is exception-contained; malformed native strings fail the operational request.
 Duplicate lease addresses, statistic subnet IDs, or composite reservation keys
 fail the retrieval rather than producing schema-invalid complete state.
 Statistics column names must be unique strings, and every modeled counter must

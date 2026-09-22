@@ -345,6 +345,14 @@ int main() {
                      &error) &&
                      error.find("hostname") != std::string::npos,
                  "object-valued lease hostname was stringified");
+  auto malformed_lease_context = leases4;
+  malformed_lease_context["arguments"]["leases"][0]["user-context"] =
+      std::string(1, static_cast<char>(0xff));
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", malformed_lease_context, stats4,
+                     hosts4, &error) &&
+                     error.find("lease user-context") != std::string::npos,
+                 "malformed lease user-context escaped controlled failure");
   auto malformed_duid = leases6;
   malformed_duid["arguments"]["leases"][0]["duid"] = "00:01:";
   valid &= Check(!dang::plugins::kea::TranslateOperationalState(
@@ -416,6 +424,15 @@ int main() {
                      non_boolean_option_flag, &error) &&
                      error.find("csv-format") != std::string::npos,
                  "non-boolean option flag was stringified");
+  auto malformed_option_context = hosts4;
+  malformed_option_context["arguments"]["hosts"][0]["option-data"][0]
+                          ["user-context"] =
+      std::string(1, static_cast<char>(0xff));
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", leases4, stats4,
+                     malformed_option_context, &error) &&
+                     error.find("option user-context") != std::string::npos,
+                 "malformed option user-context escaped controlled failure");
   auto duplicate_option = hosts4;
   duplicate_option["arguments"]["hosts"][0]["option-data"].push_back(
       duplicate_option["arguments"]["hosts"][0]["option-data"][0]);

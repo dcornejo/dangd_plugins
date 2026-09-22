@@ -344,6 +344,19 @@ std::string XmlEscape(std::string_view value) {
   return escaped;
 }
 
+std::optional<std::string> JsonText(const nlohmann::json& value,
+                                    std::string_view description,
+                                    std::string* error) {
+  try {
+    return value.dump();
+  } catch (const std::exception& exception) {
+    if (error)
+      *error = "invalid Kea " + std::string(description) + ": " +
+          exception.what();
+    return std::nullopt;
+  }
+}
+
 std::optional<std::string> BinaryBase64(std::string_view hexadecimal) {
   // Kea normally renders binary identities as colon-separated octets, while
   // some control-command producers use one contiguous hexadecimal string.
@@ -570,9 +583,11 @@ std::optional<std::string> BuildLeases(const nlohmann::json& response,
           "</state>";
     }
     if (const auto context = lease.find("user-context");
-        context != lease.end())
-      xml += "<user-context>" + XmlEscape(context->dump()) +
-          "</user-context>";
+        context != lease.end()) {
+      auto context_text = JsonText(*context, "lease user-context", error);
+      if (!context_text) return std::nullopt;
+      xml += "<user-context>" + XmlEscape(*context_text) + "</user-context>";
+    }
     if (dhcp6)
       if (!AppendStringLeaf(&xml, "hw-address", lease, "hw-address", false,
                             error))
@@ -715,9 +730,11 @@ bool AppendOptionData(std::string* xml, const nlohmann::json& host, bool dhcp6,
       }
     }
     if (const auto context = option.find("user-context");
-        context != option.end())
-      *xml += "<user-context>" + XmlEscape(context->dump()) +
-              "</user-context>";
+        context != option.end()) {
+      auto context_text = JsonText(*context, "option user-context", error);
+      if (!context_text) return false;
+      *xml += "<user-context>" + XmlEscape(*context_text) + "</user-context>";
+    }
     *xml += "</option-data>";
   }
   return true;
@@ -853,8 +870,11 @@ std::optional<std::string> BuildHosts(const nlohmann::json& response,
                "</client-classes>";
       }
     }
-    if (const auto context = host.find("user-context"); context != host.end())
-      xml += "<user-context>" + XmlEscape(context->dump()) + "</user-context>";
+    if (const auto context = host.find("user-context"); context != host.end()) {
+      auto context_text = JsonText(*context, "host user-context", error);
+      if (!context_text) return std::nullopt;
+      xml += "<user-context>" + XmlEscape(*context_text) + "</user-context>";
+    }
     xml += "</host>";
   }
   return xml + "</hosts>";
@@ -1147,12 +1167,13 @@ std::optional<nlohmann::json> CollectLeasePages(
       return std::nullopt;
     }
     for (const auto& lease : *leases) {
-      const std::string encoded = lease.dump();
-      if (encoded.size() > limits.maximum_bytes - collected_bytes) {
+      auto encoded = JsonText(lease, "lease page entry", error);
+      if (!encoded) return std::nullopt;
+      if (encoded->size() > limits.maximum_bytes - collected_bytes) {
         if (error) *error = "Kea lease enumeration exceeds the byte limit";
         return std::nullopt;
       }
-      collected_bytes += encoded.size();
+      collected_bytes += encoded->size();
       collected.push_back(lease);
     }
     if (leases->size() < limits.page_size) {
@@ -1233,12 +1254,13 @@ std::optional<nlohmann::json> CollectHostPages(
       return std::nullopt;
     }
     for (const auto& host : hosts) {
-      const std::string encoded = host.dump();
-      if (encoded.size() > limits.maximum_bytes - collected_bytes) {
+      auto encoded = JsonText(host, "host page entry", error);
+      if (!encoded) return std::nullopt;
+      if (encoded->size() > limits.maximum_bytes - collected_bytes) {
         if (error) *error = "Kea host enumeration exceeds the byte limit";
         return std::nullopt;
       }
-      collected_bytes += encoded.size();
+      collected_bytes += encoded->size();
       collected.push_back(host);
     }
     const auto next = arguments_node->find("next");
