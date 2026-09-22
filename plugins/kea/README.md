@@ -121,6 +121,8 @@ silently discarded. DHCPv6 reservations reject the DHCPv4-only `circuit-id`
 and `client-id` types because they cannot be represented by the pinned DHCPv6
 model. Reservation scalar fields and option data likewise retain their modeled
 string, boolean, `uint32`, DHCPv4 `uint8`, or DHCPv6 `uint16` types and ranges.
+Option-data composite keys and reservation address, prefix, excluded-prefix,
+and client-class leaf-list values must also be unique within their YANG scope.
 
 The provider marks this operational result complete. Lease enumeration uses
 Kea's `lease4-get-page` and `lease6-get-page`

@@ -398,7 +398,7 @@ int main() {
   valid &= Check(!dang::plugins::kea::TranslateOperationalState(
                      "kea-dhcp4-server", leases4, stats4,
                      oversized_option_code, &error) &&
-                     error.find("code") != std::string::npos,
+                     error.find("option-data") != std::string::npos,
                  "oversized DHCPv4 option code was published");
   auto non_boolean_option_flag = hosts4;
   non_boolean_option_flag["arguments"]["hosts"][0]["option-data"][0]
@@ -408,6 +408,40 @@ int main() {
                      non_boolean_option_flag, &error) &&
                      error.find("csv-format") != std::string::npos,
                  "non-boolean option flag was stringified");
+  auto duplicate_option = hosts4;
+  duplicate_option["arguments"]["hosts"][0]["option-data"].push_back(
+      duplicate_option["arguments"]["hosts"][0]["option-data"][0]);
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", leases4, stats4, duplicate_option,
+                     &error) &&
+                     error.find("duplicate key") != std::string::npos,
+                 "duplicate reservation option key was published");
+  auto duplicate_host_class = hosts4;
+  duplicate_host_class["arguments"]["hosts"][0]["client-classes"].push_back(
+      "office");
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", leases4, stats4,
+                     duplicate_host_class, &error) &&
+                     error.find("duplicate client-classes") !=
+                         std::string::npos,
+                 "duplicate reservation client class was published");
+  auto duplicate_option_class = hosts4;
+  duplicate_option_class["arguments"]["hosts"][0]["option-data"][0]
+                        ["client-classes"].push_back("office");
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", leases4, stats4,
+                     duplicate_option_class, &error) &&
+                     error.find("duplicate client-classes") !=
+                         std::string::npos,
+                 "duplicate option client class was published");
+  auto duplicate_host_address = hosts6;
+  duplicate_host_address["arguments"]["hosts"][0]["ip-addresses"].push_back(
+      "2001:db8::50");
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp6-server", leases6, stats6,
+                     duplicate_host_address, &error) &&
+                     error.find("duplicate ip-addresses") != std::string::npos,
+                 "duplicate DHCPv6 reservation address was published");
 
   auto duplicate_leases = leases4;
   duplicate_leases["arguments"]["leases"].push_back(

@@ -657,16 +657,31 @@ bool AppendOptionData(std::string* xml, const nlohmann::json& host, bool dhcp6,
     if (error) *error = "Kea host reply has non-array option-data";
     return false;
   }
+  std::set<std::tuple<std::uint64_t, std::string, std::string>> option_keys;
   for (const auto& option : *options) {
     if (!option.is_object()) {
       if (error) *error = "Kea host reply has a non-object option-data entry";
       return false;
     }
+    const auto code = option.contains("code")
+        ? UnsignedValue(option.at("code")) : std::nullopt;
+    const auto space = option.find("space");
+    const auto data = option.find("data");
+    const std::uint64_t maximum_code = dhcp6
+        ? std::numeric_limits<std::uint16_t>::max()
+        : std::numeric_limits<std::uint8_t>::max();
+    if (!code || *code > maximum_code || space == option.end() ||
+        !space->is_string() || data == option.end() || !data->is_string() ||
+        !option_keys.emplace(*code, space->get<std::string>(),
+                             data->get<std::string>()).second) {
+      if (error)
+        *error = "Kea host option-data contains a missing, invalid, or "
+                 "duplicate key";
+      return false;
+    }
     *xml += "<option-data>";
     if (!AppendUnsignedLeaf(xml, "code", option, "code", true,
-                            dhcp6 ? std::numeric_limits<std::uint16_t>::max()
-                                  : std::numeric_limits<std::uint8_t>::max(),
-                            error) ||
+                            maximum_code, error) ||
         !AppendStringLeaf(xml, "space", option, "space", true, error) ||
         !AppendStringLeaf(xml, "name", option, "name", false, error) ||
         !AppendStringLeaf(xml, "data", option, "data", true, error) ||
@@ -684,10 +699,13 @@ bool AppendOptionData(std::string* xml, const nlohmann::json& host, bool dhcp6,
           *error = "Kea host option-data has non-array client-classes";
         return false;
       }
+      std::set<std::string, std::less<>> class_names;
       for (const auto& value : *classes) {
-        if (!value.is_string()) {
+        if (!value.is_string() ||
+            !class_names.emplace(value.get<std::string>()).second) {
           if (error)
-            *error = "Kea host option-data has non-string client-classes";
+            *error = "Kea host option-data has invalid or duplicate "
+                     "client-classes";
           return false;
         }
         *xml += "<client-classes>" + XmlEscape(value.get<std::string>()) +
@@ -791,9 +809,13 @@ std::optional<std::string> BuildHosts(const nlohmann::json& response,
           if (error) *error = "Kea host reply has a non-array " + std::string(name);
           return std::nullopt;
         }
+        std::set<std::string, std::less<>> unique_values;
         for (const auto& value : *values) {
-          if (!value.is_string()) {
-            if (error) *error = "Kea host reply has a non-string " + std::string(name);
+          if (!value.is_string() ||
+              !unique_values.emplace(value.get<std::string>()).second) {
+            if (error)
+              *error = "Kea host reply has an invalid or duplicate " +
+                  std::string(name);
             return std::nullopt;
           }
           xml += "<" + std::string(name) + ">" +
@@ -817,9 +839,12 @@ std::optional<std::string> BuildHosts(const nlohmann::json& response,
         if (error) *error = "Kea host reply has non-array client-classes";
         return std::nullopt;
       }
+      std::set<std::string, std::less<>> class_names;
       for (const auto& value : *classes) {
-        if (!value.is_string()) {
-          if (error) *error = "Kea host reply has non-string client-classes";
+        if (!value.is_string() ||
+            !class_names.emplace(value.get<std::string>()).second) {
+          if (error)
+            *error = "Kea host reply has invalid or duplicate client-classes";
           return std::nullopt;
         }
         xml += "<client-classes>" + XmlEscape(value.get<std::string>()) +

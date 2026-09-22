@@ -29,6 +29,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Rejected duplicate Kea reservation option-data keys and duplicate values in
+  reservation address, prefix, excluded-prefix, and client-class leaf-lists.
+  Complete operational state can no longer contain repeated YANG list or
+  leaf-list instances inherited from malformed native replies.
+
 - Enforced YANG scalar types for Kea host reservations and their option data.
   Reservation subnet IDs, addresses, names, boot metadata, option codes,
   strings, and boolean flags now reject wrong types and out-of-range values
