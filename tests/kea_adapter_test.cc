@@ -394,6 +394,38 @@ int main() {
                      &error) &&
                      error.find("duplicate subnet-id") != std::string::npos,
                  "duplicate statistic keys were accepted as complete state");
+  auto duplicate_statistic_columns = stats4;
+  duplicate_statistic_columns["arguments"]["result-set"]["columns"][1] =
+      "subnet-id";
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", leases4,
+                     duplicate_statistic_columns, hosts4, &error) &&
+                     error.find("duplicate column subnet-id") !=
+                         std::string::npos,
+                 "duplicate statistic columns were accepted in final state");
+  auto non_string_statistic_column = stats4;
+  non_string_statistic_column["arguments"]["result-set"]["columns"][0] = 7;
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", leases4,
+                     non_string_statistic_column, hosts4, &error) &&
+                     error.find("column name is not a string") !=
+                         std::string::npos,
+                 "non-string statistic column was ignored");
+  auto oversized_statistic = stats4;
+  oversized_statistic["arguments"]["result-set"]["rows"][0][1] =
+      static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()) + 1;
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", leases4, oversized_statistic, hosts4,
+                     &error) &&
+                     error.find("total-addresses") != std::string::npos,
+                 "oversized statistic counter was published");
+  auto negative_statistic = stats6;
+  negative_statistic["arguments"]["result-set"]["rows"][0][3] = -1;
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp6-server", leases6, negative_statistic, hosts6,
+                     &error) &&
+                     error.find("assigned-nas") != std::string::npos,
+                 "negative statistic counter was published");
   auto duplicate_hosts = hosts4;
   duplicate_hosts["arguments"]["hosts"].push_back(
       duplicate_hosts["arguments"]["hosts"].front());
@@ -650,14 +682,15 @@ int main() {
                           {"rows", {{4, 4}}}}}}}};
   };
   error.clear();
-  auto duplicate_statistic_columns = dang::plugins::kea::CollectStatistics(
+  auto duplicate_collected_statistic_columns =
+      dang::plugins::kea::CollectStatistics(
       "/tmp/kea4.sock", false, {4}, ambiguous_statistics, &error,
       {.page_size = 1,
        .maximum_pages = 1,
        .maximum_items = 1,
        .maximum_bytes = 1024,
        .maximum_duration = std::chrono::milliseconds(100)});
-  valid &= Check(!duplicate_statistic_columns &&
+  valid &= Check(!duplicate_collected_statistic_columns &&
                      error.find("duplicate column") != std::string::npos,
                  "ambiguous statistics columns were accepted");
 

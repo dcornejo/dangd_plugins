@@ -112,6 +112,9 @@ types, and out-of-range integers fail rather than being omitted or stringified.
 Kea's empty-set result is exposed as an empty collection.
 Duplicate lease addresses, statistic subnet IDs, or composite reservation keys
 fail the retrieval rather than producing schema-invalid complete state.
+Statistics column names must be unique strings, and every modeled counter must
+fit its `uint32` YANG type. These checks are repeated by the final translator so
+even state supplied outside the normal bounded collector cannot bypass them.
 Reservation identifiers must be non-empty strings, including every identifier
 field present in a native host record; malformed secondary identifiers are not
 silently discarded. DHCPv6 reservations reject the DHCPv4-only `circuit-id`

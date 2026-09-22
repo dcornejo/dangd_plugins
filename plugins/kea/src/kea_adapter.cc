@@ -619,8 +619,13 @@ std::optional<std::string> BuildStatistics(const nlohmann::json& response,
     const auto& rows = result_set.at("rows");
     if (!columns.is_array() || !rows.is_array()) throw std::runtime_error("not arrays");
     std::map<std::string, std::size_t, std::less<>> indexes;
-    for (std::size_t index = 0; index < columns.size(); ++index)
-      if (columns[index].is_string()) indexes.emplace(columns[index], index);
+    for (std::size_t index = 0; index < columns.size(); ++index) {
+      if (!columns[index].is_string())
+        throw std::runtime_error("column name is not a string");
+      const std::string name = columns[index].get<std::string>();
+      if (!indexes.emplace(name, index).second)
+        throw std::runtime_error("duplicate column " + name);
+    }
     const std::vector<std::string_view> required = dhcp6
         ? std::vector<std::string_view>{"subnet-id", "total-nas", "assigned-nas",
                                         "declined-addresses", "total-pds",
@@ -632,22 +637,27 @@ std::optional<std::string> BuildStatistics(const nlohmann::json& response,
     for (const auto& row : rows) {
       if (!row.is_array()) throw std::runtime_error("row is not an array");
       const auto subnet_position = indexes.find("subnet-id");
+      const auto subnet_id = subnet_position == indexes.end() ||
+              subnet_position->second >= row.size()
+          ? std::nullopt
+          : UnsignedValue(row[subnet_position->second]);
       if (subnet_position == indexes.end() ||
           subnet_position->second >= row.size() ||
-          !row[subnet_position->second].is_number_unsigned() ||
-          row[subnet_position->second].get<std::uint64_t>() >
+          !subnet_id || *subnet_id >
               std::numeric_limits<std::uint32_t>::max() ||
-          !subnet_ids.emplace(row[subnet_position->second]
-                                  .get<std::uint32_t>()).second)
+          !subnet_ids.emplace(static_cast<std::uint32_t>(*subnet_id)).second)
         throw std::runtime_error("missing, invalid, or duplicate subnet-id");
       xml += "<subnet>";
       for (const auto name : required) {
         const auto position = indexes.find(name);
-        if (position == indexes.end() || position->second >= row.size() ||
-            !row[position->second].is_number_unsigned())
+        const auto value = position == indexes.end() ||
+                position->second >= row.size()
+            ? std::nullopt
+            : UnsignedValue(row[position->second]);
+        if (!value || *value > std::numeric_limits<std::uint32_t>::max())
           throw std::runtime_error("missing unsigned column " + std::string(name));
-        xml += "<" + std::string(name) + ">" +
-            row[position->second].dump() + "</" + std::string(name) + ">";
+        xml += "<" + std::string(name) + ">" + std::to_string(*value) +
+            "</" + std::string(name) + ">";
       }
       xml += "</subnet>";
     }

@@ -29,6 +29,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Validated the final Kea statistics table independently of its collector.
+  Duplicate or non-string column names and negative or oversized `uint32`
+  counters now fail complete operational retrieval instead of being ignored or
+  emitted as schema-invalid state.
+
 - Enforced the pinned YANG scalar types and integer ranges while translating
   native Kea leases. Wrong-type optional client IDs, flags, hostnames, hardware
   addresses, lifetimes, subnet IDs, IAIDs, and prefix lengths now fail complete
