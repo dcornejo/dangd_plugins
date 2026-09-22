@@ -308,6 +308,35 @@ int main() {
                      &error) &&
                      error.find("malformed client-id") != std::string::npos,
                  "leading client-id separator was accepted");
+  auto non_string_client = leases4;
+  non_string_client["arguments"]["leases"][0]["client-id"] = 7;
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", non_string_client, stats4, hosts4,
+                     &error) &&
+                     error.find("malformed client-id") != std::string::npos,
+                 "non-string client-id was silently omitted");
+  auto non_boolean_fqdn = leases4;
+  non_boolean_fqdn["arguments"]["leases"][0]["fqdn-fwd"] = "true";
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", non_boolean_fqdn, stats4, hosts4,
+                     &error) &&
+                     error.find("fqdn-fwd") != std::string::npos,
+                 "non-boolean lease flag was stringified");
+  auto oversized_prefix = leases6;
+  oversized_prefix["arguments"]["leases"][0]["prefix-len"] = 129;
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp6-server", oversized_prefix, stats6, hosts6,
+                     &error) &&
+                     error.find("prefix-len") != std::string::npos,
+                 "out-of-range DHCPv6 prefix length was published");
+  auto object_hostname = leases4;
+  object_hostname["arguments"]["leases"][0]["hostname"] =
+      {{"unexpected", true}};
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", object_hostname, stats4, hosts4,
+                     &error) &&
+                     error.find("hostname") != std::string::npos,
+                 "object-valued lease hostname was stringified");
   auto malformed_duid = leases6;
   malformed_duid["arguments"]["leases"][0]["duid"] = "00:01:";
   valid &= Check(!dang::plugins::kea::TranslateOperationalState(

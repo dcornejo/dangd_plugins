@@ -404,6 +404,65 @@ bool AppendLeaf(std::string* xml, std::string_view name,
   return true;
 }
 
+bool AppendStringLeaf(std::string* xml, std::string_view name,
+                      const nlohmann::json& object, std::string_view key,
+                      bool mandatory, std::string* error) {
+  const auto found = object.find(key);
+  if (found == object.end() || found->is_null()) {
+    if (!mandatory) return true;
+    if (error) *error = "Kea response omits mandatory field " + std::string(key);
+    return false;
+  }
+  if (!found->is_string()) {
+    if (error) *error = "Kea response field " + std::string(key) +
+        " is not a string";
+    return false;
+  }
+  *xml += "<" + std::string(name) + ">" +
+      XmlEscape(found->get<std::string>()) + "</" + std::string(name) + ">";
+  return true;
+}
+
+bool AppendBooleanLeaf(std::string* xml, std::string_view name,
+                       const nlohmann::json& object, std::string_view key,
+                       bool mandatory, std::string* error) {
+  const auto found = object.find(key);
+  if (found == object.end() || found->is_null()) {
+    if (!mandatory) return true;
+    if (error) *error = "Kea response omits mandatory field " + std::string(key);
+    return false;
+  }
+  if (!found->is_boolean()) {
+    if (error) *error = "Kea response field " + std::string(key) +
+        " is not a boolean";
+    return false;
+  }
+  *xml += "<" + std::string(name) + ">" +
+      std::string(*found ? "true" : "false") + "</" + std::string(name) + ">";
+  return true;
+}
+
+bool AppendUnsignedLeaf(std::string* xml, std::string_view name,
+                        const nlohmann::json& object, std::string_view key,
+                        bool mandatory, std::uint64_t maximum,
+                        std::string* error) {
+  const auto found = object.find(key);
+  if (found == object.end() || found->is_null()) {
+    if (!mandatory) return true;
+    if (error) *error = "Kea response omits mandatory field " + std::string(key);
+    return false;
+  }
+  const auto value = UnsignedValue(*found);
+  if (!value || *value > maximum) {
+    if (error) *error = "Kea response field " + std::string(key) +
+        " is not an in-range unsigned integer";
+    return false;
+  }
+  *xml += "<" + std::string(name) + ">" + std::to_string(*value) + "</" +
+      std::string(name) + ">";
+  return true;
+}
+
 std::optional<std::string> BuildLeases(const nlohmann::json& response,
                                        bool dhcp6, std::string* error) {
   const nlohmann::json* answer = Answer(response);
@@ -443,7 +502,8 @@ std::optional<std::string> BuildLeases(const nlohmann::json& response,
       return std::nullopt;
     }
     xml += "<lease>";
-    if (!AppendLeaf(&xml, "ip-address", lease, "ip-address", true, error))
+    if (!AppendStringLeaf(&xml, "ip-address", lease, "ip-address", true,
+                          error))
       return std::nullopt;
     const std::string binary_key = dhcp6 ? "duid" : "hw-address";
     const auto binary = lease.find(binary_key);
@@ -459,7 +519,11 @@ std::optional<std::string> BuildLeases(const nlohmann::json& response,
     xml += "<" + binary_key + ">" + *encoded + "</" + binary_key + ">";
     if (!dhcp6) {
       const auto client = lease.find("client-id");
-      if (client != lease.end() && client->is_string()) {
+      if (client != lease.end()) {
+        if (!client->is_string()) {
+          if (error) *error = "Kea lease reply contains malformed client-id";
+          return std::nullopt;
+        }
         auto client_id = BinaryBase64(client->get<std::string>());
         if (!client_id) {
           if (error) *error = "Kea lease reply contains malformed client-id";
@@ -468,13 +532,17 @@ std::optional<std::string> BuildLeases(const nlohmann::json& response,
         xml += "<client-id>" + *client_id + "</client-id>";
       }
     }
-    if (!AppendLeaf(&xml, "valid-lifetime", lease, "valid-lft", true, error) ||
-        !AppendLeaf(&xml, "cltt", lease, "cltt", true, error) ||
-        !AppendLeaf(&xml, "subnet-id", lease, "subnet-id", true, error))
+    if (!AppendUnsignedLeaf(&xml, "valid-lifetime", lease, "valid-lft", true,
+                            std::numeric_limits<std::uint32_t>::max(), error) ||
+        !AppendUnsignedLeaf(&xml, "cltt", lease, "cltt", true,
+                            std::numeric_limits<std::uint32_t>::max(), error) ||
+        !AppendUnsignedLeaf(&xml, "subnet-id", lease, "subnet-id", true,
+                            std::numeric_limits<std::uint32_t>::max(), error))
       return std::nullopt;
     if (dhcp6) {
-      if (!AppendLeaf(&xml, "preferred-lifetime", lease, "preferred-lft", true,
-                      error))
+      if (!AppendUnsignedLeaf(&xml, "preferred-lifetime", lease,
+                              "preferred-lft", true,
+                              std::numeric_limits<std::uint32_t>::max(), error))
         return std::nullopt;
       const auto type = lease.find("type");
       if (type == lease.end()) {
@@ -482,7 +550,9 @@ std::optional<std::string> BuildLeases(const nlohmann::json& response,
         return std::nullopt;
       }
       std::string lease_type;
-      if (type->is_string()) lease_type = type->get<std::string>();
+      if (type->is_string() &&
+          (*type == "IA_NA" || *type == "IA_PD"))
+        lease_type = type->get<std::string>();
       else if (UnsignedValue(*type) == 0)
         lease_type = "IA_NA";
       else if (UnsignedValue(*type) == 2)
@@ -492,14 +562,18 @@ std::optional<std::string> BuildLeases(const nlohmann::json& response,
         return std::nullopt;
       }
       xml += "<lease-type>" + lease_type + "</lease-type>";
-      if (!AppendLeaf(&xml, "iaid", lease, "iaid", true, error) ||
-          !AppendLeaf(&xml, "prefix-length", lease, "prefix-len", false, error))
+      if (!AppendUnsignedLeaf(&xml, "iaid", lease, "iaid", true,
+                              std::numeric_limits<std::uint32_t>::max(), error) ||
+          !AppendUnsignedLeaf(&xml, "prefix-length", lease, "prefix-len",
+                              false, 128, error))
         return std::nullopt;
     }
-    for (const auto& [name, key] :
-         {std::pair{"fqdn-fwd", "fqdn-fwd"}, {"fqdn-rev", "fqdn-rev"},
-          {"hostname", "hostname"}})
-      if (!AppendLeaf(&xml, name, lease, key, false, error)) return std::nullopt;
+    if (!AppendBooleanLeaf(&xml, "fqdn-fwd", lease, "fqdn-fwd", false,
+                           error) ||
+        !AppendBooleanLeaf(&xml, "fqdn-rev", lease, "fqdn-rev", false,
+                           error) ||
+        !AppendStringLeaf(&xml, "hostname", lease, "hostname", false, error))
+      return std::nullopt;
     const auto state = lease.find("state");
     if (state != lease.end()) {
       static constexpr const char* states[]{"default", "declined",
@@ -517,7 +591,8 @@ std::optional<std::string> BuildLeases(const nlohmann::json& response,
       xml += "<user-context>" + XmlEscape(context->dump()) +
           "</user-context>";
     if (dhcp6)
-      if (!AppendLeaf(&xml, "hw-address", lease, "hw-address", false, error))
+      if (!AppendStringLeaf(&xml, "hw-address", lease, "hw-address", false,
+                            error))
         return std::nullopt;
     xml += "</lease>";
   }

@@ -106,8 +106,10 @@ states, lifetimes, prefix lengths, and binary identifiers to their modeled XML
 forms. Native hardware addresses, client IDs, and DUIDs must be either complete
 colon-separated hexadecimal octets or a complete contiguous hexadecimal
 string. Empty values and malformed separators fail the complete retrieval
-instead of being normalized into a different identity. Kea's empty-set result
-is exposed as an empty collection.
+instead of being normalized into a different identity. Lease scalars retain
+their pinned YANG types and integer ranges; arrays, objects, wrong primitive
+types, and out-of-range integers fail rather than being omitted or stringified.
+Kea's empty-set result is exposed as an empty collection.
 Duplicate lease addresses, statistic subnet IDs, or composite reservation keys
 fail the retrieval rather than producing schema-invalid complete state.
 Reservation identifiers must be non-empty strings, including every identifier

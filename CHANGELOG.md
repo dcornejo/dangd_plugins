@@ -29,6 +29,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Enforced the pinned YANG scalar types and integer ranges while translating
+  native Kea leases. Wrong-type optional client IDs, flags, hostnames, hardware
+  addresses, lifetimes, subnet IDs, IAIDs, and prefix lengths now fail complete
+  operational retrieval instead of being omitted or stringified.
+
 - Rejected empty or non-string Kea host-reservation identifiers even when a
   second valid identifier is present, rather than silently omitting malformed
   native state. DHCPv6 reservation state now also rejects the DHCPv4-only
