@@ -101,6 +101,9 @@ strings even when their value looks like `true`, `false`, or a number.
 Kea remains the final implementation-specific validator; a newly introduced
 model structure must gain a focused translation test before it is treated as
 production-supported.
+Malformed XML structures that cannot be converted to Kea's required JSON
+types fail with a controlled plugin error, and snapshots larger than libxml's
+signed input-length interface are rejected before parsing.
 
 The provider implements the complete configuration and state trees of the two
 pinned modules. Through ABI v6 it owns configuration and publishes each

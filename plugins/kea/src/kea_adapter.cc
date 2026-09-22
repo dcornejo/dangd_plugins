@@ -923,6 +923,11 @@ std::optional<ServerConfiguration> TranslateConfiguration(
     if (error) *error = "Kea control socket path is empty or too long";
     return std::nullopt;
   }
+  if (datastore_xml.size() >
+      static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    if (error) *error = "Kea datastore snapshot exceeds the XML parser limit";
+    return std::nullopt;
+  }
   xmlDocPtr document = xmlReadMemory(datastore_xml.data(),
                                      static_cast<int>(datastore_xml.size()),
                                      "datastore.xml", nullptr,
@@ -935,7 +940,16 @@ std::optional<ServerConfiguration> TranslateConfiguration(
       "urn:ietf:params:xml:ns:yang:" + std::string(module_name);
   const xmlNode* config = FindConfiguration(xmlDocGetRootElement(document),
                                              expected_namespace);
-  nlohmann::json body = config ? ConvertNode(config) : nlohmann::json::object();
+  nlohmann::json body;
+  try {
+    body = config ? ConvertNode(config) : nlohmann::json::object();
+  } catch (const std::exception& exception) {
+    xmlFreeDoc(document);
+    if (error)
+      *error = std::string("invalid Kea configuration structure: ") +
+          exception.what();
+    return std::nullopt;
+  }
   xmlFreeDoc(document);
   if (!PreservesControlSocket(body, socket_path)) {
     if (error)

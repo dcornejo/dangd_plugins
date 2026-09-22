@@ -136,6 +136,25 @@ int main() {
                      error.find("preserve the managed UNIX control socket") !=
                          std::string::npos,
                  "non-UNIX socket was accepted as the managed socket");
+  constexpr char malformed_pool_xml[] = R"xml(
+    <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+      <control-sockets><socket-type>unix</socket-type>
+        <socket-name>/tmp/kea4.sock</socket-name></control-sockets>
+      <hook-library><library>/opt/kea/libdhcp_lease_cmds.so</library></hook-library>
+      <hook-library><library>/opt/kea/libdhcp_stat_cmds.so</library></hook-library>
+      <hook-library><library>/opt/kea/libdhcp_host_cmds.so</library></hook-library>
+      <subnet4><id>4</id><subnet>192.0.2.0/24</subnet><pool>
+        <start-address><unexpected>192.0.2.10</unexpected></start-address>
+        <end-address>192.0.2.20</end-address>
+      </pool></subnet4>
+    </config>)xml";
+  error.clear();
+  auto malformed_pool = dang::plugins::kea::TranslateConfiguration(
+      malformed_pool_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  valid &= Check(!malformed_pool &&
+                     error.find("invalid Kea configuration structure") !=
+                         std::string::npos,
+                 "malformed pool structure escaped controlled failure");
   const auto& four = dhcp4->arguments.at("Dhcp4");
   const auto& six = dhcp6->arguments.at("Dhcp6");
   valid &= Check(four.at("subnet4").is_array(), "subnet4 is not an array");

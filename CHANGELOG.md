@@ -29,6 +29,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Contained Kea configuration-conversion exceptions and released the parsed
+  XML document on the failure path. Structurally invalid scalar/container
+  substitutions now return a plugin error, and snapshots too large for
+  libxml's signed input-length interface are rejected before parsing.
+
 - Contained JSON serialization failures for Kea lease, host, and option
   user-context values and for paged lease/host byte accounting. Malformed
   in-memory native values now fail their operational request instead of
