@@ -29,6 +29,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Kept Kea control sockets nonblocking through request writes and response
+  reads, with retry handling for readiness races. A connected peer that stops
+  consuming a large request can no longer hold dangd beyond the exchange's
+  shared five-second deadline.
+
 - Contained Kea configuration-conversion exceptions and released the parsed
   XML document on the failure path. Structurally invalid scalar/container
   substitutions now return a plugin error, and snapshots too large for

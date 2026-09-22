@@ -1038,12 +1038,9 @@ std::optional<nlohmann::json> SendControlQuery(
       return std::nullopt;
     }
   }
-  if (fcntl(descriptor, F_SETFL, descriptor_flags) != 0) {
-    if (error) *error = std::string("cannot restore Kea control socket mode: ") +
-        std::strerror(errno);
-    close(descriptor);
-    return std::nullopt;
-  }
+  // Keep the descriptor nonblocking for the complete exchange. Restoring the
+  // blocking mode here would allow a large send or a readiness race on recv to
+  // outlive the single deadline even though poll itself is bounded.
 #if !defined(MSG_NOSIGNAL) && defined(SO_NOSIGPIPE)
   // Darwin and some BSD socket stacks suppress SIGPIPE per descriptor rather
   // than per send. A disappearing Kea peer must become a plugin error, never a
@@ -1077,7 +1074,8 @@ std::optional<nlohmann::json> SendControlQuery(
       if (error) *error = "Kea control socket write made no progress";
       close(descriptor);
       return std::nullopt;
-    } else if (count < 0 && errno != EINTR) {
+    } else if (count < 0 && errno != EINTR && errno != EAGAIN &&
+               errno != EWOULDBLOCK) {
       if (error) *error = std::string("cannot write Kea command: ") +
           std::strerror(errno);
       close(descriptor);
@@ -1096,7 +1094,7 @@ std::optional<nlohmann::json> SendControlQuery(
     const ssize_t count = recv(descriptor, buffer, sizeof(buffer), 0);
     if (count == 0) break;
     if (count < 0) {
-      if (errno == EINTR) continue;
+      if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) continue;
       if (error) *error = std::string("cannot read Kea response: ") +
           std::strerror(errno);
       close(descriptor);

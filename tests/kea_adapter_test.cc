@@ -1058,6 +1058,25 @@ int main() {
     closed_peer.join();
     valid &= Check(!closed_response && !error.empty(),
                    "a closed Kea peer did not return a controlled error");
+
+    std::thread stalled_peer([listener]() {
+      const int connection = accept(listener, nullptr, nullptr);
+      if (connection >= 0) {
+        std::this_thread::sleep_for(std::chrono::seconds(6));
+        close(connection);
+      }
+    });
+    error.clear();
+    const auto stalled_start = std::chrono::steady_clock::now();
+    auto stalled_response = dang::plugins::kea::SendControlQuery(
+        closed_socket, "stalled-peer-test",
+        {{"payload", std::string(15 * 1024 * 1024, 'x')}}, &error);
+    const auto stalled_elapsed = std::chrono::steady_clock::now() - stalled_start;
+    stalled_peer.join();
+    valid &= Check(!stalled_response &&
+                       error.find("timed out") != std::string::npos &&
+                       stalled_elapsed < std::chrono::seconds(6),
+                   "a stalled Kea peer escaped the exchange deadline");
   }
   if (listener >= 0) close(listener);
   unlink(closed_socket.c_str());
