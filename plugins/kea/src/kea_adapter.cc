@@ -385,25 +385,6 @@ std::optional<std::string> BinaryBase64(std::string_view hexadecimal) {
   return encoded;
 }
 
-bool AppendLeaf(std::string* xml, std::string_view name,
-                const nlohmann::json& object, std::string_view key,
-                bool mandatory, std::string* error) {
-  const auto found = object.find(key);
-  if (found == object.end() || found->is_null()) {
-    if (!mandatory) return true;
-    if (error) *error = "Kea response omits mandatory field " + std::string(key);
-    return false;
-  }
-  std::string value;
-  if (found->is_string()) value = found->get<std::string>();
-  else if (found->is_boolean()) value = *found ? "true" : "false";
-  else if (found->is_number()) value = found->dump();
-  else value = found->dump();
-  *xml += "<" + std::string(name) + ">" + XmlEscape(value) + "</" +
-      std::string(name) + ">";
-  return true;
-}
-
 bool AppendStringLeaf(std::string* xml, std::string_view name,
                       const nlohmann::json& object, std::string_view key,
                       bool mandatory, std::string* error) {
@@ -668,7 +649,7 @@ std::optional<std::string> BuildStatistics(const nlohmann::json& response,
   }
 }
 
-bool AppendOptionData(std::string* xml, const nlohmann::json& host,
+bool AppendOptionData(std::string* xml, const nlohmann::json& host, bool dhcp6,
                       std::string* error) {
   const auto options = host.find("option-data");
   if (options == host.end()) return true;
@@ -682,12 +663,20 @@ bool AppendOptionData(std::string* xml, const nlohmann::json& host,
       return false;
     }
     *xml += "<option-data>";
-    for (const auto& [name, required] : {
-             std::pair<std::string_view, bool>{"code", true},
-             {"space", true}, {"name", false}, {"data", true},
-             {"csv-format", false}, {"always-send", false},
-             {"never-send", false}})
-      if (!AppendLeaf(xml, name, option, name, required, error)) return false;
+    if (!AppendUnsignedLeaf(xml, "code", option, "code", true,
+                            dhcp6 ? std::numeric_limits<std::uint16_t>::max()
+                                  : std::numeric_limits<std::uint8_t>::max(),
+                            error) ||
+        !AppendStringLeaf(xml, "space", option, "space", true, error) ||
+        !AppendStringLeaf(xml, "name", option, "name", false, error) ||
+        !AppendStringLeaf(xml, "data", option, "data", true, error) ||
+        !AppendBooleanLeaf(xml, "csv-format", option, "csv-format", false,
+                           error) ||
+        !AppendBooleanLeaf(xml, "always-send", option, "always-send", false,
+                           error) ||
+        !AppendBooleanLeaf(xml, "never-send", option, "never-send", false,
+                           error))
+      return false;
     const auto classes = option.find("client-classes");
     if (classes != option.end()) {
       if (!classes->is_array()) {
@@ -776,17 +765,20 @@ std::optional<std::string> BuildHosts(const nlohmann::json& response,
       return std::nullopt;
     }
     const auto subnet = host.find("subnet-id");
-    if (subnet == host.end() || !subnet->is_number_unsigned() ||
-        subnet->get<std::uint64_t>() >
-            std::numeric_limits<std::uint32_t>::max() ||
-        !identities.emplace(subnet->get<std::uint32_t>(), identifier_type,
+    const auto subnet_id = subnet == host.end()
+        ? std::nullopt
+        : UnsignedValue(*subnet);
+    if (!subnet_id ||
+        *subnet_id > std::numeric_limits<std::uint32_t>::max() ||
+        !identities.emplace(static_cast<std::uint32_t>(*subnet_id), identifier_type,
                             identifier).second) {
       if (error)
         *error = "Kea host reply contains a missing, invalid, or duplicate key";
       return std::nullopt;
     }
     xml += "<host>";
-    if (!AppendLeaf(&xml, "subnet-id", host, "subnet-id", true, error))
+    if (!AppendUnsignedLeaf(&xml, "subnet-id", host, "subnet-id", true,
+                            std::numeric_limits<std::uint32_t>::max(), error))
       return std::nullopt;
     xml += "<identifier-type>" + identifier_type + "</identifier-type>";
     xml += "<identifier>" + XmlEscape(identifier) + "</identifier>";
@@ -809,15 +801,16 @@ std::optional<std::string> BuildHosts(const nlohmann::json& response,
                  std::string(name) + ">";
         }
       }
-    } else if (!AppendLeaf(&xml, "ip-address", host, "ip-address", false,
-                            error)) {
+    } else if (!AppendStringLeaf(&xml, "ip-address", host, "ip-address", false,
+                                  error)) {
       return std::nullopt;
     }
     for (const std::string_view name :
          {"hostname", "next-server", "server-hostname", "boot-file-name",
           "auth-key"})
-      if (!AppendLeaf(&xml, name, host, name, false, error)) return std::nullopt;
-    if (!AppendOptionData(&xml, host, error)) return std::nullopt;
+      if (!AppendStringLeaf(&xml, name, host, name, false, error))
+        return std::nullopt;
+    if (!AppendOptionData(&xml, host, dhcp6, error)) return std::nullopt;
     const auto classes = host.find("client-classes");
     if (classes != host.end()) {
       if (!classes->is_array()) {

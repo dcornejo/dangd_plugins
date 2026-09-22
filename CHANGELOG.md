@@ -29,6 +29,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Enforced YANG scalar types for Kea host reservations and their option data.
+  Reservation subnet IDs, addresses, names, boot metadata, option codes,
+  strings, and boolean flags now reject wrong types and out-of-range values
+  instead of stringifying them into a claimed-complete result.
+
 - Validated the final Kea statistics table independently of its collector.
   Duplicate or non-string column names and negative or oversized `uint32`
   counters now fail complete operational retrieval instead of being ignored or

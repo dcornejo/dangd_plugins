@@ -377,6 +377,37 @@ int main() {
                      error.find("unsupported identifier client-id") !=
                          std::string::npos,
                  "DHCPv4-only identifier was published in DHCPv6 state");
+  auto negative_host_subnet = hosts4;
+  negative_host_subnet["arguments"]["hosts"][0]["subnet-id"] = -1;
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", leases4, stats4,
+                     negative_host_subnet, &error) &&
+                     error.find("invalid") != std::string::npos,
+                 "negative host subnet ID was published");
+  auto object_host_name = hosts4;
+  object_host_name["arguments"]["hosts"][0]["hostname"] =
+      {{"unexpected", true}};
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", leases4, stats4, object_host_name,
+                     &error) &&
+                     error.find("hostname") != std::string::npos,
+                 "object-valued reservation hostname was stringified");
+  auto oversized_option_code = hosts4;
+  oversized_option_code["arguments"]["hosts"][0]["option-data"][0]["code"] =
+      256;
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", leases4, stats4,
+                     oversized_option_code, &error) &&
+                     error.find("code") != std::string::npos,
+                 "oversized DHCPv4 option code was published");
+  auto non_boolean_option_flag = hosts4;
+  non_boolean_option_flag["arguments"]["hosts"][0]["option-data"][0]
+                         ["csv-format"] = "true";
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", leases4, stats4,
+                     non_boolean_option_flag, &error) &&
+                     error.find("csv-format") != std::string::npos,
+                 "non-boolean option flag was stringified");
 
   auto duplicate_leases = leases4;
   duplicate_leases["arguments"]["leases"].push_back(

@@ -119,7 +119,8 @@ Reservation identifiers must be non-empty strings, including every identifier
 field present in a native host record; malformed secondary identifiers are not
 silently discarded. DHCPv6 reservations reject the DHCPv4-only `circuit-id`
 and `client-id` types because they cannot be represented by the pinned DHCPv6
-model.
+model. Reservation scalar fields and option data likewise retain their modeled
+string, boolean, `uint32`, DHCPv4 `uint8`, or DHCPv6 `uint16` types and ranges.
 
 The provider marks this operational result complete. Lease enumeration uses
 Kea's `lease4-get-page` and `lease6-get-page`
