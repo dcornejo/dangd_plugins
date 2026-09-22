@@ -29,6 +29,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Moved Kea UNIX-socket connection establishment under the exchange's single
+  five-second deadline using a nonblocking connect and `SO_ERROR` completion
+  check. A stalled socket backlog can no longer block dangd before the bounded
+  write/read phases begin.
+
 - Contained Kea request-serialization failures such as malformed UTF-8 before
   opening the control socket, preventing JSON exceptions from crossing the
   plugin boundary. Reply-limit accounting now also avoids additive overflow.

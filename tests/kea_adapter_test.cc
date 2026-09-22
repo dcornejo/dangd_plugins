@@ -978,6 +978,15 @@ int main() {
   valid &= Check(!malformed_request &&
                      error.find("invalid Kea request") != std::string::npos,
                  "malformed Kea request escaped controlled failure");
+  const std::string missing_peer_path =
+      "/tmp/dang-kea-missing-" + std::to_string(getpid()) + ".sock";
+  unlink(missing_peer_path.c_str());
+  error.clear();
+  auto missing_response = dang::plugins::kea::SendControlQuery(
+      missing_peer_path, "missing-peer-test", nlohmann::json::object(), &error);
+  valid &= Check(!missing_response &&
+                     error.find("cannot connect") != std::string::npos,
+                 "missing Kea peer did not return a connection error");
 
   const std::string closed_socket =
       "/tmp/dang-kea-closed-" + std::to_string(getpid()) + ".sock";

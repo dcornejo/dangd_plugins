@@ -173,8 +173,8 @@ Use `/var/run/kea` on the tested FreeBSD package. The same paths must appear
 in each modeled `control-sockets` list so a successful `config-set` keeps the
 management channel available. The plugin rejects a replacement that omits or
 changes that UNIX socket, and refuses missing or overlong environment paths and
-uses a single five-second deadline plus a 16 MiB response ceiling for each local
-exchange.
+uses a single five-second deadline covering nonblocking connect, write, and read
+plus 16 MiB request and response ceilings for each local exchange.
 
 On Ubuntu, install `kea-dhcp4-server` and `kea-dhcp6-server`. On FreeBSD,
 install the `kea` package. The isolated tests use unique socket and PID paths,

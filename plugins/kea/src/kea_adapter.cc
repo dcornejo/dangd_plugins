@@ -13,6 +13,7 @@
 
 #include <libxml/parser.h>
 #include <libxml/tree.h>
+#include <fcntl.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -22,6 +23,7 @@
 #include <cerrno>
 #include <charconv>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -971,9 +973,39 @@ std::optional<nlohmann::json> SendControlQuery(
   address.sun_family = AF_UNIX;
   std::memcpy(address.sun_path, socket_path.data(), socket_path.size());
   address.sun_path[socket_path.size()] = '\0';
+  const auto address_size = static_cast<socklen_t>(
+      offsetof(sockaddr_un, sun_path) + socket_path.size() + 1);
+  const int descriptor_flags = fcntl(descriptor, F_GETFL, 0);
+  if (descriptor_flags < 0 ||
+      fcntl(descriptor, F_SETFL, descriptor_flags | O_NONBLOCK) != 0) {
+    if (error) *error = std::string("cannot make Kea control socket nonblocking: ") +
+        std::strerror(errno);
+    close(descriptor);
+    return std::nullopt;
+  }
+  const auto deadline = std::chrono::steady_clock::now() + kSocketTimeout;
   if (connect(descriptor, reinterpret_cast<const sockaddr*>(&address),
-              sizeof(address)) != 0) {
-    if (error) *error = "cannot connect to " + std::string(socket_path) + ": " +
+              address_size) != 0) {
+    if (errno != EINPROGRESS || !WaitFor(descriptor, POLLOUT, deadline, error)) {
+      if (errno != EINPROGRESS && error)
+        *error = "cannot connect to " + std::string(socket_path) + ": " +
+            std::strerror(errno);
+      close(descriptor);
+      return std::nullopt;
+    }
+    int connect_error = 0;
+    socklen_t connect_error_size = sizeof(connect_error);
+    if (getsockopt(descriptor, SOL_SOCKET, SO_ERROR, &connect_error,
+                   &connect_error_size) != 0 || connect_error != 0) {
+      if (error)
+        *error = "cannot connect to " + std::string(socket_path) + ": " +
+            std::strerror(connect_error != 0 ? connect_error : errno);
+      close(descriptor);
+      return std::nullopt;
+    }
+  }
+  if (fcntl(descriptor, F_SETFL, descriptor_flags) != 0) {
+    if (error) *error = std::string("cannot restore Kea control socket mode: ") +
         std::strerror(errno);
     close(descriptor);
     return std::nullopt;
@@ -991,7 +1023,6 @@ std::optional<nlohmann::json> SendControlQuery(
     return std::nullopt;
   }
 #endif
-  const auto deadline = std::chrono::steady_clock::now() + kSocketTimeout;
   std::size_t sent = 0;
   while (sent < request.size()) {
     if (!WaitFor(descriptor, POLLOUT, deadline, error)) {
