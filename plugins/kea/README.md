@@ -122,6 +122,9 @@ types, and out-of-range integers fail rather than being omitted or stringified.
 Kea's empty-set result is exposed as an empty collection.
 JSON serialization of lease, host, and option user contexts and paged entries
 is exception-contained; malformed native strings fail the operational request.
+Every native string is also checked for valid UTF-8 and the XML 1.0 character
+range before escaping, so JSON control characters cannot make the claimed-
+complete operational result malformed XML.
 Duplicate lease addresses, statistic subnet IDs, or composite reservation keys
 fail the retrieval rather than producing schema-invalid complete state.
 Statistics column names must be unique strings, and every modeled counter must

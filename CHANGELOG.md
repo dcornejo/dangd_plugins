@@ -29,6 +29,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Validated UTF-8 and XML 1.0 character ranges for every Kea string emitted as
+  operational XML. Native control characters, malformed byte sequences, and
+  forbidden code points now fail complete retrieval with the affected field
+  identified instead of producing malformed XML.
+
 - Kept Kea control sockets nonblocking through request writes and response
   reads, with retry handling for readiness races. A connected peer that stops
   consuming a large request can no longer hold dangd beyond the exchange's

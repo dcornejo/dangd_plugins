@@ -364,6 +364,15 @@ int main() {
                      &error) &&
                      error.find("hostname") != std::string::npos,
                  "object-valued lease hostname was stringified");
+  auto control_hostname = leases4;
+  control_hostname["arguments"]["leases"][0]["hostname"] =
+      std::string("bad\x01name", 8);
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", control_hostname, stats4, hosts4,
+                     &error) &&
+                     error.find("hostname") != std::string::npos &&
+                     error.find("valid XML text") != std::string::npos,
+                 "XML-forbidden lease hostname was published");
   auto malformed_lease_context = leases4;
   malformed_lease_context["arguments"]["leases"][0]["user-context"] =
       std::string(1, static_cast<char>(0xff));
@@ -427,6 +436,15 @@ int main() {
                      &error) &&
                      error.find("hostname") != std::string::npos,
                  "object-valued reservation hostname was stringified");
+  auto malformed_host_name = hosts4;
+  malformed_host_name["arguments"]["hosts"][0]["hostname"] =
+      std::string(1, static_cast<char>(0xff));
+  valid &= Check(!dang::plugins::kea::TranslateOperationalState(
+                     "kea-dhcp4-server", leases4, stats4,
+                     malformed_host_name, &error) &&
+                     error.find("hostname") != std::string::npos &&
+                     error.find("valid XML text") != std::string::npos,
+                 "malformed UTF-8 reservation hostname was published");
   auto oversized_option_code = hosts4;
   oversized_option_code["arguments"]["hosts"][0]["option-data"][0]["code"] =
       256;

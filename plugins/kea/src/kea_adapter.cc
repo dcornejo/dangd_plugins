@@ -328,7 +328,57 @@ std::optional<std::string> MissingRequiredHook(const nlohmann::json& body) {
   return std::nullopt;
 }
 
-std::string XmlEscape(std::string_view value) {
+bool IsXmlText(std::string_view value) {
+  for (std::size_t offset = 0; offset < value.size();) {
+    const auto first = static_cast<unsigned char>(value[offset]);
+    std::uint32_t codepoint = 0;
+    std::size_t length = 0;
+    if (first <= 0x7f) {
+      codepoint = first;
+      length = 1;
+    } else if (first >= 0xc2 && first <= 0xdf) {
+      codepoint = first & 0x1f;
+      length = 2;
+    } else if (first >= 0xe0 && first <= 0xef) {
+      codepoint = first & 0x0f;
+      length = 3;
+    } else if (first >= 0xf0 && first <= 0xf4) {
+      codepoint = first & 0x07;
+      length = 4;
+    } else {
+      return false;
+    }
+    if (offset + length > value.size()) return false;
+    for (std::size_t index = 1; index < length; ++index) {
+      const auto continuation =
+          static_cast<unsigned char>(value[offset + index]);
+      if ((continuation & 0xc0) != 0x80) return false;
+      codepoint = (codepoint << 6) | (continuation & 0x3f);
+    }
+    if ((length == 3 && first == 0xe0 && codepoint < 0x800) ||
+        (length == 3 && first == 0xed && codepoint >= 0xd800) ||
+        (length == 4 && first == 0xf0 && codepoint < 0x10000) ||
+        (length == 4 && first == 0xf4 && codepoint > 0x10ffff))
+      return false;
+    const bool xml_character = codepoint == 0x9 || codepoint == 0xa ||
+        codepoint == 0xd || (codepoint >= 0x20 && codepoint <= 0xd7ff) ||
+        (codepoint >= 0xe000 && codepoint <= 0xfffd) ||
+        (codepoint >= 0x10000 && codepoint <= 0x10ffff);
+    if (!xml_character) return false;
+    offset += length;
+  }
+  return true;
+}
+
+std::optional<std::string> XmlText(std::string_view value,
+                                   std::string_view description,
+                                   std::string* error) {
+  if (!IsXmlText(value)) {
+    if (error)
+      *error = "Kea response field " + std::string(description) +
+          " is not valid XML text";
+    return std::nullopt;
+  }
   std::string escaped;
   escaped.reserve(value.size());
   for (const char character : value) {
@@ -341,7 +391,7 @@ std::string XmlEscape(std::string_view value) {
       default: escaped += character;
     }
   }
-  return escaped;
+  return std::optional<std::string>(std::move(escaped));
 }
 
 std::optional<std::string> JsonText(const nlohmann::json& value,
@@ -414,8 +464,10 @@ bool AppendStringLeaf(std::string* xml, std::string_view name,
         " is not a string";
     return false;
   }
-  *xml += "<" + std::string(name) + ">" +
-      XmlEscape(found->get<std::string>()) + "</" + std::string(name) + ">";
+  auto escaped = XmlText(found->get_ref<const std::string&>(), key, error);
+  if (!escaped) return false;
+  *xml += "<" + std::string(name) + ">" + *escaped + "</" +
+      std::string(name) + ">";
   return true;
 }
 
@@ -586,7 +638,9 @@ std::optional<std::string> BuildLeases(const nlohmann::json& response,
         context != lease.end()) {
       auto context_text = JsonText(*context, "lease user-context", error);
       if (!context_text) return std::nullopt;
-      xml += "<user-context>" + XmlEscape(*context_text) + "</user-context>";
+      auto escaped = XmlText(*context_text, "lease user-context", error);
+      if (!escaped) return std::nullopt;
+      xml += "<user-context>" + *escaped + "</user-context>";
     }
     if (dhcp6)
       if (!AppendStringLeaf(&xml, "hw-address", lease, "hw-address", false,
@@ -725,15 +779,19 @@ bool AppendOptionData(std::string* xml, const nlohmann::json& host, bool dhcp6,
                      "client-classes";
           return false;
         }
-        *xml += "<client-classes>" + XmlEscape(value.get<std::string>()) +
-                "</client-classes>";
+        auto escaped = XmlText(value.get_ref<const std::string&>(),
+                               "option client-classes", error);
+        if (!escaped) return false;
+        *xml += "<client-classes>" + *escaped + "</client-classes>";
       }
     }
     if (const auto context = option.find("user-context");
         context != option.end()) {
       auto context_text = JsonText(*context, "option user-context", error);
       if (!context_text) return false;
-      *xml += "<user-context>" + XmlEscape(*context_text) + "</user-context>";
+      auto escaped = XmlText(*context_text, "option user-context", error);
+      if (!escaped) return false;
+      *xml += "<user-context>" + *escaped + "</user-context>";
     }
     *xml += "</option-data>";
   }
@@ -818,7 +876,9 @@ std::optional<std::string> BuildHosts(const nlohmann::json& response,
                             std::numeric_limits<std::uint32_t>::max(), error))
       return std::nullopt;
     xml += "<identifier-type>" + identifier_type + "</identifier-type>";
-    xml += "<identifier>" + XmlEscape(identifier) + "</identifier>";
+    auto escaped_identifier = XmlText(identifier, "host identifier", error);
+    if (!escaped_identifier) return std::nullopt;
+    xml += "<identifier>" + *escaped_identifier + "</identifier>";
     if (dhcp6) {
       for (const std::string_view name :
            {"ip-addresses", "prefixes", "excluded-prefixes"}) {
@@ -837,8 +897,10 @@ std::optional<std::string> BuildHosts(const nlohmann::json& response,
                   std::string(name);
             return std::nullopt;
           }
-          xml += "<" + std::string(name) + ">" +
-                 XmlEscape(value.get<std::string>()) + "</" +
+          auto escaped = XmlText(value.get_ref<const std::string&>(), name,
+                                 error);
+          if (!escaped) return std::nullopt;
+          xml += "<" + std::string(name) + ">" + *escaped + "</" +
                  std::string(name) + ">";
         }
       }
@@ -866,14 +928,18 @@ std::optional<std::string> BuildHosts(const nlohmann::json& response,
             *error = "Kea host reply has invalid or duplicate client-classes";
           return std::nullopt;
         }
-        xml += "<client-classes>" + XmlEscape(value.get<std::string>()) +
-               "</client-classes>";
+        auto escaped = XmlText(value.get_ref<const std::string&>(),
+                               "host client-classes", error);
+        if (!escaped) return std::nullopt;
+        xml += "<client-classes>" + *escaped + "</client-classes>";
       }
     }
     if (const auto context = host.find("user-context"); context != host.end()) {
       auto context_text = JsonText(*context, "host user-context", error);
       if (!context_text) return std::nullopt;
-      xml += "<user-context>" + XmlEscape(*context_text) + "</user-context>";
+      auto escaped = XmlText(*context_text, "host user-context", error);
+      if (!escaped) return std::nullopt;
+      xml += "<user-context>" + *escaped + "</user-context>";
     }
     xml += "</host>";
   }
