@@ -29,6 +29,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Rejected foreign-namespace descendants in Kea configuration containers.
+  Elements from another model can no longer acquire Kea control-socket, hook,
+  or configuration semantics merely by reusing a recognized local name.
+
 - Rejected embedded NUL bytes in Kea UNIX control-socket paths during both
   configuration translation and direct queries. The plugin's validated socket
   identity can no longer differ from the pathname interpreted by the kernel.

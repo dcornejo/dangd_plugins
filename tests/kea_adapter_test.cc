@@ -89,6 +89,26 @@ int main() {
                          error.find("preserve the managed UNIX control socket") !=
                              std::string::npos,
                      "configuration without the managed socket was accepted");
+  constexpr char foreign_namespace_xml[] = R"xml(
+    <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server"
+            xmlns:other="urn:example:other">
+      <other:control-sockets><other:socket-type>unix</other:socket-type>
+        <other:socket-name>/tmp/kea4.sock</other:socket-name>
+      </other:control-sockets>
+      <other:hook-library><other:library>/opt/kea/libdhcp_lease_cmds.so</other:library>
+      </other:hook-library>
+      <other:hook-library><other:library>/opt/kea/libdhcp_stat_cmds.so</other:library>
+      </other:hook-library>
+      <other:hook-library><other:library>/opt/kea/libdhcp_host_cmds.so</other:library>
+      </other:hook-library>
+    </config>)xml";
+  error.clear();
+  auto foreign_namespace = dang::plugins::kea::TranslateConfiguration(
+      foreign_namespace_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  valid &= Check(!foreign_namespace &&
+                     error.find("foreign-namespace element control-sockets") !=
+                         std::string::npos,
+                 "foreign elements acquired Kea configuration semantics");
   constexpr char deprecated_socket_xml[] = R"xml(
     <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
       <control-socket><socket-type>unix</socket-type>

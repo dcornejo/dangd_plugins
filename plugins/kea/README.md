@@ -113,6 +113,9 @@ production-supported.
 Malformed XML structures that cannot be converted to Kea's required JSON
 types fail with a controlled plugin error, and snapshots larger than libxml's
 signed input-length interface are rejected before parsing.
+Every descendant of a selected Kea `config` container must remain in that
+module's namespace; a foreign element cannot acquire Kea semantics merely by
+reusing a recognized local name.
 
 The provider implements the complete configuration and state trees of the two
 pinned modules. Through ABI v6 it owns configuration and publishes each

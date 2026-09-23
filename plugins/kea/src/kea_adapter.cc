@@ -240,6 +240,17 @@ const xmlNode* FindConfiguration(const xmlNode* node,
   return nullptr;
 }
 
+std::optional<std::string> ForeignElement(
+    const xmlNode* node, std::string_view expected_namespace) {
+  if (!node) return std::nullopt;
+  if (node->type == XML_ELEMENT_NODE && Namespace(node) != expected_namespace)
+    return LocalName(node);
+  for (const xmlNode* child = node->children; child; child = child->next)
+    if (auto foreign = ForeignElement(child, expected_namespace); foreign)
+      return foreign;
+  return std::nullopt;
+}
+
 bool WaitFor(int descriptor, short events,
              std::chrono::steady_clock::time_point deadline,
              std::string* error) {
@@ -1030,6 +1041,16 @@ std::optional<ServerConfiguration> TranslateConfiguration(
       "urn:ietf:params:xml:ns:yang:" + std::string(module_name);
   const xmlNode* config = FindConfiguration(xmlDocGetRootElement(document),
                                              expected_namespace);
+  if (config) {
+    if (const auto foreign = ForeignElement(config, expected_namespace);
+        foreign) {
+      xmlFreeDoc(document);
+      if (error)
+        *error = "Kea configuration contains foreign-namespace element " +
+            *foreign;
+      return std::nullopt;
+    }
+  }
   nlohmann::json body;
   try {
     body = config ? ConvertNode(config) : nlohmann::json::object();
