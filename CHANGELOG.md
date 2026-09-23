@@ -30,6 +30,10 @@ All notable changes to the external dangd plugin collection are recorded here.
   absent. A DHCPv6-only candidate must fail at the DHCPv6 module and exact
   configuration path without attempting the unchanged DHCPv4 image.
 
+- Added native operational-failure attribution coverage. After a no-op
+  transaction, an unavailable DHCPv4 socket must fail complete state retrieval
+  at the DHCPv4 lease subtree without issuing any configuration command.
+
 - Added a bidirectional cross-host Kea interaction for one Linux and one
   FreeBSD secondary interface on an isolated VLAN. A minimal socket-level
   client sends DHCPv4 INIT-REBOOT and DHCPv6 Rapid Commit requests, then the

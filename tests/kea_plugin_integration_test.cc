@@ -69,6 +69,8 @@ int main(int argc, char** argv) {
       std::getenv("DANG_KEA_EXPECT_APPLY_FAILURE");
   const char* expected_validate_failure =
       std::getenv("DANG_KEA_EXPECT_VALIDATE_FAILURE");
+  const char* expected_operational_failure =
+      std::getenv("DANG_KEA_EXPECT_OPERATIONAL_FAILURE");
   void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
   auto initialize = library ? reinterpret_cast<DangPluginInitV6>(
       dlsym(library, "dang_plugin_init_v6")) : nullptr;
@@ -196,6 +198,19 @@ int main(int argc, char** argv) {
             std::string::npos;
     if (!valid) std::cerr << "operational XML is incomplete: " << xml << '\n';
   }
+  if (valid && expected_operational_failure) {
+    DangOperationalDataV2 state{};
+    const bool retrieved =
+        plugin5->get_operational_data_v2(plugin->context, &state, &error);
+    const std::string expected_path =
+        "/{urn:ietf:params:xml:ns:yang:" +
+        std::string(expected_operational_failure) + "}state/leases";
+    valid = !retrieved && error.message && error.instance_path &&
+        std::string_view(error.message).find(expected_operational_failure) !=
+            std::string_view::npos &&
+        std::string_view(error.instance_path) == expected_path;
+    if (!valid) Report("expected operational rejection", error);
+  }
   if (valid && !expected_validate_failure && !expected_apply_failure) {
     const bool rolled_back = plugin5->v4.rollback_hardware_action(
         plugin->context, prepared, action.action_id, &error);
@@ -216,7 +231,9 @@ int main(int argc, char** argv) {
   if (plugin->destroy) plugin->destroy(plugin->context);
   dlclose(library);
   if (valid)
-    std::cout << (expected_validate_failure
+    std::cout << (expected_operational_failure
+        ? "Kea operational failure attribution passed\n"
+        : expected_validate_failure
         ? "Kea validation failure attribution passed\n"
         : expected_apply_failure
         ? "Kea apply failure attribution and compensation passed\n"

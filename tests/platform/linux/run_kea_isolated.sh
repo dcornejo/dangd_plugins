@@ -120,6 +120,15 @@ DANG_KEA_DHCP6_SOCKET="$unavailable6" \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-before-validation-linux.xml \
   /tmp/kea-proposed-validation-linux.xml
 
+# A no-op transaction reaches no daemon, after which complete state retrieval
+# must attribute the unavailable DHCPv4 lease source precisely.
+DANG_KEA_EXPECT_OPERATIONAL_FAILURE=kea-dhcp4-server \
+DANG_KEA_DHCP4_SOCKET="$unavailable4" \
+DANG_KEA_DHCP6_SOCKET="$socket6" \
+  ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before6-linux.xml \
+  /tmp/kea-before6-linux.xml
+
 DANG_KEA_DHCP4_SOCKET="$socket4" \
 DANG_KEA_DHCP6_SOCKET="$socket6" \
   ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \

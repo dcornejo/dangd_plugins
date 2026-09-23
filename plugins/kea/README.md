@@ -349,7 +349,10 @@ Successful validation, apply, and rollback therefore prove against packaged
 Kea that the plugin does not contact either unchanged daemon. With both sockets
 absent, each script also requires a DHCPv6-only validation failure to carry the
 DHCPv6 module and exact configuration path, proving the unchanged DHCPv4 image
-is not consulted. Each script then
+is not consulted. A no-op transaction with unavailable DHCPv4 then requires a
+complete operational request to fail at the DHCPv4 lease subtree, proving
+structural attribution on the read side without issuing configuration calls.
+Each script then
 lets a DHCPv4-only `config-test` succeed, removes the changed daemon's socket
 before apply, and requires both the failed apply and failed conservative
 compensation to carry the DHCPv4 module and configuration instance path.

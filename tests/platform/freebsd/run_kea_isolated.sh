@@ -111,6 +111,16 @@ jexec -l -U root "$jail_name" env \
   /tmp/kea-before-validation-freebsd.xml \
   /tmp/kea-proposed-validation-freebsd.xml
 
+# A no-op transaction reaches no daemon, then complete state retrieval must
+# attribute the unavailable DHCPv4 lease source precisely.
+jexec -l -U root "$jail_name" env \
+  DANG_KEA_EXPECT_OPERATIONAL_FAILURE=kea-dhcp4-server \
+  DANG_KEA_DHCP4_SOCKET="$unavailable4" \
+  DANG_KEA_DHCP6_SOCKET="$socket6" \
+  "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before6-freebsd.xml \
+  /tmp/kea-before6-freebsd.xml
+
 jexec -l -U root "$jail_name" env \
   DANG_KEA_DHCP4_SOCKET="$socket4" \
   DANG_KEA_DHCP6_SOCKET="$socket6" \
