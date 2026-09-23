@@ -20,6 +20,12 @@ All notable changes to the external dangd plugin collection are recorded here.
   socket after apply and requires rollback to report both its module and exact
   configuration instance path.
 
+- Added native coverage for the outcome-unknown Kea apply path. After a
+  successful `config-test`, the workflow removes the changed DHCPv4 daemon's
+  socket before `config-set` and requires the apply error to identify its
+  module and configuration path while retaining the failed compensation
+  diagnostic.
+
 - Added a bidirectional cross-host Kea interaction for one Linux and one
   FreeBSD secondary interface on an isolated VLAN. A minimal socket-level
   client sends DHCPv4 INIT-REBOOT and DHCPv6 Rapid Commit requests, then the

@@ -120,6 +120,17 @@ jexec -l -U root "$jail_name" env \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-before4-freebsd.xml \
   /tmp/kea-proposed4-freebsd.xml
 
+# Let validation succeed, remove DHCPv4 immediately before apply, and require
+# structural attribution of both apply and conservative compensation failure.
+jexec -l -U root "$jail_name" env \
+  DANG_KEA_SKIP_OPERATIONAL=1 \
+  DANG_KEA_EXPECT_APPLY_FAILURE=kea-dhcp4-server \
+  DANG_KEA_DHCP4_SOCKET="$socket4" \
+  DANG_KEA_DHCP6_SOCKET="$unavailable6" \
+  "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before4-freebsd.xml \
+  /tmp/kea-proposed4-freebsd.xml
+
 # Run this destructive socket-removal case last and require structural
 # attribution of the expected DHCPv6 rollback failure.
 jexec -l -U root "$jail_name" env \
