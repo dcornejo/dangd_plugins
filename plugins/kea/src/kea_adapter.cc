@@ -407,6 +407,22 @@ std::optional<std::string> JsonText(const nlohmann::json& value,
   }
 }
 
+std::optional<nlohmann::json> RunControlQuery(
+    const ControlQuery& query, std::string_view socket_path,
+    std::string_view command, const nlohmann::json& arguments,
+    std::string* error) {
+  try {
+    return query(socket_path, command, arguments, error);
+  } catch (const std::exception& exception) {
+    if (error)
+      *error = std::string("Kea control query threw: ") + exception.what();
+    return std::nullopt;
+  } catch (...) {
+    if (error) *error = "Kea control query threw an unknown exception";
+    return std::nullopt;
+  }
+}
+
 std::optional<std::string> BinaryBase64(std::string_view hexadecimal) {
   // Kea normally renders binary identities as colon-separated octets, while
   // some control-command producers use one contiguous hexadecimal string.
@@ -1207,7 +1223,8 @@ std::optional<nlohmann::json> CollectLeasePages(
     }
     const nlohmann::json arguments{{"from", cursor},
                                    {"limit", limits.page_size}};
-    auto response = query(socket_path, command, arguments, error);
+    auto response = RunControlQuery(query, socket_path, command, arguments,
+                                    error);
     if (!response) return std::nullopt;
     if (std::chrono::steady_clock::now() >= deadline) {
       if (error) *error = "Kea lease enumeration exceeded its deadline";
@@ -1301,7 +1318,8 @@ std::optional<nlohmann::json> CollectHostPages(
     }
     nlohmann::json arguments{{"limit", limits.page_size}};
     arguments.update(cursor);
-    auto response = query(socket_path, "reservation-get-page", arguments, error);
+    auto response = RunControlQuery(query, socket_path, "reservation-get-page",
+                                    arguments, error);
     if (!response) return std::nullopt;
     if (std::chrono::steady_clock::now() >= deadline) {
       if (error) *error = "Kea host enumeration exceeded its deadline";
@@ -1411,8 +1429,9 @@ std::optional<nlohmann::json> CollectStatistics(
       if (error) *error = "Kea statistics collection exceeded its deadline";
       return std::nullopt;
     }
-    auto response = query(socket_path, command,
-                          nlohmann::json{{"subnet-id", subnet_id}}, error);
+    auto response = RunControlQuery(
+        query, socket_path, command, nlohmann::json{{"subnet-id", subnet_id}},
+        error);
     if (!response) return std::nullopt;
     if (std::chrono::steady_clock::now() >= deadline) {
       if (error) *error = "Kea statistics collection exceeded its deadline";

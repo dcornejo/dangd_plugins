@@ -29,6 +29,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Contained exceptions from Kea operational control-query implementations for
+  lease, reservation, and statistics collection. Transport implementation
+  failures now become attributed retrieval errors instead of escaping the
+  plugin callback boundary.
+
 - Enforced Kea aggregate operational deadlines after every lease, reservation,
   and statistics control call as well as before it. A slow final reply can no
   longer be accepted after the configured collection budget expires.

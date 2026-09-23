@@ -814,6 +814,32 @@ int main() {
        .maximum_duration = std::chrono::milliseconds(1)});
   valid &= Check(!late_statistics && error.find("deadline") != std::string::npos,
                  "a statistics reply arriving after the deadline was accepted");
+  const dang::plugins::kea::ControlQuery throwing_query =
+      [](std::string_view, std::string_view, const nlohmann::json&,
+         std::string*) -> std::optional<nlohmann::json> {
+    throw std::runtime_error("query implementation failed");
+  };
+  error.clear();
+  auto throwing_lease_page = dang::plugins::kea::CollectLeasePages(
+      "/tmp/kea4.sock", false, throwing_query, &error);
+  valid &= Check(!throwing_lease_page &&
+                     error.find("query implementation failed") !=
+                         std::string::npos,
+                 "a throwing lease query escaped the collector");
+  error.clear();
+  auto throwing_host_page = dang::plugins::kea::CollectHostPages(
+      "/tmp/kea4.sock", throwing_query, &error);
+  valid &= Check(!throwing_host_page &&
+                     error.find("query implementation failed") !=
+                         std::string::npos,
+                 "a throwing host query escaped the collector");
+  error.clear();
+  auto throwing_statistics = dang::plugins::kea::CollectStatistics(
+      "/tmp/kea4.sock", false, {4}, throwing_query, &error);
+  valid &= Check(!throwing_statistics &&
+                     error.find("query implementation failed") !=
+                         std::string::npos,
+                 "a throwing statistics query escaped the collector");
 
   error.clear();
   auto excessive_statistics = dang::plugins::kea::CollectStatistics(
