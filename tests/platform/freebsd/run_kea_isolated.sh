@@ -130,6 +130,17 @@ jexec -l -U root "$jail_name" env \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-before4-freebsd.xml \
   /tmp/kea-before4-freebsd.xml
 
+# Reconcile a configured DHCPv4 subnet that the untouched boot daemon lacks.
+# Complete state must fail closed rather than publish empty lease statistics.
+jexec -l -U root "$jail_name" env \
+  DANG_KEA_EXPECT_OPERATIONAL_FAILURE=kea-dhcp4-server \
+  DANG_KEA_EXPECT_OPERATIONAL_SUBTREE=lease-stats \
+  DANG_KEA_DHCP4_SOCKET="$socket4" \
+  DANG_KEA_DHCP6_SOCKET="$unavailable6" \
+  "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-proposed4-freebsd.xml \
+  /tmp/kea-proposed4-freebsd.xml
+
 jexec -l -U root "$jail_name" env \
   DANG_KEA_DHCP4_SOCKET="$socket4" \
   DANG_KEA_DHCP6_SOCKET="$socket6" \

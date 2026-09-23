@@ -71,6 +71,8 @@ int main(int argc, char** argv) {
       std::getenv("DANG_KEA_EXPECT_VALIDATE_FAILURE");
   const char* expected_operational_failure =
       std::getenv("DANG_KEA_EXPECT_OPERATIONAL_FAILURE");
+  const char* expected_operational_subtree =
+      std::getenv("DANG_KEA_EXPECT_OPERATIONAL_SUBTREE");
   void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
   auto initialize = library ? reinterpret_cast<DangPluginInitV6>(
       dlsym(library, "dang_plugin_init_v6")) : nullptr;
@@ -204,7 +206,9 @@ int main(int argc, char** argv) {
         plugin5->get_operational_data_v2(plugin->context, &state, &error);
     const std::string expected_path =
         "/{urn:ietf:params:xml:ns:yang:" +
-        std::string(expected_operational_failure) + "}state/leases";
+        std::string(expected_operational_failure) + "}state/" +
+        (expected_operational_subtree ? expected_operational_subtree
+                                      : "leases");
     valid = !retrieved && error.message && error.instance_path &&
         std::string_view(error.message).find(expected_operational_failure) !=
             std::string_view::npos &&

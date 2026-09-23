@@ -56,6 +56,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Failed complete Kea operational retrieval when the daemon reports no
+  statistics for an exact subnet present in dangd's accepted configuration.
+  Native configuration drift can no longer masquerade as a complete empty
+  `lease-stats` tree; Linux and FreeBSD workflows exercise the mismatch.
+
 - Added module and configuration-instance-path attribution to explicit Kea
   rollback failures. Rollback now shares the transaction pairing checks used
   by apply, skips unchanged daemons, continues restoring earlier changed

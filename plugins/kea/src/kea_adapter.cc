@@ -1695,7 +1695,12 @@ std::optional<nlohmann::json> CollectStatistics(
       if (error) *error = "Kea statistics reply omits an integer result";
       return std::nullopt;
     }
-    if (IsResultCode(answer->at("result"), 3)) continue;
+    if (IsResultCode(answer->at("result"), 3)) {
+      if (error)
+        *error = "Kea has no statistics for configured subnet " +
+            std::to_string(subnet_id);
+      return std::nullopt;
+    }
     if (!IsResultCode(answer->at("result"), 0)) {
       if (error)
         *error = RejectionReason(*answer, "Kea rejected statistics query");

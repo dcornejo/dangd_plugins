@@ -212,7 +212,10 @@ all-subnet result. The provider combines those results under the same 512-query,
 65,536-row, 8 MiB, and 30-second aggregate limits. Every successful reply must
 contain one unambiguous row whose
 `subnet-id` matches the exact query; mismatched identities, duplicate columns,
-or multiple rows fail the complete retrieval. Candidate validation does not
+multiple rows, or Kea reporting no statistics for an accepted configured
+subnet fail the complete retrieval. The latter detects datastore/daemon drift
+instead of publishing a misleading complete empty statistics tree.
+Candidate validation does not
 change that inventory; successful apply
 and rollback callbacks update it atomically. On startup, ABI-v6 applied-state
 reconciliation rebuilds both subnet inventories from dangd's accepted snapshot
@@ -353,6 +356,9 @@ is not consulted. No-op transactions with first DHCPv4 and then DHCPv6
 unavailable require complete operational requests to fail at the matching
 lease subtree. The DHCPv6 case first completes every DHCPv4 state query, proving
 structural attribution in both directions without issuing configuration calls.
+The workflow also reconciles a configured DHCPv4 subnet absent from the live
+boot daemon and requires complete state to fail at `state/lease-stats`, proving
+that native configuration drift cannot masquerade as empty complete state.
 Each script then
 lets a DHCPv4-only `config-test` succeed, removes the changed daemon's socket
 before apply, and requires both the failed apply and failed conservative

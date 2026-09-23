@@ -1029,6 +1029,18 @@ int main() {
        .maximum_duration = std::chrono::milliseconds(1)});
   valid &= Check(!late_statistics && error.find("deadline") != std::string::npos,
                  "a statistics reply arriving after the deadline was accepted");
+  const dang::plugins::kea::ControlQuery missing_statistics =
+      [](std::string_view, std::string_view, const nlohmann::json&,
+         std::string*) -> std::optional<nlohmann::json> {
+    return nlohmann::json{{"result", 3}};
+  };
+  error.clear();
+  auto absent_configured_statistics =
+      dang::plugins::kea::CollectStatistics(
+          "/tmp/kea4.sock", false, {4}, missing_statistics, &error);
+  valid &= Check(!absent_configured_statistics &&
+                     error.find("configured subnet 4") != std::string::npos,
+                 "missing configured-subnet statistics were treated as empty");
   const dang::plugins::kea::ControlQuery throwing_query =
       [](std::string_view, std::string_view, const nlohmann::json&,
          std::string*) -> std::optional<nlohmann::json> {
