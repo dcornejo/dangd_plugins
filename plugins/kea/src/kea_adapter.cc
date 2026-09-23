@@ -228,16 +228,17 @@ nlohmann::json ConvertNode(const xmlNode* node) {
   return result;
 }
 
-const xmlNode* FindConfiguration(const xmlNode* node,
-                                 std::string_view expected_namespace) {
-  if (!node) return nullptr;
+void FindConfigurations(const xmlNode* node,
+                        std::string_view expected_namespace,
+                        const xmlNode** first, std::size_t* count) {
+  if (!node) return;
   if (node->type == XML_ELEMENT_NODE && LocalName(node) == "config" &&
-      Namespace(node) == expected_namespace)
-    return node;
+      Namespace(node) == expected_namespace) {
+    if (*count == 0) *first = node;
+    ++*count;
+  }
   for (const xmlNode* child = node->children; child; child = child->next)
-    if (const xmlNode* found = FindConfiguration(child, expected_namespace))
-      return found;
-  return nullptr;
+    FindConfigurations(child, expected_namespace, first, count);
 }
 
 std::optional<std::string> ForeignElement(
@@ -1039,8 +1040,15 @@ std::optional<ServerConfiguration> TranslateConfiguration(
   }
   const std::string expected_namespace =
       "urn:ietf:params:xml:ns:yang:" + std::string(module_name);
-  const xmlNode* config = FindConfiguration(xmlDocGetRootElement(document),
-                                             expected_namespace);
+  const xmlNode* config = nullptr;
+  std::size_t configuration_count = 0;
+  FindConfigurations(xmlDocGetRootElement(document), expected_namespace,
+                     &config, &configuration_count);
+  if (configuration_count > 1) {
+    xmlFreeDoc(document);
+    if (error) *error = "Kea datastore contains multiple configuration containers";
+    return std::nullopt;
+  }
   if (config) {
     if (const auto foreign = ForeignElement(config, expected_namespace);
         foreign) {

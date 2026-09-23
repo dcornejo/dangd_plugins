@@ -109,6 +109,19 @@ int main() {
                      error.find("foreign-namespace element control-sockets") !=
                          std::string::npos,
                  "foreign elements acquired Kea configuration semantics");
+  constexpr char duplicate_configuration_xml[] = R"xml(
+    <data xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+      <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server"/>
+      <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server"/>
+    </data>)xml";
+  error.clear();
+  auto duplicate_configuration = dang::plugins::kea::TranslateConfiguration(
+      duplicate_configuration_xml, "kea-dhcp4-server", "/tmp/kea4.sock",
+      &error);
+  valid &= Check(!duplicate_configuration &&
+                     error.find("multiple configuration containers") !=
+                         std::string::npos,
+                 "duplicate Kea configuration containers were accepted");
   constexpr char deprecated_socket_xml[] = R"xml(
     <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
       <control-socket><socket-type>unix</socket-type>

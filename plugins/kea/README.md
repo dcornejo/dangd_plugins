@@ -116,6 +116,9 @@ signed input-length interface are rejected before parsing.
 Every descendant of a selected Kea `config` container must remain in that
 module's namespace; a foreign element cannot acquire Kea semantics merely by
 reusing a recognized local name.
+Exactly one configuration container may match each Kea module. Ambiguous
+snapshots with duplicate module containers fail instead of silently selecting
+the first tree and ignoring the second.
 
 The provider implements the complete configuration and state trees of the two
 pinned modules. Through ABI v6 it owns configuration and publishes each

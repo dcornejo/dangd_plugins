@@ -29,6 +29,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Rejected datastore snapshots containing multiple matching Kea configuration
+  containers. Translation no longer silently selects the first module tree and
+  ignores a conflicting duplicate.
+
 - Rejected foreign-namespace descendants in Kea configuration containers.
   Elements from another model can no longer acquire Kea control-socket, hook,
   or configuration semantics merely by reusing a recognized local name.
