@@ -52,6 +52,8 @@ int main(int argc, char** argv) {
   const std::string before = Read(argv[2]);
   const std::string proposed = Read(argv[3]);
   const bool no_op = before == proposed;
+  const bool skip_operational =
+      std::getenv("DANG_KEA_SKIP_OPERATIONAL") != nullptr;
   void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
   auto initialize = library ? reinterpret_cast<DangPluginInitV6>(
       dlsym(library, "dang_plugin_init_v6")) : nullptr;
@@ -90,18 +92,18 @@ int main(int argc, char** argv) {
         plugin5->v4.apply_hardware_action(plugin->context, prepared,
                                           action.action_id, &error))
         || Report("apply", error);
-  if (valid && !no_op)
+  if (valid && !no_op && !skip_operational)
     valid = NativeCommand(std::getenv("DANG_KEA_DHCP4_SOCKET"), "lease4-add",
                           {{"subnet-id", 401},
                            {"ip-address", "192.0.2.80"},
                            {"hw-address", "02:00:00:00:04:01"}});
-  if (valid && !no_op)
+  if (valid && !no_op && !skip_operational)
     valid = NativeCommand(std::getenv("DANG_KEA_DHCP6_SOCKET"), "lease6-add",
                           {{"subnet-id", 601},
                            {"ip-address", "2001:db8:6::180"},
                            {"duid", "00:01:00:01:02:03:04:05:06:07:08:09"},
                            {"iaid", 1234}});
-  if (valid && !no_op) {
+  if (valid && !no_op && !skip_operational) {
     DangOperationalDataV2 state{};
     valid = plugin5->get_operational_data_v2(plugin->context, &state, &error)
         || Report("operational", error);
@@ -149,6 +151,8 @@ int main(int argc, char** argv) {
   if (valid)
     std::cout << (no_op
         ? "Kea no-op validate, apply, and rollback passed\n"
-        : "Kea DHCPv4 and DHCPv6 validate, apply, and rollback passed\n");
+        : skip_operational
+            ? "Kea selective validate, apply, and rollback passed\n"
+            : "Kea DHCPv4 and DHCPv6 validate, apply, and rollback passed\n");
   return valid ? 0 : 1;
 }

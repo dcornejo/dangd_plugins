@@ -21,6 +21,7 @@ cleanup() {
   rm -f "$socket4" "$socket6"
   rm -f /tmp/kea-dhcp4.conf /tmp/kea-dhcp6.conf \
     /tmp/kea-before-linux.xml /tmp/kea-proposed-linux.xml \
+    /tmp/kea-before6-linux.xml /tmp/kea-proposed6-linux.xml \
     /tmp/dang-kea-dhcp4 /tmp/dang-kea-dhcp6
 }
 trap cleanup EXIT INT TERM
@@ -60,6 +61,17 @@ sed -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
   -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
   "$root/tests/kea-proposed.xml" \
   > /tmp/kea-proposed-linux.xml
+unavailable4="$runtime_dir/unavailable4.sock"
+sed -e "s#/var/run/kea/kea4-ctrl-socket#$unavailable4#g" \
+  -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
+  -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
+  "$root/tests/kea-before.xml" \
+  > /tmp/kea-before6-linux.xml
+sed -e "s#/var/run/kea/kea4-ctrl-socket#$unavailable4#g" \
+  -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
+  -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
+  "$root/tests/kea-proposed6.xml" \
+  > /tmp/kea-proposed6-linux.xml
 ip netns exec "$namespace" env KEA_PIDFILE_DIR="$runtime_dir" \
   "$dhcp4" -d -p 1067 \
   -c /tmp/kea-dhcp4.conf \
@@ -86,6 +98,15 @@ DANG_KEA_DHCP6_SOCKET="$socket6" \
   ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-before-linux.xml \
   /tmp/kea-proposed-linux.xml
+
+# DHCPv4 deliberately has no listening socket in this second transaction. It
+# can pass only when the plugin leaves that unchanged daemon untouched.
+DANG_KEA_SKIP_OPERATIONAL=1 \
+DANG_KEA_DHCP4_SOCKET="$unavailable4" \
+DANG_KEA_DHCP6_SOCKET="$socket6" \
+  ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before6-linux.xml \
+  /tmp/kea-proposed6-linux.xml
 
 if ip netns exec "$namespace" ip -o link show \
   | awk -F': ' '{print $2}' | sed 's/@.*//' \
