@@ -173,6 +173,16 @@ DANG_KEA_DHCP6_SOCKET="$socket6" \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-before-linux.xml \
   /tmp/kea-proposed-linux.xml
 
+# Mirror the post-apply readback rejection for DHCPv4. Its failed
+# reconciliation must still be followed by a successful full rollback.
+DANG_KEA_SKIP_OPERATIONAL=1 \
+DANG_KEA_EXPECT_RECONCILE_FAILURE=kea-dhcp4-server \
+DANG_KEA_DHCP4_SOCKET="$socket4" \
+DANG_KEA_DHCP6_SOCKET="$socket6" \
+  ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before-linux.xml \
+  /tmp/kea-proposed-linux.xml
+
 # Remove DHCPv6's host hook first. Every DHCPv4 state query must complete
 # before retrieval reaches the drifted DHCPv6 host source.
 DANG_KEA_EXPECT_OPERATIONAL_FAILURE=kea-dhcp6-server \
