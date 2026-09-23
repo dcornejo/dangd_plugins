@@ -29,6 +29,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Rejected duplicate singleton nodes in Kea configuration snapshots. Repeated
+  sibling names acquire JSON-array semantics only when the pinned models
+  declare a list or leaf-list with the corresponding structural form.
+
 - Rejected XML attributes in selected Kea configuration trees. Edit-style or
   metadata attributes can no longer be silently discarded by the generic
   element-to-JSON converter.

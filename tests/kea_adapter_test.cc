@@ -191,6 +191,18 @@ int main() {
                      error.find("unsupported attribute operation on "
                                 "valid-lifetime") != std::string::npos,
                  "configuration attribute was silently ignored");
+  constexpr char duplicate_singleton_xml[] = R"xml(
+    <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+      <valid-lifetime>600</valid-lifetime>
+      <valid-lifetime>700</valid-lifetime>
+    </config>)xml";
+  error.clear();
+  auto duplicate_singleton = dang::plugins::kea::TranslateConfiguration(
+      duplicate_singleton_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  valid &= Check(!duplicate_singleton &&
+                     error.find("repeats singleton node valid-lifetime under "
+                                "config") != std::string::npos,
+                 "duplicate singleton leaf acquired list semantics");
   constexpr char deprecated_socket_xml[] = R"xml(
     <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
       <control-socket><socket-type>unix</socket-type>

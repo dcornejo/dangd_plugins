@@ -305,6 +305,29 @@ std::optional<std::string> MixedContentElement(const xmlNode* node) {
   return std::nullopt;
 }
 
+std::optional<std::string> RepeatedSingleton(const xmlNode* node) {
+  if (!node || node->type != XML_ELEMENT_NODE) return std::nullopt;
+  std::map<std::string, std::vector<const xmlNode*>, std::less<>> grouped;
+  for (const xmlNode* child : ElementChildren(node))
+    grouped[LocalName(child)].push_back(child);
+  for (const auto& [name, values] : grouped) {
+    if (values.size() < 2) continue;
+    const bool leaf_list = IsLeafList(name) &&
+        std::all_of(values.begin(), values.end(), [](const xmlNode* value) {
+          return ElementChildren(value).empty();
+        });
+    const bool list = IsList(name) &&
+        std::all_of(values.begin(), values.end(), [](const xmlNode* value) {
+          return !ElementChildren(value).empty();
+        });
+    if (!leaf_list && !list)
+      return name + " under " + LocalName(node);
+  }
+  for (const xmlNode* child : ElementChildren(node))
+    if (auto repeated = RepeatedSingleton(child); repeated) return repeated;
+  return std::nullopt;
+}
+
 bool WaitFor(int descriptor, short events,
              std::chrono::steady_clock::time_point deadline,
              std::string* error) {
@@ -1137,6 +1160,12 @@ std::optional<ServerConfiguration> TranslateConfiguration(
     xmlFreeDoc(document);
     if (error)
       *error = "Kea configuration contains mixed character data in " + *mixed;
+    return std::nullopt;
+  }
+  if (const auto repeated = RepeatedSingleton(config); repeated) {
+    xmlFreeDoc(document);
+    if (error)
+      *error = "Kea configuration repeats singleton node " + *repeated;
     return std::nullopt;
   }
   nlohmann::json body;
