@@ -29,6 +29,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Enforced collection shape for singleton Kea list and leaf-list nodes. A
+  scalar can no longer masquerade as an unambiguous list entry, and a
+  structured object can no longer masquerade as a leaf-list value.
+
 - Rejected duplicate singleton nodes in Kea configuration snapshots. Repeated
   sibling names acquire JSON-array semantics only when the pinned models
   declare a list or leaf-list with the corresponding structural form.

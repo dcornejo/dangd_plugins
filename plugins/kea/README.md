@@ -136,6 +136,10 @@ a complete datastore snapshot could change the apparent request semantics.
 Repeated sibling names are accepted only for lists and leaf-lists declared by
 the pinned models. Duplicate singleton leaves or containers fail instead of
 being converted into an invented JSON array.
+Declared leaf-list entries must be scalar, and unambiguous list entries must
+contain their modeled child structure even when only one entry is present.
+The `client-class`, `host`, and `subnet` names retain their documented
+context-sensitive scalar/list interpretation.
 
 The provider implements the complete configuration and state trees of the two
 pinned modules. Through ABI v6 it owns configuration and publishes each

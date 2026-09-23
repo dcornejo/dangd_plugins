@@ -203,6 +203,29 @@ int main() {
                      error.find("repeats singleton node valid-lifetime under "
                                 "config") != std::string::npos,
                  "duplicate singleton leaf acquired list semantics");
+  constexpr char scalar_list_xml[] = R"xml(
+    <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+      <hook-library>/opt/kea/libdhcp_lease_cmds.so</hook-library>
+    </config>)xml";
+  error.clear();
+  auto scalar_list = dang::plugins::kea::TranslateConfiguration(
+      scalar_list_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  valid &= Check(!scalar_list &&
+                     error.find("invalid collection shape for hook-library") !=
+                         std::string::npos,
+                 "scalar list entry was accepted");
+  constexpr char object_leaf_list_xml[] = R"xml(
+    <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+      <interfaces-config><interfaces><name>dangtest0</name></interfaces>
+      </interfaces-config>
+    </config>)xml";
+  error.clear();
+  auto object_leaf_list = dang::plugins::kea::TranslateConfiguration(
+      object_leaf_list_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  valid &= Check(!object_leaf_list &&
+                     error.find("invalid collection shape for interfaces") !=
+                         std::string::npos,
+                 "structured leaf-list entry was accepted");
   constexpr char deprecated_socket_xml[] = R"xml(
     <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
       <control-socket><socket-type>unix</socket-type>

@@ -305,6 +305,22 @@ std::optional<std::string> MixedContentElement(const xmlNode* node) {
   return std::nullopt;
 }
 
+bool IsAmbiguousListName(std::string_view name) {
+  return name == "client-class" || name == "host" || name == "subnet";
+}
+
+std::optional<std::string> InvalidCollectionShape(const xmlNode* node) {
+  if (!node || node->type != XML_ELEMENT_NODE) return std::nullopt;
+  const std::string name = LocalName(node);
+  const bool has_elements = !ElementChildren(node).empty();
+  if ((IsLeafList(name) && has_elements) ||
+      (IsList(name) && !IsAmbiguousListName(name) && !has_elements))
+    return name;
+  for (const xmlNode* child : ElementChildren(node))
+    if (auto invalid = InvalidCollectionShape(child); invalid) return invalid;
+  return std::nullopt;
+}
+
 std::optional<std::string> RepeatedSingleton(const xmlNode* node) {
   if (!node || node->type != XML_ELEMENT_NODE) return std::nullopt;
   std::map<std::string, std::vector<const xmlNode*>, std::less<>> grouped;
@@ -1160,6 +1176,13 @@ std::optional<ServerConfiguration> TranslateConfiguration(
     xmlFreeDoc(document);
     if (error)
       *error = "Kea configuration contains mixed character data in " + *mixed;
+    return std::nullopt;
+  }
+  if (const auto invalid = InvalidCollectionShape(config); invalid) {
+    xmlFreeDoc(document);
+    if (error)
+      *error = "Kea configuration has invalid collection shape for " +
+          *invalid;
     return std::nullopt;
   }
   if (const auto repeated = RepeatedSingleton(config); repeated) {
