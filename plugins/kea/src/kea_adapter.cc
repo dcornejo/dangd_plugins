@@ -1838,18 +1838,26 @@ bool ApplyWithCompensation(
       return false;
     }
   }
-  for (std::size_t index = 0; index < proposed.size(); ++index) {
+  std::vector<std::size_t> changed;
+  for (std::size_t index = 0; index < proposed.size(); ++index)
+    if (before[index].arguments != proposed[index].arguments)
+      changed.push_back(index);
+  std::vector<std::size_t> applied;
+  for (const std::size_t index : changed) {
     std::string apply_error;
     if (RunConfigurationCommand(command, proposed[index], "config-set",
-                                &apply_error))
+                                &apply_error)) {
+      applied.push_back(index);
       continue;
+    }
     if (apply_error.empty()) apply_error = "configuration command failed";
     if (failed_module) *failed_module = proposed[index].module_name;
     std::string failure = proposed[index].module_name + ": " + apply_error;
     // A missing or malformed response does not prove config-set was rejected.
     // Restore the failed target as well as all earlier successful targets.
-    for (std::size_t restore = index + 1; restore > 0; --restore) {
-      const auto& server = before[restore - 1];
+    applied.push_back(index);
+    for (auto restore = applied.rbegin(); restore != applied.rend(); ++restore) {
+      const auto& server = before[*restore];
       std::string rollback_error;
       if (!RunConfigurationCommand(command, server, "config-set",
                                    &rollback_error)) {

@@ -29,6 +29,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Limited Kea `config-test`, `config-set`, and reverse rollback calls to daemon
+  images whose translated configuration actually changed. A DHCPv4-only or
+  DHCPv6-only commit no longer rewrites or compensates the unaffected service,
+  while changed targets retain their established ordering and outcome-unknown
+  restoration guarantees.
+
 - Enforced unsigned parsing and exact modeled width for directly typed Kea
   integer leaves. Negative, overflowing, partially parsed, or malformed values
   can no longer fall through to signed numbers or strings; DHCPv4 and DHCPv6

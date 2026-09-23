@@ -183,7 +183,11 @@ int ValidateConfiguration(void*, void* opaque, DangPluginErrorV1* error) {
     SetError(error, "the prepared Kea transaction is missing");
     return 0;
   }
-  for (const ServerConfiguration& server : prepared->proposed) {
+  for (std::size_t index = 0; index < prepared->proposed.size(); ++index) {
+    const ServerConfiguration& server = prepared->proposed[index];
+    if (index < prepared->before.size() &&
+        prepared->before[index].arguments == server.arguments)
+      continue;
     std::string reason;
     if (Execute(server, "config-test", &reason)) continue;
     SetError(error, server.module_name + ": " + reason,
@@ -221,11 +225,14 @@ int RollbackConfiguration(void*, void* opaque, DangPluginErrorV1* error) {
     return 0;
   }
   std::string failures;
-  for (auto server = prepared->before.rbegin(); server != prepared->before.rend();
-       ++server) {
+  for (std::size_t index = prepared->before.size(); index > 0; --index) {
+    const ServerConfiguration& server = prepared->before[index - 1];
+    if (index <= prepared->proposed.size() &&
+        server.arguments == prepared->proposed[index - 1].arguments)
+      continue;
     std::string reason;
-    if (!Execute(*server, "config-set", &reason))
-      failures += (failures.empty() ? "" : "; ") + server->module_name +
+    if (!Execute(server, "config-set", &reason))
+      failures += (failures.empty() ? "" : "; ") + server.module_name +
           ": " + reason;
   }
   if (failures.empty()) {

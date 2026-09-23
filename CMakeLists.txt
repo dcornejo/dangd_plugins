@@ -646,6 +646,13 @@ if(BUILD_TESTING)
     "${CMAKE_DL_LIBS}" LibXml2::LibXml2 nlohmann_json::nlohmann_json)
   target_compile_options(kea_plugin_integration_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME kea_noop_transaction
+    COMMAND kea_plugin_integration_test
+      $<TARGET_FILE:dangd_kea_plugin>
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-before.xml"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-before.xml")
+  set_tests_properties(kea_noop_transaction PROPERTIES ENVIRONMENT
+    "DANG_KEA_DHCP4_SOCKET=/var/run/kea/kea4-ctrl-socket;DANG_KEA_DHCP6_SOCKET=/var/run/kea/kea6-ctrl-socket")
 endif()
 
 include(GNUInstallDirs)

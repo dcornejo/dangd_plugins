@@ -1307,6 +1307,41 @@ int main() {
   valid &= Check(command_reason.find("reply lost after send") !=
                      std::string::npos,
                  "ambiguous apply failure reason was not preserved");
+  auto only_six_changed = transaction_before;
+  only_six_changed[1] = transaction_after[1];
+  transaction_calls.clear();
+  const dang::plugins::kea::ConfigurationCommand successful_apply =
+      [&](const dang::plugins::kea::ServerConfiguration& server,
+          std::string_view command, std::string*) {
+        transaction_calls.push_back(
+            server.arguments.at("image").get<std::string>() + ":" +
+            std::string(command));
+        return true;
+      };
+  command_reason.clear();
+  valid &= Check(dang::plugins::kea::ApplyWithCompensation(
+                     transaction_before, only_six_changed, successful_apply,
+                     &failed_module, &command_reason) &&
+                     transaction_calls ==
+                         std::vector<std::string>{"after6:config-set"},
+                 "unchanged DHCPv4 configuration reached the daemon");
+  transaction_calls.clear();
+  command_reason.clear();
+  valid &= Check(dang::plugins::kea::ApplyWithCompensation(
+                     transaction_before, transaction_before, successful_apply,
+                     &failed_module, &command_reason) &&
+                     transaction_calls.empty(),
+                 "no-op Kea transaction reached a daemon");
+  transaction_calls.clear();
+  command_reason.clear();
+  valid &= Check(!dang::plugins::kea::ApplyWithCompensation(
+                     transaction_before, only_six_changed, ambiguous_apply,
+                     &failed_module, &command_reason) &&
+                     failed_module == "kea-dhcp6-server" &&
+                     transaction_calls ==
+                         std::vector<std::string>{"after6:config-set",
+                                                  "before6:config-set"},
+                 "single-module failure restored an unchanged daemon");
   transaction_calls.clear();
   const dang::plugins::kea::ConfigurationCommand throwing_apply =
       [&](const dang::plugins::kea::ServerConfiguration& server,

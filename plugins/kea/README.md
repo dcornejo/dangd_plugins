@@ -52,11 +52,13 @@ The plugin does not require Kea Control Agent or a database lease backend.
 For every affected commit, the plugin:
 
 1. converts the complete before and proposed XML snapshots to Kea's native JSON;
-2. sends `config-test` to both servers before making any change;
-3. sends `config-set` to DHCPv4 and then DHCPv6;
+2. detects which translated daemon images actually changed and sends
+   `config-test` only to those servers before making any change;
+3. sends `config-set` to changed DHCPv4 and then changed DHCPv6 images;
 4. treats a failed call as outcome-unknown and restores that daemon followed by
    every earlier changed daemon in reverse order; and
-5. retains both prior configurations for dangd-triggered reverse rollback.
+5. retains both prior configurations for dangd-triggered reverse rollback,
+   while reapplying only the changed subset.
 
 This conservative restoration includes a daemon that returned an explicit
 error because the same path must also be safe when a reply is lost after Kea
