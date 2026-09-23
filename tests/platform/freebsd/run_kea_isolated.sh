@@ -121,6 +121,15 @@ jexec -l -U root "$jail_name" env \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-before6-freebsd.xml \
   /tmp/kea-before6-freebsd.xml
 
+# Mirror the read-side proof after DHCPv4 retrieval succeeds completely.
+jexec -l -U root "$jail_name" env \
+  DANG_KEA_EXPECT_OPERATIONAL_FAILURE=kea-dhcp6-server \
+  DANG_KEA_DHCP4_SOCKET="$socket4" \
+  DANG_KEA_DHCP6_SOCKET="$unavailable6" \
+  "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before4-freebsd.xml \
+  /tmp/kea-before4-freebsd.xml
+
 jexec -l -U root "$jail_name" env \
   DANG_KEA_DHCP4_SOCKET="$socket4" \
   DANG_KEA_DHCP6_SOCKET="$socket6" \

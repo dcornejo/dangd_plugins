@@ -129,6 +129,14 @@ DANG_KEA_DHCP6_SOCKET="$socket6" \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-before6-linux.xml \
   /tmp/kea-before6-linux.xml
 
+# Mirror the read-side proof after DHCPv4 retrieval succeeds completely.
+DANG_KEA_EXPECT_OPERATIONAL_FAILURE=kea-dhcp6-server \
+DANG_KEA_DHCP4_SOCKET="$socket4" \
+DANG_KEA_DHCP6_SOCKET="$unavailable6" \
+  ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before4-linux.xml \
+  /tmp/kea-before4-linux.xml
+
 DANG_KEA_DHCP4_SOCKET="$socket4" \
 DANG_KEA_DHCP6_SOCKET="$socket6" \
   ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
