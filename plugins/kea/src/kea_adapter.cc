@@ -624,6 +624,46 @@ std::optional<nlohmann::json> RunControlQuery(
   }
 }
 
+bool ContainsExpectedConfiguration(const nlohmann::json& actual,
+                                   const nlohmann::json& expected,
+                                   std::string path, std::string* error) {
+  if (expected.is_object()) {
+    if (!actual.is_object()) {
+      if (error) *error = "Kea live configuration has a different type at " + path;
+      return false;
+    }
+    for (auto member = expected.begin(); member != expected.end(); ++member) {
+      const auto found = actual.find(member.key());
+      const std::string child = path + "/" + member.key();
+      if (found == actual.end()) {
+        if (error) *error = "Kea live configuration omits " + child;
+        return false;
+      }
+      if (!ContainsExpectedConfiguration(*found, member.value(), child, error))
+        return false;
+    }
+    return true;
+  }
+  if (expected.is_array()) {
+    if (!actual.is_array() || actual.size() != expected.size()) {
+      if (error)
+        *error = "Kea live configuration has a different list size at " + path;
+      return false;
+    }
+    for (std::size_t index = 0; index < expected.size(); ++index)
+      if (!ContainsExpectedConfiguration(actual[index], expected[index],
+                                         path + "/" + std::to_string(index),
+                                         error))
+        return false;
+    return true;
+  }
+  if (actual != expected) {
+    if (error) *error = "Kea live configuration differs at " + path;
+    return false;
+  }
+  return true;
+}
+
 std::optional<std::string> BinaryBase64(std::string_view hexadecimal) {
   // Kea normally renders binary identities as colon-separated octets, while
   // some control-command producers use one contiguous hexadecimal string.
@@ -1449,6 +1489,42 @@ std::optional<nlohmann::json> SendControlQuery(
   } catch (const std::exception& exception) {
     if (error) *error = std::string("invalid Kea response: ") + exception.what();
     return std::nullopt;
+  }
+}
+
+bool VerifyLiveConfiguration(const ServerConfiguration& expected,
+                             const ControlQuery& query, std::string* error) {
+  if (!query || expected.service_name.empty() ||
+      !expected.arguments.is_object() ||
+      !expected.arguments.contains(expected.service_name)) {
+    if (error) *error = "invalid expected Kea configuration";
+    return false;
+  }
+  auto response = RunControlQuery(query, expected.socket_path, "config-get",
+                                  nlohmann::json::object(), error);
+  if (!response || !CommandSucceeded(*response, error)) return false;
+  const nlohmann::json* answer = Answer(*response);
+  if (!answer || !answer->contains("arguments") ||
+      !answer->at("arguments").is_object()) {
+    if (error) *error = "Kea config-get response omits arguments";
+    return false;
+  }
+  const auto service = answer->at("arguments").find(expected.service_name);
+  if (service == answer->at("arguments").end()) {
+    if (error)
+      *error = "Kea config-get response omits service " +
+          expected.service_name;
+    return false;
+  }
+  try {
+    return ContainsExpectedConfiguration(
+        *service, expected.arguments.at(expected.service_name),
+        expected.service_name, error);
+  } catch (const std::exception& exception) {
+    if (error)
+      *error = std::string("cannot compare Kea live configuration: ") +
+          exception.what();
+    return false;
   }
 }
 

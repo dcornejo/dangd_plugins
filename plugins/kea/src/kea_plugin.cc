@@ -38,6 +38,7 @@ using dang::plugins::kea::SendControlQuery;
 using dang::plugins::kea::ServerConfiguration;
 using dang::plugins::kea::TranslateConfiguration;
 using dang::plugins::kea::TranslateOperationalState;
+using dang::plugins::kea::VerifyLiveConfiguration;
 
 struct Prepared {
   // Vector order is fixed as DHCPv4 then DHCPv6 and is shared by both images;
@@ -348,7 +349,7 @@ int OperationalV2(void* context, DangOperationalDataV2* result,
   return 1;
 }
 
-int ReconcileAppliedConfiguration(void*, void*, const char* current_xml,
+int ReconcileAppliedConfiguration(void*, void* opaque, const char* current_xml,
                                   DangAppliedConfigurationV1* result,
                                   DangPluginErrorV1* error) {
   if (!result || !current_xml) {
@@ -357,6 +358,28 @@ int ReconcileAppliedConfiguration(void*, void*, const char* current_xml,
   }
   auto accepted = TranslateBoth(current_xml, error);
   if (!accepted) return 0;
+  // The prepared pair identifies the images this transaction actually changed.
+  // Read those daemons back before dangd makes the snapshot authoritative.
+  // A null preparation is retained for compatibility with direct ABI probes;
+  // production dangd reconciliation always supplies the prepared transaction.
+  const auto* prepared = static_cast<const Prepared*>(opaque);
+  if (prepared) {
+    for (std::size_t index = 0; index < accepted->size(); ++index) {
+      if (index >= prepared->before.size() ||
+          index >= prepared->proposed.size() ||
+          prepared->before[index].arguments ==
+              prepared->proposed[index].arguments)
+        continue;
+      std::string reason;
+      if (VerifyLiveConfiguration((*accepted)[index], SendControlQuery,
+                                  &reason))
+        continue;
+      const std::string& module = (*accepted)[index].module_name;
+      SetError(error, module + ": " + reason,
+               "/{urn:ietf:params:xml:ns:yang:" + module + "}config");
+      return 0;
+    }
+  }
   RememberAcceptedSubnets(*accepted);
   *result = {.applied_xml = current_xml,
              .outcomes = nullptr,

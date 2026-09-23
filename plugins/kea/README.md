@@ -57,7 +57,10 @@ For every affected commit, the plugin:
 3. sends `config-set` to changed DHCPv4 and then changed DHCPv6 images;
 4. treats a failed call as outcome-unknown and restores that daemon followed by
    every earlier changed daemon in reverse order; and
-5. retains both prior configurations for dangd-triggered reverse rollback,
+5. reads every changed daemon back with `config-get` before dangd accepts the
+   commit, requiring every value managed by dangd to match while ignoring
+   Kea-added defaults and response metadata; and
+6. retains both prior configurations for dangd-triggered reverse rollback,
    while reapplying only the changed subset.
 
 This conservative restoration includes a daemon that returned an explicit
@@ -75,6 +78,13 @@ therefore cannot apply one daemon and compensate a different daemon.
 An exception from the command implementation is contained as an outcome-
 unknown failure and triggers reverse compensation. An exception while restoring
 one daemon is reported without preventing restoration of earlier daemons.
+Dangd remains the definitive configuration authority. Kea lease or host
+database backends provide runtime data and storage mechanics; they never
+replace the applied dangd snapshot as configuration intent. ABI-v6
+reconciliation projects each live `config-get` image onto the corresponding
+translated dangd image, so Kea defaults and its read-only content hash do not
+create false drift while a missing, changed, reordered, or additional managed
+list value rejects the commit with the owning module and configuration path.
 
 Every control exchange must return exactly one answer. Empty or multi-answer
 transaction replies fail closed, so an ambiguous response can never be treated

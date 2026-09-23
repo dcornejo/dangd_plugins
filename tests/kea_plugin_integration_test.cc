@@ -252,6 +252,14 @@ int main(int argc, char** argv) {
       valid = applied || Report("apply", error);
     }
   }
+  if (valid && !expected_validate_failure && !expected_apply_failure) {
+    DangAppliedConfigurationV1 applied{};
+    valid = plugin6->reconcile_applied_configuration(
+                plugin->context, prepared, proposed.c_str(), &applied, &error) ||
+        Report("post-apply reconciliation", error);
+    valid = valid && applied.applied_xml == proposed.c_str() &&
+        applied.outcomes == nullptr && applied.outcome_count == 0;
+  }
   if (valid && !expected_validate_failure && expected_rollback_failure) {
     const char* socket = SocketForModule(expected_rollback_failure);
     valid = socket && *socket && ::unlink(socket) == 0;

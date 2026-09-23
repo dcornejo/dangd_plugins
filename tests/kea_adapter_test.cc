@@ -437,6 +437,35 @@ int main() {
   valid &= Check(dang::plugins::kea::ExtractSubnetIds(*dhcp6) ==
                      std::vector<std::uint32_t>{6},
                  "DHCPv6 subnet IDs were not extracted from translated JSON");
+  nlohmann::json live_configuration = dhcp4->arguments;
+  live_configuration["hash"] = "read-only";
+  live_configuration["Dhcp4"]["authoritative"] = false;
+  const dang::plugins::kea::ControlQuery matching_configuration =
+      [&](std::string_view, std::string_view command,
+          const nlohmann::json& arguments,
+          std::string*) -> std::optional<nlohmann::json> {
+    if (command != "config-get" || !arguments.is_object() ||
+        !arguments.empty())
+      return std::nullopt;
+    return nlohmann::json{{"result", 0}, {"arguments", live_configuration}};
+  };
+  error.clear();
+  valid &= Check(dang::plugins::kea::VerifyLiveConfiguration(
+                     *dhcp4, matching_configuration, &error),
+                 "Kea-added defaults were mistaken for configuration drift");
+  live_configuration["Dhcp4"]["server-tag"] = "changed";
+  error.clear();
+  valid &= Check(!dang::plugins::kea::VerifyLiveConfiguration(
+                      *dhcp4, matching_configuration, &error) &&
+                     error.find("Dhcp4/server-tag") != std::string::npos,
+                 "changed live Kea configuration was accepted");
+  live_configuration["Dhcp4"].erase("server-tag");
+  error.clear();
+  valid &= Check(!dang::plugins::kea::VerifyLiveConfiguration(
+                      *dhcp4, matching_configuration, &error) &&
+                     error.find("omits Dhcp4/server-tag") !=
+                         std::string::npos,
+                 "missing live Kea configuration was accepted");
   const nlohmann::json leases4 = nlohmann::json::parse(R"json({
     "result": 0, "arguments": {"leases": [{
       "ip-address": "192.0.2.44", "hw-address": "00:01:02:03:04:05",

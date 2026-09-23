@@ -9,6 +9,13 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added authoritative post-apply Kea configuration readback. ABI-v6
+  reconciliation now uses `config-get` for every daemon changed by the
+  transaction and requires all values translated from dangd's accepted
+  snapshot to match. Kea-added defaults and response metadata are ignored;
+  missing, changed, reordered, or additional managed list values fail with the
+  owning module and configuration path.
+
 - Forced native DHCPv6 host-reservation retrieval across its 256-row page
   boundary on Linux and FreeBSD. The isolated workflow appends 256 reservations
   through Kea's control API and requires the final second-page identifier and
