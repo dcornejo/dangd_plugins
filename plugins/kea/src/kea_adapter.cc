@@ -175,6 +175,27 @@ nlohmann::json Scalar(const xmlNode* node, const std::string& value) {
       throw std::runtime_error("invalid decimal value for " + name);
     return decimal;
   }
+  static const std::set<std::string, std::less<>> boolean_names{
+      "allow-address-registration", "always-send", "array", "authoritative",
+      "calculate-tee-times", "cert-required", "csv-format",
+      "ddns-override-client-update", "ddns-override-no-update",
+      "ddns-send-updates", "ddns-update-on-renew",
+      "ddns-use-conflict-resolution", "early-global-reservations-lookup",
+      "echo-client-id", "enable-multi-threading", "enable-updates",
+      "exclude-first-last-24", "flush", "fqdn-fwd", "fqdn-rev",
+      "ignore-dhcp-server-identifier", "ignore-rai-link-selection",
+      "ip-reservations-unique", "lenient-option-parsing", "match-client-id",
+      "never-send", "only-if-required", "only-in-additional-list", "persist",
+      "rapid-commit", "re-detect", "readonly", "reservations-global",
+      "reservations-in-subnet", "reservations-lookup-first",
+      "reservations-out-of-pool", "retry-on-startup",
+      "service-sockets-require-all", "stash-agent-options",
+      "store-extended-info"};
+  if (boolean_names.contains(name)) {
+    if (value == "true") return true;
+    if (value == "false") return false;
+    throw std::runtime_error("invalid boolean value for " + name);
+  }
   if (value == "true") return true;
   if (value == "false") return false;
   std::int64_t integer = 0;

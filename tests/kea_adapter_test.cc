@@ -261,6 +261,17 @@ int main() {
                      error.find("invalid decimal value for t1-percent") !=
                          std::string::npos,
                  "malformed decimal leaf fell back to a string");
+  constexpr char malformed_boolean_xml[] = R"xml(
+    <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+      <authoritative>yes</authoritative>
+    </config>)xml";
+  error.clear();
+  auto malformed_boolean = dang::plugins::kea::TranslateConfiguration(
+      malformed_boolean_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  valid &= Check(!malformed_boolean &&
+                     error.find("invalid boolean value for authoritative") !=
+                         std::string::npos,
+                 "malformed boolean leaf fell back to a string");
   constexpr char deprecated_socket_xml[] = R"xml(
     <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
       <control-socket><socket-type>unix</socket-type>

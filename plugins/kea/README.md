@@ -115,7 +115,8 @@ lease, host, and configuration database objects.
 Scalar typing follows the pinned YANG declarations: string leaves remain JSON
 strings even when their value looks like `true`, `false`, or a number. Known
 decimal64 leaves must parse completely to finite numeric values and cannot fall
-back to strings.
+back to strings. Boolean leaves accept only the YANG lexical forms `true` and
+`false`; other text cannot acquire string semantics.
 Kea remains the final implementation-specific validator; a newly introduced
 model structure must gain a focused translation test before it is treated as
 production-supported.

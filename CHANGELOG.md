@@ -29,6 +29,9 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Rejected non-YANG text in modeled Kea boolean configuration leaves instead
+  of silently changing malformed values to native strings.
+
 - Rejected malformed and non-finite text in Kea decimal64 configuration leaves
   instead of silently changing the value to a native string.
 
