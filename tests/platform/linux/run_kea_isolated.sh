@@ -163,6 +163,16 @@ DANG_KEA_DHCP6_SOCKET="$socket6" \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-proposed6-state-linux.xml \
   /tmp/kea-proposed6-state-linux.xml
 
+# Let both daemons accept the candidate, remove DHCPv6's managed host hook
+# before ABI-v6 readback, then require rejection and successful rollback.
+DANG_KEA_SKIP_OPERATIONAL=1 \
+DANG_KEA_EXPECT_RECONCILE_FAILURE=kea-dhcp6-server \
+DANG_KEA_DHCP4_SOCKET="$socket4" \
+DANG_KEA_DHCP6_SOCKET="$socket6" \
+  ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before-linux.xml \
+  /tmp/kea-proposed-linux.xml
+
 # Remove DHCPv6's host hook first. Every DHCPv4 state query must complete
 # before retrieval reaches the drifted DHCPv6 host source.
 DANG_KEA_EXPECT_OPERATIONAL_FAILURE=kea-dhcp6-server \

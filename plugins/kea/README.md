@@ -370,6 +370,10 @@ is not consulted. No-op transactions with first DHCPv4 and then DHCPv6
 unavailable require complete operational requests to fail at the matching
 lease subtree. The DHCPv6 case first completes every DHCPv4 state query, proving
 structural attribution in both directions without issuing configuration calls.
+The native workflow also lets both daemons accept a full candidate, removes
+DHCPv6's managed host-command hook before ABI-v6 readback, and requires
+post-apply reconciliation to reject the commit at the DHCPv6 configuration
+path. The ensuing hardware rollback must restore the complete before-image.
 The workflow also reconciles configured DHCPv4 and DHCPv6 subnets absent from
 the live boot daemons and requires complete state to fail at the owning
 module's `state/lease-stats`, proving that native configuration drift cannot

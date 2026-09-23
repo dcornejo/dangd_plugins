@@ -16,6 +16,12 @@ All notable changes to the external dangd plugin collection are recorded here.
   missing, changed, reordered, or additional managed list values fail with the
   owning module and configuration path.
 
+- Added native Linux and FreeBSD rejection evidence for post-apply drift. Both
+  Kea daemons first accept the candidate, then the workflow removes DHCPv6's
+  managed host-command hook before ABI-v6 readback. Reconciliation must reject
+  the commit at the DHCPv6 configuration path and hardware rollback must
+  restore the complete before-image.
+
 - Forced native DHCPv6 host-reservation retrieval across its 256-row page
   boundary on Linux and FreeBSD. The isolated workflow appends 256 reservations
   through Kea's control API and requires the final second-page identifier and

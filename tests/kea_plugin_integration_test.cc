@@ -175,6 +175,8 @@ int main(int argc, char** argv) {
       std::getenv("DANG_KEA_EXPECT_ROLLBACK_FAILURE");
   const char* expected_apply_failure =
       std::getenv("DANG_KEA_EXPECT_APPLY_FAILURE");
+  const char* expected_reconcile_failure =
+      std::getenv("DANG_KEA_EXPECT_RECONCILE_FAILURE");
   const char* expected_validate_failure =
       std::getenv("DANG_KEA_EXPECT_VALIDATE_FAILURE");
   const char* expected_operational_failure =
@@ -252,13 +254,28 @@ int main(int argc, char** argv) {
       valid = applied || Report("apply", error);
     }
   }
+  if (valid && expected_reconcile_failure)
+    valid = RemoveHostHook(expected_reconcile_failure);
   if (valid && !expected_validate_failure && !expected_apply_failure) {
     DangAppliedConfigurationV1 applied{};
-    valid = plugin6->reconcile_applied_configuration(
-                plugin->context, prepared, proposed.c_str(), &applied, &error) ||
-        Report("post-apply reconciliation", error);
-    valid = valid && applied.applied_xml == proposed.c_str() &&
-        applied.outcomes == nullptr && applied.outcome_count == 0;
+    const bool reconciliation_accepted =
+        plugin6->reconcile_applied_configuration(
+        plugin->context, prepared, proposed.c_str(), &applied, &error);
+    if (expected_reconcile_failure) {
+      const std::string expected_path =
+          "/{urn:ietf:params:xml:ns:yang:" +
+          std::string(expected_reconcile_failure) + "}config";
+      valid = !reconciliation_accepted && error.message && error.instance_path &&
+          std::string_view(error.message).find(expected_reconcile_failure) !=
+              std::string_view::npos &&
+          std::string_view(error.instance_path) == expected_path;
+      if (!valid) Report("expected reconciliation rejection", error);
+    } else {
+      valid = reconciliation_accepted ||
+          Report("post-apply reconciliation", error);
+      valid = valid && applied.applied_xml == proposed.c_str() &&
+          applied.outcomes == nullptr && applied.outcome_count == 0;
+    }
   }
   if (valid && !expected_validate_failure && expected_rollback_failure) {
     const char* socket = SocketForModule(expected_rollback_failure);
@@ -377,6 +394,8 @@ int main(int argc, char** argv) {
         ? "Kea validation failure attribution passed\n"
         : expected_apply_failure
         ? "Kea apply failure attribution and compensation passed\n"
+        : expected_reconcile_failure
+        ? "Kea post-apply reconciliation rejection passed\n"
         : expected_rollback_failure
         ? "Kea rollback failure attribution passed\n"
         : no_op
