@@ -131,6 +131,13 @@ int main() {
                      error.find("omits the module configuration container") !=
                          std::string::npos,
                  "absent Kea configuration produced an indirect error");
+  const std::string oversized_datastore(16U * 1024U * 1024U + 1U, 'x');
+  error.clear();
+  auto oversized_configuration = dang::plugins::kea::TranslateConfiguration(
+      oversized_datastore, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  valid &= Check(!oversized_configuration &&
+                     error.find("exceeds the plugin limit") != std::string::npos,
+                 "oversized Kea datastore reached the XML parser");
   constexpr char nested_configuration_xml[] = R"xml(
     <data xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
       <wrapper xmlns="urn:example:wrapper">

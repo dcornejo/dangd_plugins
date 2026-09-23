@@ -29,6 +29,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Bounded each Kea datastore snapshot to 16 MiB before XML parsing. Malformed
+  or hostile transaction input can no longer make the plugin allocate an XML
+  tree approaching libxml's signed input-length limit.
+
 - Rejected DTD declarations in Kea datastore snapshots before reading any node
   text. Internal entities can no longer expand during XML-to-JSON conversion;
   external subsets are also rejected in addition to the existing network-fetch

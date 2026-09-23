@@ -40,6 +40,7 @@ namespace dang::plugins::kea {
 namespace {
 
 constexpr std::size_t kMaximumControlBytes = 16 * 1024 * 1024;
+constexpr std::size_t kMaximumDatastoreBytes = 16 * 1024 * 1024;
 constexpr auto kSocketTimeout = std::chrono::seconds(5);
 constexpr std::string_view kNetconfBaseNamespace =
     "urn:ietf:params:xml:ns:netconf:base:1.0";
@@ -1036,9 +1037,8 @@ std::optional<ServerConfiguration> TranslateConfiguration(
     return std::nullopt;
   }
   if (!ValidateSocketPath(socket_path, error)) return std::nullopt;
-  if (datastore_xml.size() >
-      static_cast<std::size_t>(std::numeric_limits<int>::max())) {
-    if (error) *error = "Kea datastore snapshot exceeds the XML parser limit";
+  if (datastore_xml.size() > kMaximumDatastoreBytes) {
+    if (error) *error = "Kea datastore snapshot exceeds the plugin limit";
     return std::nullopt;
   }
   xmlDocPtr document = xmlReadMemory(datastore_xml.data(),

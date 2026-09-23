@@ -111,8 +111,9 @@ Kea remains the final implementation-specific validator; a newly introduced
 model structure must gain a focused translation test before it is treated as
 production-supported.
 Malformed XML structures that cannot be converted to Kea's required JSON
-types fail with a controlled plugin error, and snapshots larger than libxml's
-signed input-length interface are rejected before parsing.
+types fail with a controlled plugin error. Datastore snapshots have a 16 MiB
+ceiling and are rejected before parsing, bounding the XML tree's input rather
+than relying on libxml's much larger signed-length interface.
 Every descendant of a selected Kea `config` container must remain in that
 module's namespace; a foreign element cannot acquire Kea semantics merely by
 reusing a recognized local name.
