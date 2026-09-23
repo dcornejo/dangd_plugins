@@ -36,6 +36,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   any configuration command. The DHCPv6 case first completes all DHCPv4 state
   queries.
 
+- Added native statistics-drift coverage in both directions. A configured
+  subnet absent from either live daemon now fails complete retrieval at the
+  owning module's `state/lease-stats`; the DHCPv6 case first completes every
+  DHCPv4 state query.
+
 - Added native host-state drift coverage in both directions by removing each
   Kea daemon's required host-command hook through its control API. Complete
   state retrieval must finish prior lease and statistics processing, then fail

@@ -26,6 +26,7 @@ cleanup() {
     /tmp/kea-before-freebsd.xml /tmp/kea-proposed-freebsd.xml \
     /tmp/kea-before4-freebsd.xml /tmp/kea-proposed4-freebsd.xml \
     /tmp/kea-before6-freebsd.xml /tmp/kea-proposed6-freebsd.xml \
+    /tmp/kea-proposed6-state-freebsd.xml \
     /tmp/kea-before-validation-freebsd.xml \
     /tmp/kea-proposed-validation-freebsd.xml
 }
@@ -67,6 +68,10 @@ sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
   -e "s#/var/run/kea/kea4-ctrl-socket#$unavailable4#g" \
   -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
   "$root/tests/kea-proposed6.xml" > /tmp/kea-proposed6-freebsd.xml
+sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
+  -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
+  -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
+  "$root/tests/kea-proposed6.xml" > /tmp/kea-proposed6-state-freebsd.xml
 unavailable6="$runtime_dir/unavailable6.sock"
 sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
   -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
@@ -140,6 +145,17 @@ jexec -l -U root "$jail_name" env \
   "$root/build/kea_plugin_integration_test" \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-proposed4-freebsd.xml \
   /tmp/kea-proposed4-freebsd.xml
+
+# Mirror the statistics-drift proof for DHCPv6. DHCPv4 state must complete
+# before the configured but absent DHCPv6 subnet fails closed.
+jexec -l -U root "$jail_name" env \
+  DANG_KEA_EXPECT_OPERATIONAL_FAILURE=kea-dhcp6-server \
+  DANG_KEA_EXPECT_OPERATIONAL_SUBTREE=lease-stats \
+  DANG_KEA_DHCP4_SOCKET="$socket4" \
+  DANG_KEA_DHCP6_SOCKET="$socket6" \
+  "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-proposed6-state-freebsd.xml \
+  /tmp/kea-proposed6-state-freebsd.xml
 
 # Remove DHCPv6's host hook first. Every DHCPv4 state query must complete
 # before retrieval reaches the drifted DHCPv6 host source.

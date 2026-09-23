@@ -356,9 +356,11 @@ is not consulted. No-op transactions with first DHCPv4 and then DHCPv6
 unavailable require complete operational requests to fail at the matching
 lease subtree. The DHCPv6 case first completes every DHCPv4 state query, proving
 structural attribution in both directions without issuing configuration calls.
-The workflow also reconciles a configured DHCPv4 subnet absent from the live
-boot daemon and requires complete state to fail at `state/lease-stats`, proving
-that native configuration drift cannot masquerade as empty complete state.
+The workflow also reconciles configured DHCPv4 and DHCPv6 subnets absent from
+the live boot daemons and requires complete state to fail at the owning
+module's `state/lease-stats`, proving that native configuration drift cannot
+masquerade as empty complete state. The DHCPv6 case first completes all DHCPv4
+state queries.
 It then removes each daemon's required host-command hook through Kea's control
 API and requires lease and statistics retrieval to proceed before the request
 fails at that module's `state/hosts`. The DHCPv6 case first completes all
