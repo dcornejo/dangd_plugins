@@ -359,9 +359,10 @@ structural attribution in both directions without issuing configuration calls.
 The workflow also reconciles a configured DHCPv4 subnet absent from the live
 boot daemon and requires complete state to fail at `state/lease-stats`, proving
 that native configuration drift cannot masquerade as empty complete state.
-It then removes the required DHCPv4 host-command hook through Kea's control
+It then removes each daemon's required host-command hook through Kea's control
 API and requires lease and statistics retrieval to proceed before the request
-fails at `state/hosts`. The following full transaction restores the hook.
+fails at that module's `state/hosts`. The DHCPv6 case first completes all
+DHCPv4 state queries. The following full transaction restores both hooks.
 Each script then
 lets a DHCPv4-only `config-test` succeed, removes the changed daemon's socket
 before apply, and requires both the failed apply and failed conservative
