@@ -265,6 +265,20 @@ std::optional<std::string> ForeignElement(
   return std::nullopt;
 }
 
+std::optional<std::string> AttributedElement(const xmlNode* node) {
+  if (!node || node->type != XML_ELEMENT_NODE) return std::nullopt;
+  if (node->properties) {
+    const char* attribute_name = node->properties->name
+        ? reinterpret_cast<const char*>(node->properties->name)
+        : "unknown";
+    return std::string(attribute_name) + " on " + LocalName(node);
+  }
+  for (const xmlNode* child = node->children; child; child = child->next)
+    if (auto attributed = AttributedElement(child); attributed)
+      return attributed;
+  return std::nullopt;
+}
+
 bool HasNonWhitespace(std::string_view text) {
   return std::any_of(text.begin(), text.end(), [](unsigned char character) {
     return !std::isspace(character);
@@ -1110,6 +1124,13 @@ std::optional<ServerConfiguration> TranslateConfiguration(
     if (error)
       *error = "Kea configuration contains foreign-namespace element " +
           *foreign;
+    return std::nullopt;
+  }
+  if (const auto attributed = AttributedElement(config); attributed) {
+    xmlFreeDoc(document);
+    if (error)
+      *error = "Kea configuration contains unsupported attribute " +
+          *attributed;
     return std::nullopt;
   }
   if (const auto mixed = MixedContentElement(config); mixed) {

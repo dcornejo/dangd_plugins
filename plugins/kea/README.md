@@ -130,6 +130,9 @@ when the XML parser's network access is already disabled.
 Containers may contain child elements or scalar character data, but not both.
 Rejecting mixed content prevents malformed text from being silently discarded
 while its neighboring configuration elements are translated.
+The selected module tree must not contain XML attributes. The pinned Kea data
+models define none, and silently ignoring edit-style or metadata attributes in
+a complete datastore snapshot could change the apparent request semantics.
 
 The provider implements the complete configuration and state trees of the two
 pinned modules. Through ABI v6 it owns configuration and publishes each

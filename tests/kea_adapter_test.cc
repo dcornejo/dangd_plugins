@@ -178,6 +178,19 @@ int main() {
                      error.find("mixed character data in config") !=
                          std::string::npos,
                  "mixed configuration character data was silently ignored");
+  constexpr char attributed_configuration_xml[] = R"xml(
+    <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+      <valid-lifetime operation="delete">600</valid-lifetime>
+    </config>)xml";
+  error.clear();
+  auto attributed_configuration =
+      dang::plugins::kea::TranslateConfiguration(
+          attributed_configuration_xml, "kea-dhcp4-server",
+          "/tmp/kea4.sock", &error);
+  valid &= Check(!attributed_configuration &&
+                     error.find("unsupported attribute operation on "
+                                "valid-lifetime") != std::string::npos,
+                 "configuration attribute was silently ignored");
   constexpr char deprecated_socket_xml[] = R"xml(
     <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
       <control-socket><socket-type>unix</socket-type>

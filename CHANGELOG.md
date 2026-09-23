@@ -29,6 +29,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Rejected XML attributes in selected Kea configuration trees. Edit-style or
+  metadata attributes can no longer be silently discarded by the generic
+  element-to-JSON converter.
+
 - Rejected mixed XML content in Kea configuration containers. Non-whitespace
   character data alongside child elements can no longer be silently discarded
   while the neighboring elements are translated.
