@@ -165,6 +165,19 @@ int main() {
   valid &= Check(!entity_configuration &&
                      error.find("must not contain a DTD") != std::string::npos,
                  "DTD-backed entity expansion was accepted");
+  constexpr char mixed_content_xml[] = R"xml(
+    <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+      unexpected text
+      <control-sockets><socket-type>unix</socket-type>
+        <socket-name>/tmp/kea4.sock</socket-name></control-sockets>
+    </config>)xml";
+  error.clear();
+  auto mixed_content = dang::plugins::kea::TranslateConfiguration(
+      mixed_content_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  valid &= Check(!mixed_content &&
+                     error.find("mixed character data in config") !=
+                         std::string::npos,
+                 "mixed configuration character data was silently ignored");
   constexpr char deprecated_socket_xml[] = R"xml(
     <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
       <control-socket><socket-type>unix</socket-type>

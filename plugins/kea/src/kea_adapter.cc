@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cctype>
 #include <charconv>
 #include <chrono>
 #include <cstddef>
@@ -261,6 +262,32 @@ std::optional<std::string> ForeignElement(
   for (const xmlNode* child = node->children; child; child = child->next)
     if (auto foreign = ForeignElement(child, expected_namespace); foreign)
       return foreign;
+  return std::nullopt;
+}
+
+bool HasNonWhitespace(std::string_view text) {
+  return std::any_of(text.begin(), text.end(), [](unsigned char character) {
+    return !std::isspace(character);
+  });
+}
+
+std::optional<std::string> MixedContentElement(const xmlNode* node) {
+  if (!node || node->type != XML_ELEMENT_NODE) return std::nullopt;
+  bool has_element = false;
+  bool has_text = false;
+  for (const xmlNode* child = node->children; child; child = child->next) {
+    if (child->type == XML_ELEMENT_NODE) {
+      has_element = true;
+    } else if ((child->type == XML_TEXT_NODE ||
+                child->type == XML_CDATA_SECTION_NODE) && child->content &&
+               HasNonWhitespace(
+                   reinterpret_cast<const char*>(child->content))) {
+      has_text = true;
+    }
+  }
+  if (has_element && has_text) return LocalName(node);
+  for (const xmlNode* child = node->children; child; child = child->next)
+    if (auto mixed = MixedContentElement(child); mixed) return mixed;
   return std::nullopt;
 }
 
@@ -1083,6 +1110,12 @@ std::optional<ServerConfiguration> TranslateConfiguration(
     if (error)
       *error = "Kea configuration contains foreign-namespace element " +
           *foreign;
+    return std::nullopt;
+  }
+  if (const auto mixed = MixedContentElement(config); mixed) {
+    xmlFreeDoc(document);
+    if (error)
+      *error = "Kea configuration contains mixed character data in " + *mixed;
     return std::nullopt;
   }
   nlohmann::json body;

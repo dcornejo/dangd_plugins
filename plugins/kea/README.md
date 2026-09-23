@@ -127,6 +127,9 @@ unrelated wrapper cannot be mistaken for the module's datastore root.
 DTD declarations are forbidden, including internal subsets. This prevents
 entity references from expanding while configuration text is converted even
 when the XML parser's network access is already disabled.
+Containers may contain child elements or scalar character data, but not both.
+Rejecting mixed content prevents malformed text from being silently discarded
+while its neighboring configuration elements are translated.
 
 The provider implements the complete configuration and state trees of the two
 pinned modules. Through ABI v6 it owns configuration and publishes each

@@ -29,6 +29,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Rejected mixed XML content in Kea configuration containers. Non-whitespace
+  character data alongside child elements can no longer be silently discarded
+  while the neighboring elements are translated.
+
 - Bounded each Kea datastore snapshot to 16 MiB before XML parsing. Malformed
   or hostile transaction input can no longer make the plugin allocate an XML
   tree approaching libxml's signed input-length limit.
