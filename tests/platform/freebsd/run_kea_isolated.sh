@@ -25,7 +25,9 @@ cleanup() {
   rm -f /tmp/kea-dhcp4-freebsd.json /tmp/kea-dhcp6-freebsd.json \
     /tmp/kea-before-freebsd.xml /tmp/kea-proposed-freebsd.xml \
     /tmp/kea-before4-freebsd.xml /tmp/kea-proposed4-freebsd.xml \
-    /tmp/kea-before6-freebsd.xml /tmp/kea-proposed6-freebsd.xml
+    /tmp/kea-before6-freebsd.xml /tmp/kea-proposed6-freebsd.xml \
+    /tmp/kea-before-validation-freebsd.xml \
+    /tmp/kea-proposed-validation-freebsd.xml
 }
 trap cleanup EXIT INT TERM
 cleanup
@@ -74,6 +76,10 @@ sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
   -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
   -e "s#/var/run/kea/kea6-ctrl-socket#$unavailable6#g" \
   "$root/tests/kea-proposed4.xml" > /tmp/kea-proposed4-freebsd.xml
+sed "s#$socket6#$unavailable6#g" /tmp/kea-before6-freebsd.xml \
+  > /tmp/kea-before-validation-freebsd.xml
+sed "s#$socket6#$unavailable6#g" /tmp/kea-proposed6-freebsd.xml \
+  > /tmp/kea-proposed-validation-freebsd.xml
 
 jexec "$jail_name" env KEA_PIDFILE_DIR="$runtime_dir" \
   /usr/local/sbin/kea-dhcp4 -d \
@@ -93,6 +99,17 @@ while [ ! -S "$socket4" ] || [ ! -S "$socket6" ]; do
   fi
   sleep 0.1
 done
+
+# Both sockets are absent, but only DHCPv6 changed. Validation must skip
+# unchanged DHCPv4 and attribute the expected rejection to DHCPv6.
+jexec -l -U root "$jail_name" env \
+  DANG_KEA_EXPECT_VALIDATE_FAILURE=kea-dhcp6-server \
+  DANG_KEA_DHCP4_SOCKET="$unavailable4" \
+  DANG_KEA_DHCP6_SOCKET="$unavailable6" \
+  "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" \
+  /tmp/kea-before-validation-freebsd.xml \
+  /tmp/kea-proposed-validation-freebsd.xml
 
 jexec -l -U root "$jail_name" env \
   DANG_KEA_DHCP4_SOCKET="$socket4" \

@@ -23,6 +23,8 @@ cleanup() {
     /tmp/kea-before-linux.xml /tmp/kea-proposed-linux.xml \
     /tmp/kea-before4-linux.xml /tmp/kea-proposed4-linux.xml \
     /tmp/kea-before6-linux.xml /tmp/kea-proposed6-linux.xml \
+    /tmp/kea-before-validation-linux.xml \
+    /tmp/kea-proposed-validation-linux.xml \
     /tmp/dang-kea-dhcp4 /tmp/dang-kea-dhcp6
 }
 trap cleanup EXIT INT TERM
@@ -84,6 +86,10 @@ sed -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
   -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
   "$root/tests/kea-proposed4.xml" \
   > /tmp/kea-proposed4-linux.xml
+sed "s#$socket6#$unavailable6#g" /tmp/kea-before6-linux.xml \
+  > /tmp/kea-before-validation-linux.xml
+sed "s#$socket6#$unavailable6#g" /tmp/kea-proposed6-linux.xml \
+  > /tmp/kea-proposed-validation-linux.xml
 ip netns exec "$namespace" env KEA_PIDFILE_DIR="$runtime_dir" \
   "$dhcp4" -d -p 1067 \
   -c /tmp/kea-dhcp4.conf \
@@ -104,6 +110,15 @@ while [ ! -S "$socket4" ] || [ ! -S "$socket6" ]; do
   fi
   sleep 0.1
 done
+
+# Both sockets are absent, but only DHCPv6 changed. The expected failure must
+# therefore be attributed to DHCPv6 without attempting unchanged DHCPv4.
+DANG_KEA_EXPECT_VALIDATE_FAILURE=kea-dhcp6-server \
+DANG_KEA_DHCP4_SOCKET="$unavailable4" \
+DANG_KEA_DHCP6_SOCKET="$unavailable6" \
+  ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before-validation-linux.xml \
+  /tmp/kea-proposed-validation-linux.xml
 
 DANG_KEA_DHCP4_SOCKET="$socket4" \
 DANG_KEA_DHCP6_SOCKET="$socket6" \

@@ -346,7 +346,10 @@ jail afterward.
 Each platform script then runs DHCPv4-only and DHCPv6-only transactions with
 the opposite, unchanged daemon deliberately pointed at a nonexistent socket.
 Successful validation, apply, and rollback therefore prove against packaged
-Kea that the plugin does not contact either unchanged daemon. Each script then
+Kea that the plugin does not contact either unchanged daemon. With both sockets
+absent, each script also requires a DHCPv6-only validation failure to carry the
+DHCPv6 module and exact configuration path, proving the unchanged DHCPv4 image
+is not consulted. Each script then
 lets a DHCPv4-only `config-test` succeed, removes the changed daemon's socket
 before apply, and requires both the failed apply and failed conservative
 compensation to carry the DHCPv4 module and configuration instance path.

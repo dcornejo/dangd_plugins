@@ -67,6 +67,8 @@ int main(int argc, char** argv) {
       std::getenv("DANG_KEA_EXPECT_ROLLBACK_FAILURE");
   const char* expected_apply_failure =
       std::getenv("DANG_KEA_EXPECT_APPLY_FAILURE");
+  const char* expected_validate_failure =
+      std::getenv("DANG_KEA_EXPECT_VALIDATE_FAILURE");
   void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
   auto initialize = library ? reinterpret_cast<DangPluginInitV6>(
       dlsym(library, "dang_plugin_init_v6")) : nullptr;
@@ -90,22 +92,35 @@ int main(int argc, char** argv) {
   if (valid)
     valid = plugin->prepare(plugin->context, &transaction, &prepared, &error)
         || Report("prepare", error);
-  if (valid)
-    valid = plugin->validate(plugin->context, prepared, &error)
-        || Report("validate", error);
-  if (valid)
+  if (valid) {
+    const bool validated =
+        plugin->validate(plugin->context, prepared, &error);
+    if (expected_validate_failure) {
+      const std::string expected_path =
+          "/{urn:ietf:params:xml:ns:yang:" +
+          std::string(expected_validate_failure) + "}config";
+      valid = !validated && error.message && error.instance_path &&
+          std::string_view(error.message).find(expected_validate_failure) !=
+              std::string_view::npos &&
+          std::string_view(error.instance_path) == expected_path;
+      if (!valid) Report("expected validation rejection", error);
+    } else {
+      valid = validated || Report("validate", error);
+    }
+  }
+  if (valid && !expected_validate_failure)
     valid = plugin5->v4.hardware_action_count(plugin->context, prepared) == 1;
   DangHardwareActionV1 action{};
-  if (valid)
+  if (valid && !expected_validate_failure)
     valid = plugin5->v4.hardware_action_at(plugin->context, prepared, 0,
                                            &action, &error)
         || Report("hardware action", error);
-  if (valid && expected_apply_failure) {
+  if (valid && !expected_validate_failure && expected_apply_failure) {
     const char* socket = SocketForModule(expected_apply_failure);
     valid = socket && *socket && ::unlink(socket) == 0;
     if (!valid) std::cerr << "cannot remove expected apply socket\n";
   }
-  if (valid) {
+  if (valid && !expected_validate_failure) {
     const bool applied = action.action_id &&
         plugin5->v4.apply_hardware_action(plugin->context, prepared,
                                           action.action_id, &error);
@@ -124,23 +139,26 @@ int main(int argc, char** argv) {
       valid = applied || Report("apply", error);
     }
   }
-  if (valid && expected_rollback_failure) {
+  if (valid && !expected_validate_failure && expected_rollback_failure) {
     const char* socket = SocketForModule(expected_rollback_failure);
     valid = socket && *socket && ::unlink(socket) == 0;
     if (!valid) std::cerr << "cannot remove expected rollback socket\n";
   }
-  if (valid && !expected_apply_failure && !no_op && !skip_operational)
+  if (valid && !expected_validate_failure && !expected_apply_failure &&
+      !no_op && !skip_operational)
     valid = NativeCommand(std::getenv("DANG_KEA_DHCP4_SOCKET"), "lease4-add",
                           {{"subnet-id", 401},
                            {"ip-address", "192.0.2.80"},
                            {"hw-address", "02:00:00:00:04:01"}});
-  if (valid && !expected_apply_failure && !no_op && !skip_operational)
+  if (valid && !expected_validate_failure && !expected_apply_failure &&
+      !no_op && !skip_operational)
     valid = NativeCommand(std::getenv("DANG_KEA_DHCP6_SOCKET"), "lease6-add",
                           {{"subnet-id", 601},
                            {"ip-address", "2001:db8:6::180"},
                            {"duid", "00:01:00:01:02:03:04:05:06:07:08:09"},
                            {"iaid", 1234}});
-  if (valid && !expected_apply_failure && !no_op && !skip_operational) {
+  if (valid && !expected_validate_failure && !expected_apply_failure &&
+      !no_op && !skip_operational) {
     DangOperationalDataV2 state{};
     valid = plugin5->get_operational_data_v2(plugin->context, &state, &error)
         || Report("operational", error);
@@ -178,7 +196,7 @@ int main(int argc, char** argv) {
             std::string::npos;
     if (!valid) std::cerr << "operational XML is incomplete: " << xml << '\n';
   }
-  if (valid && !expected_apply_failure) {
+  if (valid && !expected_validate_failure && !expected_apply_failure) {
     const bool rolled_back = plugin5->v4.rollback_hardware_action(
         plugin->context, prepared, action.action_id, &error);
     if (expected_rollback_failure) {
@@ -198,7 +216,9 @@ int main(int argc, char** argv) {
   if (plugin->destroy) plugin->destroy(plugin->context);
   dlclose(library);
   if (valid)
-    std::cout << (expected_apply_failure
+    std::cout << (expected_validate_failure
+        ? "Kea validation failure attribution passed\n"
+        : expected_apply_failure
         ? "Kea apply failure attribution and compensation passed\n"
         : expected_rollback_failure
         ? "Kea rollback failure attribution passed\n"

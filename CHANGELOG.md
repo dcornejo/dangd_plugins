@@ -26,6 +26,10 @@ All notable changes to the external dangd plugin collection are recorded here.
   module and configuration path while retaining the failed compensation
   diagnostic.
 
+- Added native validation-failure attribution coverage with both daemon sockets
+  absent. A DHCPv6-only candidate must fail at the DHCPv6 module and exact
+  configuration path without attempting the unchanged DHCPv4 image.
+
 - Added a bidirectional cross-host Kea interaction for one Linux and one
   FreeBSD secondary interface on an isolated VLAN. A minimal socket-level
   client sends DHCPv4 INIT-REBOOT and DHCPv6 Rapid Commit requests, then the
