@@ -24,6 +24,7 @@
 #include <cctype>
 #include <charconv>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -169,9 +170,10 @@ nlohmann::json Scalar(const xmlNode* node, const std::string& value) {
     double decimal = 0.0;
     const auto [decimal_end, decimal_error] =
         std::from_chars(value.data(), value.data() + value.size(), decimal);
-    if (decimal_error == std::errc{} &&
-        decimal_end == value.data() + value.size())
-      return decimal;
+    if (decimal_error != std::errc{} ||
+        decimal_end != value.data() + value.size() || !std::isfinite(decimal))
+      throw std::runtime_error("invalid decimal value for " + name);
+    return decimal;
   }
   if (value == "true") return true;
   if (value == "false") return false;

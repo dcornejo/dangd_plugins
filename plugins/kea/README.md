@@ -113,7 +113,9 @@ and HTTP header values may contain any valid JSON value.
 The modeled `database-type` leaf is emitted as Kea's native `type` member for
 lease, host, and configuration database objects.
 Scalar typing follows the pinned YANG declarations: string leaves remain JSON
-strings even when their value looks like `true`, `false`, or a number.
+strings even when their value looks like `true`, `false`, or a number. Known
+decimal64 leaves must parse completely to finite numeric values and cannot fall
+back to strings.
 Kea remains the final implementation-specific validator; a newly introduced
 model structure must gain a focused translation test before it is treated as
 production-supported.

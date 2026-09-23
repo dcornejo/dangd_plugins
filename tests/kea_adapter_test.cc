@@ -250,6 +250,17 @@ int main() {
                      error.find("user-context must contain a JSON object") !=
                          std::string::npos,
                  "scalar user-context was accepted as a JSON map");
+  constexpr char malformed_decimal_xml[] = R"xml(
+    <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+      <t1-percent>not-a-decimal</t1-percent>
+    </config>)xml";
+  error.clear();
+  auto malformed_decimal = dang::plugins::kea::TranslateConfiguration(
+      malformed_decimal_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  valid &= Check(!malformed_decimal &&
+                     error.find("invalid decimal value for t1-percent") !=
+                         std::string::npos,
+                 "malformed decimal leaf fell back to a string");
   constexpr char deprecated_socket_xml[] = R"xml(
     <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
       <control-socket><socket-type>unix</socket-type>

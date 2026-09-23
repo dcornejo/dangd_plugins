@@ -29,6 +29,9 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Rejected malformed and non-finite text in Kea decimal64 configuration leaves
+  instead of silently changing the value to a native string.
+
 - Preserved an explicitly empty DHCPv6 `server-id` presence container as an
   empty JSON object. It no longer acquires empty-string scalar semantics when
   all of its optional children are absent.
