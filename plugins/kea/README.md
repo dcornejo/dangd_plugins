@@ -123,6 +123,9 @@ selection error rather than a misleading missing-socket error.
 The container must be the document root or a direct child of a NETCONF
 `config` or `data` envelope. A matching local name and namespace buried in an
 unrelated wrapper cannot be mistaken for the module's datastore root.
+DTD declarations are forbidden, including internal subsets. This prevents
+entity references from expanding while configuration text is converted even
+when the XML parser's network access is already disabled.
 
 The provider implements the complete configuration and state trees of the two
 pinned modules. Through ABI v6 it owns configuration and publishes each

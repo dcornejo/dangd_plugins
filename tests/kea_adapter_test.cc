@@ -145,6 +145,19 @@ int main() {
                      error.find("not a top-level datastore node") !=
                          std::string::npos,
                  "nested Kea configuration container was accepted as a root");
+  constexpr char entity_configuration_xml[] = R"xml(
+    <!DOCTYPE config [<!ENTITY socket "/tmp/kea4.sock">]>
+    <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+      <control-sockets><socket-type>unix</socket-type>
+        <socket-name>&socket;</socket-name></control-sockets>
+    </config>)xml";
+  error.clear();
+  auto entity_configuration = dang::plugins::kea::TranslateConfiguration(
+      entity_configuration_xml, "kea-dhcp4-server", "/tmp/kea4.sock",
+      &error);
+  valid &= Check(!entity_configuration &&
+                     error.find("must not contain a DTD") != std::string::npos,
+                 "DTD-backed entity expansion was accepted");
   constexpr char deprecated_socket_xml[] = R"xml(
     <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
       <control-socket><socket-type>unix</socket-type>

@@ -1049,6 +1049,14 @@ std::optional<ServerConfiguration> TranslateConfiguration(
     if (error) *error = "cannot parse the validated datastore snapshot";
     return std::nullopt;
   }
+  // Datastore snapshots require no document type. Reject both internal and
+  // external subsets before xmlNodeGetContent can resolve entity references;
+  // XML_PARSE_NONET alone only prevents network retrieval.
+  if (document->intSubset || document->extSubset) {
+    xmlFreeDoc(document);
+    if (error) *error = "Kea datastore snapshots must not contain a DTD";
+    return std::nullopt;
+  }
   const std::string expected_namespace =
       "urn:ietf:params:xml:ns:yang:" + std::string(module_name);
   const xmlNode* config = nullptr;

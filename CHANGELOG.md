@@ -29,6 +29,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Rejected DTD declarations in Kea datastore snapshots before reading any node
+  text. Internal entities can no longer expand during XML-to-JSON conversion;
+  external subsets are also rejected in addition to the existing network-fetch
+  prohibition.
+
 - Required a selected Kea configuration container to be a standalone document
   root or a direct child of a NETCONF `config` or `data` envelope. A matching
   container buried inside an unrelated wrapper can no longer be translated as
