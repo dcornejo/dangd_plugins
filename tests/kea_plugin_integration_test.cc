@@ -64,44 +64,27 @@ bool AddDhcp6PagingLeases() {
   return true;
 }
 
-bool AddDhcp6PagingReservations() {
-  const char* socket = std::getenv("DANG_KEA_DHCP6_SOCKET");
-  std::string reason;
-  auto response = dang::plugins::kea::SendControlQuery(
-      socket ? socket : "", "config-get", nlohmann::json::object(), &reason);
-  if (!response ||
-      !dang::plugins::kea::CommandSucceeded(*response, &reason)) {
-    std::cerr << "config-get failed before host paging: " << reason << '\n';
-    return false;
+bool AddDhcp6PagingReservations(std::string* xml) {
+  if (!xml) return false;
+  const std::size_t insertion = xml->rfind("</subnet6>");
+  if (insertion == std::string::npos) return false;
+  static constexpr char kHex[] = "0123456789abcdef";
+  std::ostringstream reservations;
+  // The proposed datastore already has one DHCPv6 reservation. Add 256 more
+  // to authoritative dangd intent so the native operational read crosses the
+  // 256-row host page without manufacturing out-of-band configuration drift.
+  for (unsigned int index = 0; index < 256; ++index) {
+    const char high = kHex[(index >> 4) & 0xf];
+    const char low = kHex[index & 0xf];
+    reservations << "<host><identifier-type>duid</identifier-type>"
+                 << "<identifier>00:01:00:01:02:03:04:05:06:07:08:"
+                 << high << low << "</identifier><ip-addresses>"
+                 << "2001:db8:6::" << std::hex << 0x2000 + index << std::dec
+                 << "</ip-addresses><hostname>paging-host-" << index
+                 << "</hostname></host>";
   }
-  try {
-    const nlohmann::json& answer = response->is_array()
-        ? response->at(0) : *response;
-    nlohmann::json arguments = answer.at("arguments");
-    // The content hash describes config-get output and is not accepted by
-    // config-set. Keep every other native setting exactly as Kea returned it.
-    arguments.erase("hash");
-    auto& reservations =
-        arguments.at("Dhcp6").at("subnet6").at(0).at("reservations");
-    static constexpr char kHex[] = "0123456789abcdef";
-    // CollectHostPages requests 256 rows. The modeled transaction already
-    // installs one reservation, so these additions force a second native page.
-    for (unsigned int index = 0; index < 256; ++index) {
-      std::string suffix;
-      suffix.push_back(kHex[(index >> 4) & 0xf]);
-      suffix.push_back(kHex[index & 0xf]);
-      std::ostringstream address;
-      address << "2001:db8:6::" << std::hex << 0x2000 + index;
-      reservations.push_back(
-          {{"duid", "00:01:00:01:02:03:04:05:06:07:08:" + suffix},
-           {"hostname", "paging-host-" + std::to_string(index)},
-           {"ip-addresses", {address.str()}}});
-    }
-    return NativeCommand(socket, "config-set", arguments);
-  } catch (const std::exception& exception) {
-    std::cerr << "cannot prepare host paging: " << exception.what() << '\n';
-    return false;
-  }
+  xml->insert(insertion, reservations.str());
+  return true;
 }
 
 const char* SocketForModule(std::string_view module) {
@@ -163,14 +146,15 @@ int main(int argc, char** argv) {
     return 2;
   }
   const std::string before = Read(argv[2]);
-  const std::string proposed = Read(argv[3]);
-  const bool no_op = before == proposed;
+  std::string proposed = Read(argv[3]);
   const bool skip_operational =
       std::getenv("DANG_KEA_SKIP_OPERATIONAL") != nullptr;
   const bool force_lease_paging =
       std::getenv("DANG_KEA_FORCE_LEASE_PAGING") != nullptr;
   const bool force_host_paging =
       std::getenv("DANG_KEA_FORCE_HOST_PAGING") != nullptr;
+  bool valid = !force_host_paging || AddDhcp6PagingReservations(&proposed);
+  const bool no_op = before == proposed;
   const char* expected_rollback_failure =
       std::getenv("DANG_KEA_EXPECT_ROLLBACK_FAILURE");
   const char* expected_apply_failure =
@@ -197,10 +181,10 @@ int main(int argc, char** argv) {
   DangTransactionV1 transaction{before.c_str(), proposed.c_str(), "[]"};
   DangPluginErrorV1 error{};
   DangAppliedConfigurationV1 reconciled{};
-  bool valid = plugin6->reconcile_applied_configuration(
-                   plugin->context, nullptr, before.c_str(), &reconciled,
-                   &error) ||
-               Report("startup reconciliation", error);
+  valid = valid &&
+      (plugin6->reconcile_applied_configuration(
+           plugin->context, nullptr, before.c_str(), &reconciled, &error) ||
+       Report("startup reconciliation", error));
   valid = valid && reconciled.applied_xml == before.c_str() &&
           reconciled.outcomes == nullptr && reconciled.outcome_count == 0;
   void* prepared = nullptr;
@@ -282,9 +266,6 @@ int main(int argc, char** argv) {
     valid = socket && *socket && ::unlink(socket) == 0;
     if (!valid) std::cerr << "cannot remove expected rollback socket\n";
   }
-  if (valid && force_host_paging && !expected_validate_failure &&
-      !expected_apply_failure && !no_op && !skip_operational)
-    valid = AddDhcp6PagingReservations();
   if (valid && !expected_validate_failure && !expected_apply_failure &&
       !no_op && !skip_operational)
     valid = NativeCommand(std::getenv("DANG_KEA_DHCP4_SOCKET"), "lease4-add",
@@ -357,11 +338,12 @@ int main(int argc, char** argv) {
     DangOperationalDataV2 state{};
     const bool retrieved =
         plugin5->get_operational_data_v2(plugin->context, &state, &error);
+    const std::string subtree = expected_operational_subtree
+        ? expected_operational_subtree : "leases";
     const std::string expected_path =
         "/{urn:ietf:params:xml:ns:yang:" +
-        std::string(expected_operational_failure) + "}state/" +
-        (expected_operational_subtree ? expected_operational_subtree
-                                      : "leases");
+        std::string(expected_operational_failure) + "}" +
+        (subtree == "config" ? "config" : "state/" + subtree);
     valid = !retrieved && error.message && error.instance_path &&
         std::string_view(error.message).find(expected_operational_failure) !=
             std::string_view::npos &&

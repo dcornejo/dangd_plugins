@@ -83,8 +83,10 @@ database backends provide runtime data and storage mechanics; they never
 replace the applied dangd snapshot as configuration intent. ABI-v6
 reconciliation projects each live `config-get` image onto the corresponding
 translated dangd image, so Kea defaults and its read-only content hash do not
-create false drift while a missing, changed, reordered, or additional managed
-list value rejects the commit with the owning module and configuration path.
+create false drift. Object-backed YANG lists are compared by their managed
+content because Kea may reorder them; scalar leaf-lists retain exact ordering.
+A missing, changed, or additional managed value rejects the commit with the
+owning module and configuration path.
 
 Every control exchange must return exactly one answer. Empty or multi-answer
 transaction replies fail closed, so an ambiguous response can never be treated
@@ -213,6 +215,15 @@ control call, so a slow final reply cannot be accepted after the budget. Each
 individual control exchange retains its five-second and 16 MiB limits.
 Unexpected exceptions from the control-query implementation are contained as
 retrieval failures and cannot cross the plugin callback boundary.
+
+Before collecting any operational state for a daemon, the provider reads its
+complete live configuration and projects it onto the accepted dangd image.
+Missing sockets and out-of-band changes therefore fail at the owning module's
+`config` path instead of allowing state from a configuration that dangd did not
+accept. The accepted configuration and subnet inventory are captured under one
+lock, so one operational request cannot combine snapshots from two commits.
+DHCPv4 is verified and collected before DHCPv6; a later DHCPv6 failure cannot
+discard the failure attribution or cause a partial result to be published.
 
 Host reservations use Kea's `reservation-get-page` continuation map and the
 same aggregate safeguards and full cursor-cycle detection as leases.
@@ -351,9 +362,10 @@ Each interaction proves DHCPv4 and DHCPv6 `config-test`, `config-set`, rollback,
 paged-command lease and host retrieval, and supplemental-statistics retrieval
 against the native packaged daemon. After apply, it injects one real lease into
 DHCPv4 and 257 real leases into DHCPv6 through the lease-command hook. The
-workflow also appends 256 DHCPv6 reservations through Kea's live control API;
-together with the modeled reservation, both native inventories cross their
-256-row page boundaries. The test requires the final lease and reservation
+workflow also adds 256 DHCPv6 reservations to the authoritative dangd
+candidate; together with the existing modeled reservation, both native
+inventories cross their 256-row page boundaries without introducing
+out-of-band configuration. The test requires the final lease and reservation
 from the second pages plus the binary hardware address and DUID, DHCPv6 IAID,
 and exact per-subnet assigned-lease counters in the modeled operational XML.
 It verifies that no
@@ -368,8 +380,8 @@ absent, each script also requires a DHCPv6-only validation failure to carry the
 DHCPv6 module and exact configuration path, proving the unchanged DHCPv4 image
 is not consulted. No-op transactions with first DHCPv4 and then DHCPv6
 unavailable require complete operational requests to fail at the matching
-lease subtree. The DHCPv6 case first completes every DHCPv4 state query, proving
-structural attribution in both directions without issuing configuration calls.
+configuration path. The DHCPv6 case first completes every DHCPv4 state query,
+proving structural attribution in both directions.
 The native workflow also lets both daemons accept a full candidate, then in
 separate cases removes each daemon's managed host-command hook before ABI-v6
 readback. Post-apply reconciliation must reject the commit at the owning
@@ -377,13 +389,14 @@ module's configuration path; the DHCPv6 case first proves that DHCPv4 readback
 succeeds. Each ensuing hardware rollback must restore the complete before-image.
 The workflow also reconciles configured DHCPv4 and DHCPv6 subnets absent from
 the live boot daemons and requires complete state to fail at the owning
-module's `state/lease-stats`, proving that native configuration drift cannot
-masquerade as empty complete state. The DHCPv6 case first completes all DHCPv4
-state queries.
+module's `config` path, proving that native configuration drift cannot
+masquerade as complete state. The DHCPv6 case first completes all DHCPv4 state
+queries.
 It then removes each daemon's required host-command hook through Kea's control
-API and requires lease and statistics retrieval to proceed before the request
-fails at that module's `state/hosts`. The DHCPv6 case first completes all
-DHCPv4 state queries. The following full transaction restores both hooks.
+API and requires the authority check to fail at that module's `config` path
+before any state from the drifted daemon is published. The DHCPv6 case first
+completes all DHCPv4 state queries. The following full transaction restores
+both hooks.
 Each script then
 lets a DHCPv4-only `config-test` succeed, removes the changed daemon's socket
 before apply, and requires both the failed apply and failed conservative

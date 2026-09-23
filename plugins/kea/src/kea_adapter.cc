@@ -650,6 +650,41 @@ bool ContainsExpectedConfiguration(const nlohmann::json& actual,
         *error = "Kea live configuration has a different list size at " + path;
       return false;
     }
+    // Kea may return object-backed YANG lists in an implementation-defined
+    // order. Match each managed object once by content so serialization order
+    // cannot manufacture drift, while scalar leaf-lists retain exact ordering.
+    if (std::all_of(expected.begin(), expected.end(),
+                    [](const nlohmann::json& entry) {
+                      return entry.is_object();
+                    }) &&
+        std::all_of(actual.begin(), actual.end(),
+                    [](const nlohmann::json& entry) {
+                      return entry.is_object();
+                    })) {
+      std::vector<bool> matched(actual.size(), false);
+      for (std::size_t expected_index = 0; expected_index < expected.size();
+           ++expected_index) {
+        bool found = false;
+        for (std::size_t actual_index = 0; actual_index < actual.size();
+             ++actual_index) {
+          if (!matched[actual_index] &&
+              ContainsExpectedConfiguration(actual[actual_index],
+                                            expected[expected_index], path,
+                                            nullptr)) {
+            matched[actual_index] = true;
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          if (error)
+            *error = "Kea live configuration omits a managed list entry at " +
+                path + "/" + std::to_string(expected_index);
+          return false;
+        }
+      }
+      return true;
+    }
     for (std::size_t index = 0; index < expected.size(); ++index)
       if (!ContainsExpectedConfiguration(actual[index], expected[index],
                                          path + "/" + std::to_string(index),

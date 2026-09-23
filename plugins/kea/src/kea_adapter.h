@@ -65,8 +65,9 @@ using ConfigurationCommand = std::function<bool(
 
 /**
  * Reads one daemon's effective configuration and verifies every managed value.
- * Kea-added defaults and response metadata are ignored, but a missing or
- * changed value from the authoritative dangd image fails reconciliation.
+ * Kea-added defaults, response metadata, and object-list serialization order
+ * are ignored, but a missing or changed value from the authoritative dangd
+ * image fails reconciliation.
  */
 [[nodiscard]] bool VerifyLiveConfiguration(
     const ServerConfiguration& expected, const ControlQuery& query,

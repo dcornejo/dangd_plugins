@@ -51,25 +51,33 @@ thread_local std::string callback_error;
 thread_local std::string callback_path;
 thread_local std::string operational_xml;
 
-// Statistics must describe only configuration that actually reached Kea.
-// Preparing or validating a candidate therefore cannot alter this inventory;
-// successful apply and rollback callbacks are its only writers.
-std::mutex subnet_inventory_mutex;
+// Operational state must describe only configuration accepted by dangd and
+// known to have reached Kea. Preparing or validating a candidate therefore
+// cannot alter this state; successful apply, rollback, and startup
+// reconciliation callbacks are its only writers.
+std::mutex accepted_state_mutex;
 std::array<std::vector<std::uint32_t>, 2> accepted_subnet_ids;
+std::vector<ServerConfiguration> accepted_configurations;
 
-void RememberAcceptedSubnets(
+struct AcceptedConfigurationSnapshot {
+  std::array<std::vector<std::uint32_t>, 2> subnet_ids;
+  std::vector<ServerConfiguration> configurations;
+};
+
+void RememberAcceptedState(
     const std::vector<ServerConfiguration>& configurations) {
   std::array<std::vector<std::uint32_t>, 2> next;
   for (std::size_t index = 0; index < configurations.size() && index < next.size();
        ++index)
     next[index] = ExtractSubnetIds(configurations[index]);
-  std::lock_guard lock(subnet_inventory_mutex);
+  std::lock_guard lock(accepted_state_mutex);
   accepted_subnet_ids = std::move(next);
+  accepted_configurations = configurations;
 }
 
-std::array<std::vector<std::uint32_t>, 2> AcceptedSubnetSnapshot() {
-  std::lock_guard lock(subnet_inventory_mutex);
-  return accepted_subnet_ids;
+AcceptedConfigurationSnapshot AcceptedSnapshot() {
+  std::lock_guard lock(accepted_state_mutex);
+  return {accepted_subnet_ids, accepted_configurations};
 }
 
 void SetError(DangPluginErrorV1* error, std::string message,
@@ -216,7 +224,7 @@ int ApplyConfiguration(void*, void* opaque, DangPluginErrorV1* error) {
     SetError(error, std::move(reason), path);
     return 0;
   }
-  RememberAcceptedSubnets(prepared->proposed);
+  RememberAcceptedState(prepared->proposed);
   return 1;
 }
 
@@ -230,7 +238,7 @@ int RollbackConfiguration(void*, void* opaque, DangPluginErrorV1* error) {
   std::string reason;
   if (RollbackChanged(prepared->before, prepared->proposed, Execute,
                       &failed_module, &reason)) {
-    RememberAcceptedSubnets(prepared->before);
+    RememberAcceptedState(prepared->before);
     return 1;
   }
   const std::string path = failed_module.empty()
@@ -292,12 +300,23 @@ int Operational(void*, DangOperationalDataV1* result,
   }
   operational_xml =
       "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">";
-  const auto subnet_ids = AcceptedSubnetSnapshot();
+  const AcceptedConfigurationSnapshot accepted = AcceptedSnapshot();
   std::size_t server_index = 0;
   for (const auto& [module, socket, dhcp6] : {
            std::tuple{"kea-dhcp4-server", socket4, false},
            std::tuple{"kea-dhcp6-server", socket6, true}}) {
     std::string reason;
+    if (server_index >= accepted.configurations.size() ||
+        !VerifyLiveConfiguration(accepted.configurations[server_index],
+                                 SendControlQuery, &reason)) {
+      SetError(error,
+               module + std::string(": ") +
+                   (reason.empty() ? "accepted configuration is unavailable"
+                                   : reason),
+               "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +
+                   "}config");
+      return 0;
+    }
     auto leases = CollectLeasePages(socket, dhcp6, SendControlQuery, &reason);
     if (!leases) {
       SetError(error, module + std::string(": ") + reason,
@@ -306,7 +325,7 @@ int Operational(void*, DangOperationalDataV1* result,
       return 0;
     }
     auto statistics = CollectStatistics(socket, dhcp6,
-                                        subnet_ids[server_index],
+                                        accepted.subnet_ids[server_index],
                                         SendControlQuery, &reason);
     if (!statistics) {
       SetError(error, module + std::string(": ") + reason,
@@ -380,7 +399,7 @@ int ReconcileAppliedConfiguration(void*, void* opaque, const char* current_xml,
       return 0;
     }
   }
-  RememberAcceptedSubnets(*accepted);
+  RememberAcceptedState(*accepted);
   *result = {.applied_xml = current_xml,
              .outcomes = nullptr,
              .outcome_count = 0};

@@ -453,6 +453,29 @@ int main() {
   valid &= Check(dang::plugins::kea::VerifyLiveConfiguration(
                      *dhcp4, matching_configuration, &error),
                  "Kea-added defaults were mistaken for configuration drift");
+  dang::plugins::kea::ServerConfiguration reordered_expected = *dhcp4;
+  auto& expected_reservations =
+      reordered_expected.arguments["Dhcp4"]["reservations"];
+  nlohmann::json second_reservation = expected_reservations.at(0);
+  second_reservation["hw-address"] = "00:01:02:03:04:06";
+  second_reservation["hostname"] = "second";
+  expected_reservations.push_back(second_reservation);
+  live_configuration = reordered_expected.arguments;
+  auto& live_reservations = live_configuration["Dhcp4"]["reservations"];
+  std::reverse(live_reservations.begin(), live_reservations.end());
+  error.clear();
+  valid &= Check(dang::plugins::kea::VerifyLiveConfiguration(
+                     reordered_expected, matching_configuration, &error),
+                 "reordered Kea object list was mistaken for drift");
+  live_reservations.at(0)["hostname"] = "changed";
+  error.clear();
+  valid &= Check(!dang::plugins::kea::VerifyLiveConfiguration(
+                      reordered_expected, matching_configuration, &error) &&
+                     error.find("managed list entry") != std::string::npos,
+                 "changed member of reordered Kea list was accepted");
+  live_configuration = dhcp4->arguments;
+  live_configuration["hash"] = "read-only";
+  live_configuration["Dhcp4"]["authoritative"] = false;
   live_configuration["Dhcp4"]["server-tag"] = "changed";
   error.clear();
   valid &= Check(!dang::plugins::kea::VerifyLiveConfiguration(

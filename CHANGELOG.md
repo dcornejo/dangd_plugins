@@ -9,12 +9,18 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added continuous Kea configuration-authority checks to complete operational
+  retrieval. Before collecting a daemon's state, the plugin now compares its
+  live `config-get` image with the accepted dangd snapshot and fails at the
+  owning module's `config` path on unavailability or drift. The configuration
+  and subnet inventories are captured atomically.
+
 - Added authoritative post-apply Kea configuration readback. ABI-v6
   reconciliation now uses `config-get` for every daemon changed by the
   transaction and requires all values translated from dangd's accepted
-  snapshot to match. Kea-added defaults and response metadata are ignored;
-  missing, changed, reordered, or additional managed list values fail with the
-  owning module and configuration path.
+  snapshot to match. Kea-added defaults, response metadata, and object-list
+  serialization order are ignored; missing, changed, or additional managed
+  values fail with the owning module and configuration path.
 
 - Added native Linux and FreeBSD rejection evidence for post-apply drift in
   both directions. Both Kea daemons first accept the candidate, then separate
@@ -24,9 +30,9 @@ All notable changes to the external dangd plugin collection are recorded here.
   completes DHCPv4 readback.
 
 - Forced native DHCPv6 host-reservation retrieval across its 256-row page
-  boundary on Linux and FreeBSD. The isolated workflow appends 256 reservations
-  through Kea's control API and requires the final second-page identifier and
-  hostname in the complete modeled state.
+  boundary on Linux and FreeBSD. The isolated workflow adds 256 reservations
+  to the authoritative dangd candidate and requires the final second-page
+  identifier and hostname in the complete modeled state.
 
 - Forced native DHCPv6 operational retrieval across its 256-row lease page
   boundary on Linux and FreeBSD. The isolated workflow injects 257 leases and
@@ -56,20 +62,19 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 - Added native operational-failure attribution coverage in both directions.
   After no-op transactions, unavailable DHCPv4 and DHCPv6 sockets must fail
-  complete state retrieval at their matching lease subtrees without issuing
-  any configuration command. The DHCPv6 case first completes all DHCPv4 state
-  queries.
+  complete state retrieval at their matching configuration paths. The DHCPv6
+  case first completes all DHCPv4 state queries.
 
 - Added native statistics-drift coverage in both directions. A configured
   subnet absent from either live daemon now fails complete retrieval at the
-  owning module's `state/lease-stats`; the DHCPv6 case first completes every
-  DHCPv4 state query.
+  owning module's `config` path; the DHCPv6 case first completes every DHCPv4
+  state query.
 
 - Added native host-state drift coverage in both directions by removing each
   Kea daemon's required host-command hook through its control API. Complete
-  state retrieval must finish prior lease and statistics processing, then fail
-  at the owning module's `state/hosts` path; the following full transaction
-  restores both hooks.
+  state retrieval must fail at the owning module's `config` path before state
+  from that daemon is published; the following full transaction restores both
+  hooks.
 
 - Added a bidirectional cross-host Kea interaction for one Linux and one
   FreeBSD secondary interface on an isolated VLAN. A minimal socket-level
@@ -90,6 +95,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   lease counters in the plugin's complete operational XML.
 
 ### Fixed
+
+- Compared object-backed Kea configuration lists by managed content rather
+  than serialized position. Native Kea reservation reordering no longer
+  creates false drift, while missing, duplicated, additional, or changed list
+  entries still fail closed. Scalar leaf-list ordering remains exact.
 
 - Failed complete Kea operational retrieval when the daemon reports no
   statistics for an exact subnet present in dangd's accepted configuration.

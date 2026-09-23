@@ -117,9 +117,10 @@ jexec -l -U root "$jail_name" env \
   /tmp/kea-proposed-validation-freebsd.xml
 
 # A no-op transaction reaches no daemon, then complete state retrieval must
-# attribute the unavailable DHCPv4 lease source precisely.
+# attribute the unavailable DHCPv4 configuration source precisely.
 jexec -l -U root "$jail_name" env \
   DANG_KEA_EXPECT_OPERATIONAL_FAILURE=kea-dhcp4-server \
+  DANG_KEA_EXPECT_OPERATIONAL_SUBTREE=config \
   DANG_KEA_DHCP4_SOCKET="$unavailable4" \
   DANG_KEA_DHCP6_SOCKET="$socket6" \
   "$root/build/kea_plugin_integration_test" \
@@ -129,6 +130,7 @@ jexec -l -U root "$jail_name" env \
 # Mirror the read-side proof after DHCPv4 retrieval succeeds completely.
 jexec -l -U root "$jail_name" env \
   DANG_KEA_EXPECT_OPERATIONAL_FAILURE=kea-dhcp6-server \
+  DANG_KEA_EXPECT_OPERATIONAL_SUBTREE=config \
   DANG_KEA_DHCP4_SOCKET="$socket4" \
   DANG_KEA_DHCP6_SOCKET="$unavailable6" \
   "$root/build/kea_plugin_integration_test" \
@@ -136,21 +138,21 @@ jexec -l -U root "$jail_name" env \
   /tmp/kea-before4-freebsd.xml
 
 # Reconcile a configured DHCPv4 subnet that the untouched boot daemon lacks.
-# Complete state must fail closed rather than publish empty lease statistics.
+# Complete state must fail closed at the authoritative configuration check.
 jexec -l -U root "$jail_name" env \
   DANG_KEA_EXPECT_OPERATIONAL_FAILURE=kea-dhcp4-server \
-  DANG_KEA_EXPECT_OPERATIONAL_SUBTREE=lease-stats \
+  DANG_KEA_EXPECT_OPERATIONAL_SUBTREE=config \
   DANG_KEA_DHCP4_SOCKET="$socket4" \
   DANG_KEA_DHCP6_SOCKET="$unavailable6" \
   "$root/build/kea_plugin_integration_test" \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-proposed4-freebsd.xml \
   /tmp/kea-proposed4-freebsd.xml
 
-# Mirror the statistics-drift proof for DHCPv6. DHCPv4 state must complete
+# Mirror the configuration-drift proof for DHCPv6. DHCPv4 state must complete
 # before the configured but absent DHCPv6 subnet fails closed.
 jexec -l -U root "$jail_name" env \
   DANG_KEA_EXPECT_OPERATIONAL_FAILURE=kea-dhcp6-server \
-  DANG_KEA_EXPECT_OPERATIONAL_SUBTREE=lease-stats \
+  DANG_KEA_EXPECT_OPERATIONAL_SUBTREE=config \
   DANG_KEA_DHCP4_SOCKET="$socket4" \
   DANG_KEA_DHCP6_SOCKET="$socket6" \
   "$root/build/kea_plugin_integration_test" \
@@ -180,10 +182,10 @@ jexec -l -U root "$jail_name" env \
   /tmp/kea-proposed-freebsd.xml
 
 # Remove DHCPv6's host hook first. Every DHCPv4 state query must complete
-# before retrieval reaches the drifted DHCPv6 host source.
+# before the DHCPv6 authority check detects the drifted configuration.
 jexec -l -U root "$jail_name" env \
   DANG_KEA_EXPECT_OPERATIONAL_FAILURE=kea-dhcp6-server \
-  DANG_KEA_EXPECT_OPERATIONAL_SUBTREE=hosts \
+  DANG_KEA_EXPECT_OPERATIONAL_SUBTREE=config \
   DANG_KEA_REMOVE_HOST_HOOK=kea-dhcp6-server \
   DANG_KEA_DHCP4_SOCKET="$socket4" \
   DANG_KEA_DHCP6_SOCKET="$socket6" \
@@ -191,11 +193,11 @@ jexec -l -U root "$jail_name" env \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-before-freebsd.xml \
   /tmp/kea-before-freebsd.xml
 
-# Remove only the required host-command hook out-of-band. Lease retrieval and
-# the empty statistics inventory succeed before hosts fails structurally.
+# Remove only the required host-command hook out-of-band. The DHCPv4 authority
+# check must reject the drift before publishing any operational state.
 jexec -l -U root "$jail_name" env \
   DANG_KEA_EXPECT_OPERATIONAL_FAILURE=kea-dhcp4-server \
-  DANG_KEA_EXPECT_OPERATIONAL_SUBTREE=hosts \
+  DANG_KEA_EXPECT_OPERATIONAL_SUBTREE=config \
   DANG_KEA_REMOVE_HOST_HOOK=kea-dhcp4-server \
   DANG_KEA_DHCP4_SOCKET="$socket4" \
   DANG_KEA_DHCP6_SOCKET="$socket6" \
