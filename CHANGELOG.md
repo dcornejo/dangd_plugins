@@ -29,6 +29,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Preserved an explicitly empty DHCPv6 `server-id` presence container as an
+  empty JSON object. It no longer acquires empty-string scalar semantics when
+  all of its optional children are absent.
+
 - Rejected malformed JSON in Kea's JSON-bearing configuration leaves instead
   of silently changing it to a native string. Enforced JSON-object shape for
   modeled user contexts and DHCP queue control while retaining arbitrary valid

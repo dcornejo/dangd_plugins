@@ -103,6 +103,13 @@ bool IsLeafList(std::string_view name) {
   return leaf_lists.contains(name);
 }
 
+bool IsEmptyObjectContainer(std::string_view name) {
+  // The pinned DHCPv6 server-id presence container has no mandatory children.
+  // Its explicit empty form therefore carries presence and must remain an
+  // object rather than acquiring the empty-string shape of a scalar leaf.
+  return name == "server-id";
+}
+
 std::string JsonName(std::string_view yang_name) {
   static const std::map<std::string, std::string, std::less<>> names{
       {"config-database", "config-databases"},
@@ -206,7 +213,10 @@ nlohmann::json ConvertPool(const xmlNode* node) {
 
 nlohmann::json ConvertNode(const xmlNode* node) {
   const auto children = ElementChildren(node);
-  if (children.empty()) return Scalar(node, Text(node));
+  if (children.empty())
+    return IsEmptyObjectContainer(LocalName(node))
+        ? nlohmann::json::object()
+        : Scalar(node, Text(node));
   // Group siblings before conversion because singleton and repeated YANG
   // nodes require different JSON shapes even when their child syntax matches.
   std::map<std::string, std::vector<const xmlNode*>, std::less<>> grouped;

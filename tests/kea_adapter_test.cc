@@ -55,6 +55,7 @@ int main() {
     </control-sockets>
   </config>
   <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp6-server">
+    <server-id/>
     <subnet6><id>6</id><pool><prefix>2001:db8:1::100/120</prefix></pool>
       <subnet>2001:db8:1::/64</subnet></subnet6>
     <interfaces-config><interfaces>dangtest0</interfaces></interfaces-config>
@@ -380,6 +381,9 @@ int main() {
                  "singleton excluded-prefix leaf-list is not an array");
   valid &= Check(six.at("relay-supplied-options").is_array(),
                  "singleton relay option leaf-list is not an array");
+  valid &= Check(six.at("server-id").is_object() &&
+                     six.at("server-id").empty(),
+                 "empty DHCPv6 server-id presence became a scalar");
   valid &= Check(six.at("lease-database").at("type") == "memfile" &&
                      six.at("lease-database").at("persist") == false,
                  "DHCPv6 lease database was not converted to Kea form");

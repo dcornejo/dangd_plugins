@@ -103,6 +103,9 @@ JSON-valued user contexts, hook parameters, HTTP header values, and DHCP queue
 control, IPv4 and IPv6 address pools, and Kea's JSON naming differences for
 reservations, databases, hooks, shared networks, loggers, output options, and
 prefix-delegation pools. Singleton lists and leaf-lists remain JSON arrays.
+The DHCPv6 `server-id` presence container may be explicitly empty because all
+of its children are optional; that form translates to an empty JSON object,
+not an empty string.
 JSON-bearing leaves must contain valid JSON rather than falling back to an
 ordinary string. `user-context` and `dhcp-queue-control` additionally require
 JSON objects as specified by their pinned model descriptions; hook parameters
