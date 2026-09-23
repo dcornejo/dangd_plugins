@@ -29,6 +29,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Enforced unsigned parsing and exact modeled width for directly typed Kea
+  integer leaves. Negative, overflowing, partially parsed, or malformed values
+  can no longer fall through to signed numbers or strings; DHCPv4 and DHCPv6
+  option `code` widths are selected from the module namespace.
+
 - Rejected non-YANG text in modeled Kea boolean configuration leaves instead
   of silently changing malformed values to native strings.
 

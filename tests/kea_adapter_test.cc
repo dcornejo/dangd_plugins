@@ -272,6 +272,28 @@ int main() {
                      error.find("invalid boolean value for authoritative") !=
                          std::string::npos,
                  "malformed boolean leaf fell back to a string");
+  constexpr char negative_unsigned_xml[] = R"xml(
+    <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+      <valid-lifetime>-1</valid-lifetime>
+    </config>)xml";
+  error.clear();
+  auto negative_unsigned = dang::plugins::kea::TranslateConfiguration(
+      negative_unsigned_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  valid &= Check(!negative_unsigned &&
+                     error.find("invalid unsigned integer value for "
+                                "valid-lifetime") != std::string::npos,
+                 "negative unsigned leaf was accepted");
+  constexpr char overflowing_unsigned_xml[] = R"xml(
+    <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+      <debuglevel>256</debuglevel>
+    </config>)xml";
+  error.clear();
+  auto overflowing_unsigned = dang::plugins::kea::TranslateConfiguration(
+      overflowing_unsigned_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  valid &= Check(!overflowing_unsigned &&
+                     error.find("invalid unsigned integer value for "
+                                "debuglevel") != std::string::npos,
+                 "out-of-range uint8 leaf was accepted");
   constexpr char deprecated_socket_xml[] = R"xml(
     <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
       <control-socket><socket-type>unix</socket-type>

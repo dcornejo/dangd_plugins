@@ -126,6 +126,45 @@ std::string JsonName(std::string_view yang_name) {
   return found == names.end() ? std::string(yang_name) : found->second;
 }
 
+std::optional<std::uint64_t> UnsignedMaximum(const xmlNode* node,
+                                             std::string_view name) {
+  static const std::set<std::string, std::less<>> uint8_names{
+      "debuglevel", "delegated-len", "prefix-length"};
+  static const std::set<std::string, std::less<>> uint16_names{
+      "dhcp4o6-port", "htype", "port", "sender-port", "server-port",
+      "socket-port"};
+  static const std::set<std::string, std::less<>> uint32_names{
+      "assigned-addresses", "assigned-nas", "assigned-pds", "cache-max-age",
+      "cltt", "config-fetch-wait-time", "connect-timeout", "ddns-ttl",
+      "ddns-ttl-max", "ddns-ttl-min", "decline-probation-period",
+      "declined-addresses", "enterprise-id",
+      "flush-reclaimed-timer-wait-time", "hold-reclaimed-time", "iaid", "id",
+      "lfc-interval", "max-preferred-lifetime", "max-queue-size",
+      "max-reclaim-leases", "max-reclaim-time", "max-reconnect-tries",
+      "max-row-errors", "max-valid-lifetime", "maxsize", "maxver",
+      "min-preferred-lifetime", "min-valid-lifetime", "offer-lifetime",
+      "packet-queue-size", "parked-packet-limit", "pool-id",
+      "preferred-lifetime", "read-timeout", "rebind-timer",
+      "reclaim-timer-wait-time", "reconnect-wait-time", "renew-timer",
+      "service-sockets-max-retries", "service-sockets-retry-wait-time",
+      "statistic-default-sample-age", "statistic-default-sample-count",
+      "subnet-id", "tcp-user-timeout", "thread-pool-size", "time",
+      "total-addresses", "total-nas", "total-pds", "unwarned-reclaim-cycles",
+      "valid-lifetime", "write-timeout"};
+  if (uint8_names.contains(name))
+    return std::numeric_limits<std::uint8_t>::max();
+  if (uint16_names.contains(name))
+    return std::numeric_limits<std::uint16_t>::max();
+  if (uint32_names.contains(name))
+    return std::numeric_limits<std::uint32_t>::max();
+  if (name == "code")
+    return Namespace(node) ==
+            "urn:ietf:params:xml:ns:yang:kea-dhcp4-server"
+        ? std::numeric_limits<std::uint8_t>::max()
+        : std::numeric_limits<std::uint16_t>::max();
+  return std::nullopt;
+}
+
 nlohmann::json Scalar(const xmlNode* node, const std::string& value) {
   const std::string name = LocalName(node);
   // Kea models carry deliberately JSON-valued string leaves. Other scalar
@@ -195,6 +234,15 @@ nlohmann::json Scalar(const xmlNode* node, const std::string& value) {
     if (value == "true") return true;
     if (value == "false") return false;
     throw std::runtime_error("invalid boolean value for " + name);
+  }
+  if (const auto maximum = UnsignedMaximum(node, name); maximum) {
+    std::uint64_t integer = 0;
+    const auto [integer_end, integer_error] =
+        std::from_chars(value.data(), value.data() + value.size(), integer);
+    if (integer_error != std::errc{} ||
+        integer_end != value.data() + value.size() || integer > *maximum)
+      throw std::runtime_error("invalid unsigned integer value for " + name);
+    return integer;
   }
   if (value == "true") return true;
   if (value == "false") return false;

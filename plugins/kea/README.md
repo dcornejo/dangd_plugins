@@ -116,7 +116,10 @@ Scalar typing follows the pinned YANG declarations: string leaves remain JSON
 strings even when their value looks like `true`, `false`, or a number. Known
 decimal64 leaves must parse completely to finite numeric values and cannot fall
 back to strings. Boolean leaves accept only the YANG lexical forms `true` and
-`false`; other text cannot acquire string semantics.
+`false`; other text cannot acquire string semantics. Directly typed unsigned
+integer leaves are parsed to unsigned JSON numbers with their modeled 8-, 16-,
+or 32-bit range enforced, including the module-specific width of option
+`code`.
 Kea remains the final implementation-specific validator; a newly introduced
 model structure must gain a focused translation test before it is treated as
 production-supported.
