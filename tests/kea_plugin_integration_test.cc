@@ -64,6 +64,46 @@ bool AddDhcp6PagingLeases() {
   return true;
 }
 
+bool AddDhcp6PagingReservations() {
+  const char* socket = std::getenv("DANG_KEA_DHCP6_SOCKET");
+  std::string reason;
+  auto response = dang::plugins::kea::SendControlQuery(
+      socket ? socket : "", "config-get", nlohmann::json::object(), &reason);
+  if (!response ||
+      !dang::plugins::kea::CommandSucceeded(*response, &reason)) {
+    std::cerr << "config-get failed before host paging: " << reason << '\n';
+    return false;
+  }
+  try {
+    const nlohmann::json& answer = response->is_array()
+        ? response->at(0) : *response;
+    nlohmann::json arguments = answer.at("arguments");
+    // The content hash describes config-get output and is not accepted by
+    // config-set. Keep every other native setting exactly as Kea returned it.
+    arguments.erase("hash");
+    auto& reservations =
+        arguments.at("Dhcp6").at("subnet6").at(0).at("reservations");
+    static constexpr char kHex[] = "0123456789abcdef";
+    // CollectHostPages requests 256 rows. The modeled transaction already
+    // installs one reservation, so these additions force a second native page.
+    for (unsigned int index = 0; index < 256; ++index) {
+      std::string suffix;
+      suffix.push_back(kHex[(index >> 4) & 0xf]);
+      suffix.push_back(kHex[index & 0xf]);
+      std::ostringstream address;
+      address << "2001:db8:6::" << std::hex << 0x2000 + index;
+      reservations.push_back(
+          {{"duid", "00:01:00:01:02:03:04:05:06:07:08:" + suffix},
+           {"hostname", "paging-host-" + std::to_string(index)},
+           {"ip-addresses", {address.str()}}});
+    }
+    return NativeCommand(socket, "config-set", arguments);
+  } catch (const std::exception& exception) {
+    std::cerr << "cannot prepare host paging: " << exception.what() << '\n';
+    return false;
+  }
+}
+
 const char* SocketForModule(std::string_view module) {
   if (module == "kea-dhcp4-server")
     return std::getenv("DANG_KEA_DHCP4_SOCKET");
@@ -129,6 +169,8 @@ int main(int argc, char** argv) {
       std::getenv("DANG_KEA_SKIP_OPERATIONAL") != nullptr;
   const bool force_lease_paging =
       std::getenv("DANG_KEA_FORCE_LEASE_PAGING") != nullptr;
+  const bool force_host_paging =
+      std::getenv("DANG_KEA_FORCE_HOST_PAGING") != nullptr;
   const char* expected_rollback_failure =
       std::getenv("DANG_KEA_EXPECT_ROLLBACK_FAILURE");
   const char* expected_apply_failure =
@@ -215,6 +257,9 @@ int main(int argc, char** argv) {
     valid = socket && *socket && ::unlink(socket) == 0;
     if (!valid) std::cerr << "cannot remove expected rollback socket\n";
   }
+  if (valid && force_host_paging && !expected_validate_failure &&
+      !expected_apply_failure && !no_op && !skip_operational)
+    valid = AddDhcp6PagingReservations();
   if (valid && !expected_validate_failure && !expected_apply_failure &&
       !no_op && !skip_operational)
     valid = NativeCommand(std::getenv("DANG_KEA_DHCP4_SOCKET"), "lease4-add",
@@ -268,6 +313,11 @@ int main(int argc, char** argv) {
         xml.find("<identifier>00:01:02:03:04:05</identifier>") !=
             std::string::npos &&
         xml.find("<identifier>00:01:02:03</identifier>") != std::string::npos &&
+        (!force_host_paging ||
+         (xml.find("<identifier>00:01:00:01:02:03:04:05:06:07:08:ff"
+                   "</identifier>") != std::string::npos &&
+          xml.find("<hostname>paging-host-255</hostname>") !=
+              std::string::npos)) &&
         xml.find("<space>dhcp4</space>") != std::string::npos &&
         xml.find("<data>printer.example</data>") !=
             std::string::npos &&
