@@ -340,9 +340,11 @@ sudo tests/platform/freebsd/run_kea_isolated.sh "$PWD"
 Each interaction proves DHCPv4 and DHCPv6 `config-test`, `config-set`, rollback,
 paged-command lease and host retrieval, and supplemental-statistics retrieval
 against the native packaged daemon. After apply, it injects one real lease into
-each daemon through the lease-command hook and requires both addresses plus the
-binary hardware address and DUID, DHCPv6 IAID, and incremented per-subnet
-assigned-lease counters in the modeled operational XML. It verifies that no
+DHCPv4 and 257 real leases into DHCPv6 through the lease-command hook. The
+DHCPv6 inventory therefore crosses the native 256-row page boundary. The test
+requires addresses from both pages plus the binary hardware address and DUID,
+DHCPv6 IAID, and exact per-subnet assigned-lease counters in the modeled
+operational XML. It verifies that no
 other interface entered the isolation boundary and removes the temporary
 memory-backed lease databases, unique sockets, PID storage, and namespace or
 jail afterward.

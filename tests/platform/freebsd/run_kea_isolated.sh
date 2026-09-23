@@ -184,6 +184,7 @@ jexec -l -U root "$jail_name" env \
 jexec -l -U root "$jail_name" env \
   DANG_KEA_DHCP4_SOCKET="$socket4" \
   DANG_KEA_DHCP6_SOCKET="$socket6" \
+  DANG_KEA_FORCE_LEASE_PAGING=1 \
   "$root/build/kea_plugin_integration_test" \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-before-freebsd.xml \
   /tmp/kea-proposed-freebsd.xml

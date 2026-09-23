@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Forced native DHCPv6 operational retrieval across its 256-row lease page
+  boundary on Linux and FreeBSD. The isolated workflow injects 257 leases and
+  requires the final address, IAID, and exact assigned-NA counter, proving that
+  a real packaged daemon supplies and the plugin publishes the second page.
+
 - Extended the Linux and FreeBSD native Kea workflows with DHCPv4-only and
   DHCPv6-only transactions whose opposite unchanged image points at a
   nonexistent socket. Successful validation, apply, and rollback now provide

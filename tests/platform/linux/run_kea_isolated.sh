@@ -187,6 +187,7 @@ DANG_KEA_DHCP6_SOCKET="$socket6" \
 
 DANG_KEA_DHCP4_SOCKET="$socket4" \
 DANG_KEA_DHCP6_SOCKET="$socket6" \
+DANG_KEA_FORCE_LEASE_PAGING=1 \
   ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-before-linux.xml \
   /tmp/kea-proposed-linux.xml

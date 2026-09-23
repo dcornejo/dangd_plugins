@@ -43,6 +43,27 @@ bool NativeCommand(const char* socket, std::string_view command,
   return false;
 }
 
+bool AddDhcp6PagingLeases() {
+  const char* socket = std::getenv("DANG_KEA_DHCP6_SOCKET");
+  // CollectLeasePages requests 256 rows. Add exactly 256 leases beyond the
+  // ordinary fixture lease so a native daemon must return a second page.
+  // These addresses remain inside the documentation-only /64 used by the
+  // isolated platform tests and never reach a host LAN interface.
+  for (unsigned int index = 0; index < 256; ++index) {
+    std::ostringstream address;
+    address << "2001:db8:6::" << std::hex << 0x1000 + index;
+    if (!NativeCommand(socket, "lease6-add",
+                       {{"subnet-id", 601},
+                        {"ip-address", address.str()},
+                        {"duid", "00:01:00:01:02:03:04:05:06:07:08:0a"},
+                        {"iaid", 2000 + index}})) {
+      std::cerr << "cannot create DHCPv6 paging lease " << index << '\n';
+      return false;
+    }
+  }
+  return true;
+}
+
 const char* SocketForModule(std::string_view module) {
   if (module == "kea-dhcp4-server")
     return std::getenv("DANG_KEA_DHCP4_SOCKET");
@@ -106,6 +127,8 @@ int main(int argc, char** argv) {
   const bool no_op = before == proposed;
   const bool skip_operational =
       std::getenv("DANG_KEA_SKIP_OPERATIONAL") != nullptr;
+  const bool force_lease_paging =
+      std::getenv("DANG_KEA_FORCE_LEASE_PAGING") != nullptr;
   const char* expected_rollback_failure =
       std::getenv("DANG_KEA_EXPECT_ROLLBACK_FAILURE");
   const char* expected_apply_failure =
@@ -205,6 +228,9 @@ int main(int argc, char** argv) {
                            {"ip-address", "2001:db8:6::180"},
                            {"duid", "00:01:00:01:02:03:04:05:06:07:08:09"},
                            {"iaid", 1234}});
+  if (valid && force_lease_paging && !expected_validate_failure &&
+      !expected_apply_failure && !no_op && !skip_operational)
+    valid = AddDhcp6PagingLeases();
   if (valid && !expected_validate_failure && !expected_apply_failure &&
       !no_op && !skip_operational) {
     DangOperationalDataV2 state{};
@@ -226,10 +252,16 @@ int main(int argc, char** argv) {
         xml.find("<duid>AAEAAQIDBAUGBwgJ</duid>") !=
             std::string::npos &&
         xml.find("<iaid>1234</iaid>") != std::string::npos &&
+        (!force_lease_paging ||
+         (xml.find("<ip-address>2001:db8:6::10ff</ip-address>") !=
+              std::string::npos &&
+          xml.find("<iaid>2255</iaid>") != std::string::npos)) &&
         xml.find("<lease-stats") != std::string::npos &&
         xml.find("<assigned-addresses>1</assigned-addresses>") !=
             std::string::npos &&
-        xml.find("<assigned-nas>1</assigned-nas>") != std::string::npos &&
+        xml.find(force_lease_paging ? "<assigned-nas>257</assigned-nas>"
+                                    : "<assigned-nas>1</assigned-nas>") !=
+            std::string::npos &&
         xml.find("<hosts") != std::string::npos &&
         xml.find("<subnet-id>401</subnet-id>") != std::string::npos &&
         xml.find("<subnet-id>601</subnet-id>") != std::string::npos &&
