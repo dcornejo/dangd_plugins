@@ -29,6 +29,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Required a selected Kea configuration container to be a standalone document
+  root or a direct child of a NETCONF `config` or `data` envelope. A matching
+  container buried inside an unrelated wrapper can no longer be translated as
+  the module's datastore root.
+
 - Reported a missing Kea module configuration container directly instead of
   translating an empty object and misdiagnosing it as a missing control socket.
   Configuration selection now enforces exactly one match in both directions.

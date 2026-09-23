@@ -120,6 +120,9 @@ Exactly one configuration container may match each Kea module. Ambiguous
 snapshots with duplicate module containers fail instead of silently selecting
 the first tree and ignoring the second, and an absent module reports a direct
 selection error rather than a misleading missing-socket error.
+The container must be the document root or a direct child of a NETCONF
+`config` or `data` envelope. A matching local name and namespace buried in an
+unrelated wrapper cannot be mistaken for the module's datastore root.
 
 The provider implements the complete configuration and state trees of the two
 pinned modules. Through ABI v6 it owns configuration and publishes each

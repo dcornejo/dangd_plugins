@@ -41,6 +41,8 @@ namespace {
 
 constexpr std::size_t kMaximumControlBytes = 16 * 1024 * 1024;
 constexpr auto kSocketTimeout = std::chrono::seconds(5);
+constexpr std::string_view kNetconfBaseNamespace =
+    "urn:ietf:params:xml:ns:netconf:base:1.0";
 
 bool ValidateSocketPath(std::string_view socket_path, std::string* error) {
   if (socket_path.empty() ||
@@ -239,6 +241,15 @@ void FindConfigurations(const xmlNode* node,
   }
   for (const xmlNode* child = node->children; child; child = child->next)
     FindConfigurations(child, expected_namespace, first, count);
+}
+
+bool IsTopLevelConfiguration(const xmlNode* configuration,
+                             const xmlNode* document_root) {
+  if (configuration == document_root) return true;
+  if (!configuration || configuration->parent != document_root) return false;
+  const std::string root_name = LocalName(document_root);
+  return Namespace(document_root) == kNetconfBaseNamespace &&
+      (root_name == "config" || root_name == "data");
 }
 
 std::optional<std::string> ForeignElement(
@@ -1042,14 +1053,21 @@ std::optional<ServerConfiguration> TranslateConfiguration(
       "urn:ietf:params:xml:ns:yang:" + std::string(module_name);
   const xmlNode* config = nullptr;
   std::size_t configuration_count = 0;
-  FindConfigurations(xmlDocGetRootElement(document), expected_namespace,
-                     &config, &configuration_count);
+  const xmlNode* document_root = xmlDocGetRootElement(document);
+  FindConfigurations(document_root, expected_namespace, &config,
+                     &configuration_count);
   if (configuration_count != 1) {
     xmlFreeDoc(document);
     if (error)
       *error = configuration_count == 0
           ? "Kea datastore omits the module configuration container"
           : "Kea datastore contains multiple configuration containers";
+    return std::nullopt;
+  }
+  if (!IsTopLevelConfiguration(config, document_root)) {
+    xmlFreeDoc(document);
+    if (error)
+      *error = "Kea configuration container is not a top-level datastore node";
     return std::nullopt;
   }
   if (const auto foreign = ForeignElement(config, expected_namespace); foreign) {

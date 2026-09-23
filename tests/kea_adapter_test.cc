@@ -131,6 +131,20 @@ int main() {
                      error.find("omits the module configuration container") !=
                          std::string::npos,
                  "absent Kea configuration produced an indirect error");
+  constexpr char nested_configuration_xml[] = R"xml(
+    <data xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+      <wrapper xmlns="urn:example:wrapper">
+        <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server"/>
+      </wrapper>
+    </data>)xml";
+  error.clear();
+  auto nested_configuration = dang::plugins::kea::TranslateConfiguration(
+      nested_configuration_xml, "kea-dhcp4-server", "/tmp/kea4.sock",
+      &error);
+  valid &= Check(!nested_configuration &&
+                     error.find("not a top-level datastore node") !=
+                         std::string::npos,
+                 "nested Kea configuration container was accepted as a root");
   constexpr char deprecated_socket_xml[] = R"xml(
     <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
       <control-socket><socket-type>unix</socket-type>
