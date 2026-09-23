@@ -24,6 +24,7 @@ cleanup() {
   rm -f "$socket4" "$socket6"
   rm -f /tmp/kea-dhcp4-freebsd.json /tmp/kea-dhcp6-freebsd.json \
     /tmp/kea-before-freebsd.xml /tmp/kea-proposed-freebsd.xml \
+    /tmp/kea-before4-freebsd.xml /tmp/kea-proposed4-freebsd.xml \
     /tmp/kea-before6-freebsd.xml /tmp/kea-proposed6-freebsd.xml
 }
 trap cleanup EXIT INT TERM
@@ -64,6 +65,15 @@ sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
   -e "s#/var/run/kea/kea4-ctrl-socket#$unavailable4#g" \
   -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
   "$root/tests/kea-proposed6.xml" > /tmp/kea-proposed6-freebsd.xml
+unavailable6="$runtime_dir/unavailable6.sock"
+sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
+  -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
+  -e "s#/var/run/kea/kea6-ctrl-socket#$unavailable6#g" \
+  "$root/tests/kea-before.xml" > /tmp/kea-before4-freebsd.xml
+sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
+  -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
+  -e "s#/var/run/kea/kea6-ctrl-socket#$unavailable6#g" \
+  "$root/tests/kea-proposed4.xml" > /tmp/kea-proposed4-freebsd.xml
 
 jexec "$jail_name" env KEA_PIDFILE_DIR="$runtime_dir" \
   /usr/local/sbin/kea-dhcp4 -d \
@@ -100,6 +110,15 @@ jexec -l -U root "$jail_name" env \
   "$root/build/kea_plugin_integration_test" \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-before6-freebsd.xml \
   /tmp/kea-proposed6-freebsd.xml
+
+# Mirror the proof with an unavailable unchanged DHCPv6 daemon.
+jexec -l -U root "$jail_name" env \
+  DANG_KEA_SKIP_OPERATIONAL=1 \
+  DANG_KEA_DHCP4_SOCKET="$socket4" \
+  DANG_KEA_DHCP6_SOCKET="$unavailable6" \
+  "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before4-freebsd.xml \
+  /tmp/kea-proposed4-freebsd.xml
 
 if jexec "$jail_name" ifconfig -l | tr ' ' '\n' | grep -Ev '^(lo0|dangkea0)$' \
   | grep -q .; then

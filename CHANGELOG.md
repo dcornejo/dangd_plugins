@@ -9,10 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
-- Extended the Linux and FreeBSD native Kea workflows with a DHCPv6-only
-  transaction whose unchanged DHCPv4 image points at a nonexistent socket.
-  Successful validation, apply, and rollback now provide packaged-daemon proof
-  that selective transactions never contact the unchanged service.
+- Extended the Linux and FreeBSD native Kea workflows with DHCPv4-only and
+  DHCPv6-only transactions whose opposite unchanged image points at a
+  nonexistent socket. Successful validation, apply, and rollback now provide
+  packaged-daemon proof in both directions that selective transactions never
+  contact the unchanged service.
 
 - Added a bidirectional cross-host Kea interaction for one Linux and one
   FreeBSD secondary interface on an isolated VLAN. A minimal socket-level

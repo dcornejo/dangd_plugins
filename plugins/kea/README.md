@@ -343,10 +343,10 @@ assigned-lease counters in the modeled operational XML. It verifies that no
 other interface entered the isolation boundary and removes the temporary
 memory-backed lease databases, unique sockets, PID storage, and namespace or
 jail afterward.
-Each platform script then runs a DHCPv6-only transaction with the unchanged
-DHCPv4 configuration deliberately pointed at a nonexistent socket. Successful
-validation, apply, and rollback therefore prove against packaged Kea that the
-plugin does not contact an unchanged daemon.
+Each platform script then runs DHCPv4-only and DHCPv6-only transactions with
+the opposite, unchanged daemon deliberately pointed at a nonexistent socket.
+Successful validation, apply, and rollback therefore prove against packaged
+Kea that the plugin does not contact either unchanged daemon.
 
 ### Cross-host VLAN interaction
 
