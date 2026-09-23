@@ -36,6 +36,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   any configuration command. The DHCPv6 case first completes all DHCPv4 state
   queries.
 
+- Added native host-state drift coverage by removing Kea's required
+  host-command hook through its control API. Complete state retrieval must
+  finish lease and statistics processing, then fail at the owning module's
+  `state/hosts` path; the following full transaction restores the hook.
+
 - Added a bidirectional cross-host Kea interaction for one Linux and one
   FreeBSD secondary interface on an isolated VLAN. A minimal socket-level
   client sends DHCPv4 INIT-REBOOT and DHCPv6 Rapid Commit requests, then the

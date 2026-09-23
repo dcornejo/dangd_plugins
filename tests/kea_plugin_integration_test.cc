@@ -51,6 +51,49 @@ const char* SocketForModule(std::string_view module) {
   return nullptr;
 }
 
+bool RemoveHostHook(std::string_view module) {
+  const char* socket = SocketForModule(module);
+  const char* service = module == "kea-dhcp4-server" ? "Dhcp4"
+      : module == "kea-dhcp6-server" ? "Dhcp6" : nullptr;
+  if (!socket || !*socket || !service) return false;
+  std::string reason;
+  auto response = dang::plugins::kea::SendControlQuery(
+      socket, "config-get", nlohmann::json::object(), &reason);
+  if (!response ||
+      !dang::plugins::kea::CommandSucceeded(*response, &reason)) {
+    std::cerr << "config-get failed before host-hook drift: " << reason << '\n';
+    return false;
+  }
+  try {
+    const nlohmann::json& answer = response->is_array()
+        ? response->at(0) : *response;
+    nlohmann::json arguments = answer.at("arguments");
+    // config-get adds a read-only content hash that config-set rejects.
+    arguments.erase("hash");
+    auto& hooks = arguments.at(service).at("hooks-libraries");
+    std::size_t removed = 0;
+    for (auto hook = hooks.begin(); hook != hooks.end();) {
+      const auto library = hook->find("library");
+      if (library != hook->end() && library->is_string() &&
+          library->get_ref<const std::string&>().ends_with(
+              "/libdhcp_host_cmds.so")) {
+        hook = hooks.erase(hook);
+        ++removed;
+      } else {
+        ++hook;
+      }
+    }
+    if (removed != 1) {
+      std::cerr << "config-get did not contain exactly one host hook\n";
+      return false;
+    }
+    return NativeCommand(socket, "config-set", arguments);
+  } catch (const std::exception& exception) {
+    std::cerr << "cannot prepare host-hook drift: " << exception.what() << '\n';
+    return false;
+  }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -73,6 +116,7 @@ int main(int argc, char** argv) {
       std::getenv("DANG_KEA_EXPECT_OPERATIONAL_FAILURE");
   const char* expected_operational_subtree =
       std::getenv("DANG_KEA_EXPECT_OPERATIONAL_SUBTREE");
+  const char* remove_host_hook = std::getenv("DANG_KEA_REMOVE_HOST_HOOK");
   void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
   auto initialize = library ? reinterpret_cast<DangPluginInitV6>(
       dlsym(library, "dang_plugin_init_v6")) : nullptr;
@@ -200,6 +244,8 @@ int main(int argc, char** argv) {
             std::string::npos;
     if (!valid) std::cerr << "operational XML is incomplete: " << xml << '\n';
   }
+  if (valid && remove_host_hook)
+    valid = RemoveHostHook(remove_host_hook);
   if (valid && expected_operational_failure) {
     DangOperationalDataV2 state{};
     const bool retrieved =

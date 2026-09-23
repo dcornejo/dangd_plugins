@@ -147,6 +147,17 @@ DANG_KEA_DHCP6_SOCKET="$unavailable6" \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-proposed4-linux.xml \
   /tmp/kea-proposed4-linux.xml
 
+# Remove only the required host-command hook out-of-band. Lease retrieval and
+# the empty statistics inventory succeed before hosts fails structurally.
+DANG_KEA_EXPECT_OPERATIONAL_FAILURE=kea-dhcp4-server \
+DANG_KEA_EXPECT_OPERATIONAL_SUBTREE=hosts \
+DANG_KEA_REMOVE_HOST_HOOK=kea-dhcp4-server \
+DANG_KEA_DHCP4_SOCKET="$socket4" \
+DANG_KEA_DHCP6_SOCKET="$socket6" \
+  ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before-linux.xml \
+  /tmp/kea-before-linux.xml
+
 DANG_KEA_DHCP4_SOCKET="$socket4" \
 DANG_KEA_DHCP6_SOCKET="$socket6" \
   ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
