@@ -103,6 +103,10 @@ JSON-valued user contexts, hook parameters, HTTP header values, and DHCP queue
 control, IPv4 and IPv6 address pools, and Kea's JSON naming differences for
 reservations, databases, hooks, shared networks, loggers, output options, and
 prefix-delegation pools. Singleton lists and leaf-lists remain JSON arrays.
+JSON-bearing leaves must contain valid JSON rather than falling back to an
+ordinary string. `user-context` and `dhcp-queue-control` additionally require
+JSON objects as specified by their pinned model descriptions; hook parameters
+and HTTP header values may contain any valid JSON value.
 The modeled `database-type` leaf is emitted as Kea's native `type` member for
 lease, host, and configuration database objects.
 Scalar typing follows the pinned YANG declarations: string leaves remain JSON

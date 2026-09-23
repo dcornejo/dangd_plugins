@@ -29,6 +29,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Rejected malformed JSON in Kea's JSON-bearing configuration leaves instead
+  of silently changing it to a native string. Enforced JSON-object shape for
+  modeled user contexts and DHCP queue control while retaining arbitrary valid
+  JSON values for hook parameters and HTTP header values.
+
 - Enforced collection shape for singleton Kea list and leaf-list nodes. A
   scalar can no longer masquerade as an unambiguous list entry, and a
   structured object can no longer masquerade as a leaf-list value.

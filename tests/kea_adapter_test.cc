@@ -226,6 +226,29 @@ int main() {
                      error.find("invalid collection shape for interfaces") !=
                          std::string::npos,
                  "structured leaf-list entry was accepted");
+  constexpr char malformed_json_xml[] = R"xml(
+    <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+      <hook-library><library>/opt/kea/libdhcp_test.so</library>
+        <parameters>not-json</parameters></hook-library>
+    </config>)xml";
+  error.clear();
+  auto malformed_json = dang::plugins::kea::TranslateConfiguration(
+      malformed_json_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  valid &= Check(!malformed_json &&
+                     error.find("invalid JSON in parameters") !=
+                         std::string::npos,
+                 "malformed JSON-valued leaf fell back to a string");
+  constexpr char scalar_context_xml[] = R"xml(
+    <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+      <user-context>"not-a-map"</user-context>
+    </config>)xml";
+  error.clear();
+  auto scalar_context = dang::plugins::kea::TranslateConfiguration(
+      scalar_context_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  valid &= Check(!scalar_context &&
+                     error.find("user-context must contain a JSON object") !=
+                         std::string::npos,
+                 "scalar user-context was accepted as a JSON map");
   constexpr char deprecated_socket_xml[] = R"xml(
     <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
       <control-socket><socket-type>unix</socket-type>

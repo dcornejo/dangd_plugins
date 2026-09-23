@@ -127,9 +127,14 @@ nlohmann::json Scalar(const xmlNode* node, const std::string& value) {
   if (name == "user-context" || name == "parameters" ||
       name == "dhcp-queue-control" || http_header_value) {
     try {
-      return nlohmann::json::parse(value);
-    } catch (...) {
-      return value;
+      nlohmann::json parsed = nlohmann::json::parse(value);
+      if ((name == "user-context" || name == "dhcp-queue-control") &&
+          !parsed.is_object())
+        throw std::runtime_error(name + " must contain a JSON object");
+      return parsed;
+    } catch (const nlohmann::json::exception& exception) {
+      throw std::runtime_error("invalid JSON in " + name + ": " +
+                               exception.what());
     }
   }
   // These leaves are declared directly as YANG string in the pinned module
