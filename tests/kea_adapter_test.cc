@@ -122,6 +122,15 @@ int main() {
                      error.find("multiple configuration containers") !=
                          std::string::npos,
                  "duplicate Kea configuration containers were accepted");
+  constexpr char absent_configuration_xml[] = R"xml(
+    <data xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"/>)xml";
+  error.clear();
+  auto absent_configuration = dang::plugins::kea::TranslateConfiguration(
+      absent_configuration_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  valid &= Check(!absent_configuration &&
+                     error.find("omits the module configuration container") !=
+                         std::string::npos,
+                 "absent Kea configuration produced an indirect error");
   constexpr char deprecated_socket_xml[] = R"xml(
     <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
       <control-socket><socket-type>unix</socket-type>

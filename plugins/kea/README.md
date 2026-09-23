@@ -118,7 +118,8 @@ module's namespace; a foreign element cannot acquire Kea semantics merely by
 reusing a recognized local name.
 Exactly one configuration container may match each Kea module. Ambiguous
 snapshots with duplicate module containers fail instead of silently selecting
-the first tree and ignoring the second.
+the first tree and ignoring the second, and an absent module reports a direct
+selection error rather than a misleading missing-socket error.
 
 The provider implements the complete configuration and state trees of the two
 pinned modules. Through ABI v6 it owns configuration and publishes each

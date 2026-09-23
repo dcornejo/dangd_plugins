@@ -29,6 +29,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Reported a missing Kea module configuration container directly instead of
+  translating an empty object and misdiagnosing it as a missing control socket.
+  Configuration selection now enforces exactly one match in both directions.
+
 - Rejected datastore snapshots containing multiple matching Kea configuration
   containers. Translation no longer silently selects the first module tree and
   ignores a conflicting duplicate.

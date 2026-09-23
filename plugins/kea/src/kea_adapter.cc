@@ -1044,24 +1044,24 @@ std::optional<ServerConfiguration> TranslateConfiguration(
   std::size_t configuration_count = 0;
   FindConfigurations(xmlDocGetRootElement(document), expected_namespace,
                      &config, &configuration_count);
-  if (configuration_count > 1) {
+  if (configuration_count != 1) {
     xmlFreeDoc(document);
-    if (error) *error = "Kea datastore contains multiple configuration containers";
+    if (error)
+      *error = configuration_count == 0
+          ? "Kea datastore omits the module configuration container"
+          : "Kea datastore contains multiple configuration containers";
     return std::nullopt;
   }
-  if (config) {
-    if (const auto foreign = ForeignElement(config, expected_namespace);
-        foreign) {
-      xmlFreeDoc(document);
-      if (error)
-        *error = "Kea configuration contains foreign-namespace element " +
-            *foreign;
-      return std::nullopt;
-    }
+  if (const auto foreign = ForeignElement(config, expected_namespace); foreign) {
+    xmlFreeDoc(document);
+    if (error)
+      *error = "Kea configuration contains foreign-namespace element " +
+          *foreign;
+    return std::nullopt;
   }
   nlohmann::json body;
   try {
-    body = config ? ConvertNode(config) : nlohmann::json::object();
+    body = ConvertNode(config);
   } catch (const std::exception& exception) {
     xmlFreeDoc(document);
     if (error)
