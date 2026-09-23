@@ -1813,14 +1813,10 @@ bool RunConfigurationCommand(const ConfigurationCommand& command,
   }
 }
 
-bool ApplyWithCompensation(
+bool ValidateTransactionPairing(
     const std::vector<ServerConfiguration>& before,
-    const std::vector<ServerConfiguration>& proposed,
-    const ConfigurationCommand& command, std::string* failed_module,
-    std::string* reason) {
-  if (failed_module) failed_module->clear();
-  if (reason) reason->clear();
-  if (!command || before.size() != proposed.size() || proposed.empty()) {
+    const std::vector<ServerConfiguration>& proposed, std::string* reason) {
+  if (before.size() != proposed.size() || proposed.empty()) {
     if (reason) *reason = "invalid Kea configuration transaction";
     return false;
   }
@@ -1838,6 +1834,21 @@ bool ApplyWithCompensation(
       return false;
     }
   }
+  return true;
+}
+
+bool ApplyWithCompensation(
+    const std::vector<ServerConfiguration>& before,
+    const std::vector<ServerConfiguration>& proposed,
+    const ConfigurationCommand& command, std::string* failed_module,
+    std::string* reason) {
+  if (failed_module) failed_module->clear();
+  if (reason) reason->clear();
+  if (!command) {
+    if (reason) *reason = "invalid Kea configuration transaction";
+    return false;
+  }
+  if (!ValidateTransactionPairing(before, proposed, reason)) return false;
   std::vector<std::size_t> changed;
   for (std::size_t index = 0; index < proposed.size(); ++index)
     if (before[index].arguments != proposed[index].arguments)
@@ -1871,6 +1882,37 @@ bool ApplyWithCompensation(
     return false;
   }
   return true;
+}
+
+bool RollbackChanged(const std::vector<ServerConfiguration>& before,
+                     const std::vector<ServerConfiguration>& proposed,
+                     const ConfigurationCommand& command,
+                     std::string* failed_module, std::string* reason) {
+  if (failed_module) failed_module->clear();
+  if (reason) reason->clear();
+  if (!command) {
+    if (reason) *reason = "invalid Kea configuration transaction";
+    return false;
+  }
+  if (!ValidateTransactionPairing(before, proposed, reason)) return false;
+  std::string failures;
+  for (std::size_t index = before.size(); index > 0; --index) {
+    const auto& old_server = before[index - 1];
+    if (old_server.arguments == proposed[index - 1].arguments) continue;
+    std::string rollback_error;
+    if (RunConfigurationCommand(command, old_server, "config-set",
+                                &rollback_error))
+      continue;
+    if (rollback_error.empty())
+      rollback_error = "configuration rollback command failed";
+    if (failed_module && failed_module->empty())
+      *failed_module = old_server.module_name;
+    failures += (failures.empty() ? "" : "; ") + old_server.module_name +
+        ": " + rollback_error;
+  }
+  if (failures.empty()) return true;
+  if (reason) *reason = std::move(failures);
+  return false;
 }
 
 }  // namespace dang::plugins::kea

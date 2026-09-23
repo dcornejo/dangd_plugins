@@ -32,6 +32,7 @@ using dang::plugins::kea::CollectHostPages;
 using dang::plugins::kea::CollectLeasePages;
 using dang::plugins::kea::CollectStatistics;
 using dang::plugins::kea::ExtractSubnetIds;
+using dang::plugins::kea::RollbackChanged;
 using dang::plugins::kea::SendControlCommand;
 using dang::plugins::kea::SendControlQuery;
 using dang::plugins::kea::ServerConfiguration;
@@ -224,22 +225,17 @@ int RollbackConfiguration(void*, void* opaque, DangPluginErrorV1* error) {
     SetError(error, "the prepared Kea transaction is missing");
     return 0;
   }
-  std::string failures;
-  for (std::size_t index = prepared->before.size(); index > 0; --index) {
-    const ServerConfiguration& server = prepared->before[index - 1];
-    if (index <= prepared->proposed.size() &&
-        server.arguments == prepared->proposed[index - 1].arguments)
-      continue;
-    std::string reason;
-    if (!Execute(server, "config-set", &reason))
-      failures += (failures.empty() ? "" : "; ") + server.module_name +
-          ": " + reason;
-  }
-  if (failures.empty()) {
+  std::string failed_module;
+  std::string reason;
+  if (RollbackChanged(prepared->before, prepared->proposed, Execute,
+                      &failed_module, &reason)) {
     RememberAcceptedSubnets(prepared->before);
     return 1;
   }
-  SetError(error, failures);
+  const std::string path = failed_module.empty()
+      ? "/"
+      : "/{urn:ietf:params:xml:ns:yang:" + failed_module + "}config";
+  SetError(error, std::move(reason), path);
   return 0;
 }
 

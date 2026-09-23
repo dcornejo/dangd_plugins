@@ -1343,6 +1343,47 @@ int main() {
                                                   "before6:config-set"},
                  "single-module failure restored an unchanged daemon");
   transaction_calls.clear();
+  command_reason.clear();
+  valid &= Check(dang::plugins::kea::RollbackChanged(
+                     transaction_before, only_six_changed, successful_apply,
+                     &failed_module, &command_reason) &&
+                     failed_module.empty() && command_reason.empty() &&
+                     transaction_calls ==
+                         std::vector<std::string>{"before6:config-set"},
+                 "explicit rollback reached an unchanged daemon");
+  transaction_calls.clear();
+  const dang::plugins::kea::ConfigurationCommand failing_rollback =
+      [&](const dang::plugins::kea::ServerConfiguration& server,
+          std::string_view command, std::string* reason) {
+        const std::string image = server.arguments.at("image");
+        transaction_calls.push_back(image + ":" + std::string(command));
+        if (reason) *reason = "restore rejected for " + image;
+        return false;
+      };
+  command_reason.clear();
+  valid &= Check(!dang::plugins::kea::RollbackChanged(
+                     transaction_before, transaction_after, failing_rollback,
+                     &failed_module, &command_reason) &&
+                     failed_module == "kea-dhcp6-server" &&
+                     transaction_calls ==
+                         std::vector<std::string>{"before6:config-set",
+                                                  "before4:config-set"} &&
+                     command_reason.find("kea-dhcp6-server: restore rejected") !=
+                         std::string::npos &&
+                     command_reason.find("kea-dhcp4-server: restore rejected") !=
+                         std::string::npos,
+                 "explicit rollback did not report and continue after failures");
+  transaction_calls.clear();
+  command_reason.clear();
+  auto rollback_reordered = transaction_after;
+  std::swap(rollback_reordered[0], rollback_reordered[1]);
+  valid &= Check(!dang::plugins::kea::RollbackChanged(
+                     transaction_before, rollback_reordered, successful_apply,
+                     &failed_module, &command_reason) &&
+                     transaction_calls.empty() && failed_module.empty() &&
+                     command_reason.find("pairing") != std::string::npos,
+                 "explicit rollback accepted a reordered transaction");
+  transaction_calls.clear();
   const dang::plugins::kea::ConfigurationCommand throwing_apply =
       [&](const dang::plugins::kea::ServerConfiguration& server,
           std::string_view command, std::string*) {

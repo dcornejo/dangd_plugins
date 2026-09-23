@@ -29,6 +29,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Added module and configuration-instance-path attribution to explicit Kea
+  rollback failures. Rollback now shares the transaction pairing checks used
+  by apply, skips unchanged daemons, continues restoring earlier changed
+  daemons after an error, and reports every restoration failure while naming
+  the first failed module structurally.
+
 - Limited Kea `config-test`, `config-set`, and reverse rollback calls to daemon
   images whose translated configuration actually changed. A DHCPv4-only or
   DHCPv6-only commit no longer rewrites or compensates the unaffected service,

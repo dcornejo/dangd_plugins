@@ -106,6 +106,16 @@ using ConfigurationCommand = std::function<bool(
     const ConfigurationCommand& command, std::string* failed_module,
     std::string* reason);
 
+/**
+ * Restores changed paired server images in reverse order. All restorations are
+ * attempted, and failed_module identifies the first failure in execution order.
+ */
+[[nodiscard]] bool RollbackChanged(
+    const std::vector<ServerConfiguration>& before,
+    const std::vector<ServerConfiguration>& proposed,
+    const ConfigurationCommand& command, std::string* failed_module,
+    std::string* reason);
+
 }  // namespace dang::plugins::kea
 
 #endif  // DANG_PLUGINS_KEA_ADAPTER_H_

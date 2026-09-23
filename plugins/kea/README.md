@@ -64,6 +64,10 @@ This conservative restoration includes a daemon that returned an explicit
 error because the same path must also be safe when a reply is lost after Kea
 accepted the request. Reapplying the complete before-image is idempotent, and
 any restoration failure is appended to the primary transaction error.
+An explicit dangd-triggered rollback attempts every changed daemon in reverse
+order even if one restoration fails. Its error identifies the first failing
+module and carries that module's configuration instance path, while the message
+retains failures from every attempted restoration.
 Before sending any command, the transaction helper requires each before-image
 and proposed image to have the same module, service, and socket identity at its
 index and requires module targets to be unique. A malformed or reordered plan
