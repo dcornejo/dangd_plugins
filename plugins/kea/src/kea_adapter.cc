@@ -42,6 +42,17 @@ namespace {
 constexpr std::size_t kMaximumControlBytes = 16 * 1024 * 1024;
 constexpr auto kSocketTimeout = std::chrono::seconds(5);
 
+bool ValidateSocketPath(std::string_view socket_path, std::string* error) {
+  if (socket_path.empty() ||
+      socket_path.size() >= sizeof(sockaddr_un::sun_path) ||
+      socket_path.find('\0') != std::string_view::npos) {
+    if (error)
+      *error = "Kea control socket path is empty, contains NUL, or is too long";
+    return false;
+  }
+  return true;
+}
+
 std::string LocalName(const xmlNode* node) {
   return node && node->name
       ? reinterpret_cast<const char*>(node->name)
@@ -1001,10 +1012,7 @@ std::optional<ServerConfiguration> TranslateConfiguration(
     if (error) *error = "unsupported Kea module";
     return std::nullopt;
   }
-  if (socket_path.empty() || socket_path.size() >= sizeof(sockaddr_un::sun_path)) {
-    if (error) *error = "Kea control socket path is empty or too long";
-    return std::nullopt;
-  }
+  if (!ValidateSocketPath(socket_path, error)) return std::nullopt;
   if (datastore_xml.size() >
       static_cast<std::size_t>(std::numeric_limits<int>::max())) {
     if (error) *error = "Kea datastore snapshot exceeds the XML parser limit";
@@ -1061,10 +1069,7 @@ std::optional<nlohmann::json> SendControlCommand(
 std::optional<nlohmann::json> SendControlQuery(
     std::string_view socket_path, std::string_view command,
     const nlohmann::json& arguments, std::string* error) {
-  if (socket_path.empty() || socket_path.size() >= sizeof(sockaddr_un::sun_path)) {
-    if (error) *error = "Kea control socket path is empty or too long";
-    return std::nullopt;
-  }
+  if (!ValidateSocketPath(socket_path, error)) return std::nullopt;
   nlohmann::json request_object{{"command", command}};
   if (!arguments.is_null()) request_object["arguments"] = arguments;
   std::string request;

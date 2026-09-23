@@ -195,6 +195,9 @@ management channel available. The plugin rejects a replacement that omits or
 changes that UNIX socket, and refuses missing or overlong environment paths and
 uses a single five-second deadline covering nonblocking connect, write, and read
 plus 16 MiB request and response ceilings for each local exchange.
+Socket paths containing an embedded NUL are also rejected because the kernel
+would otherwise resolve a different, truncated pathname from the identity
+validated by the plugin.
 
 On Ubuntu, install `kea-dhcp4-server` and `kea-dhcp6-server`. On FreeBSD,
 install the `kea` package. The isolated tests use unique socket and PID paths,

@@ -29,6 +29,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Rejected embedded NUL bytes in Kea UNIX control-socket paths during both
+  configuration translation and direct queries. The plugin's validated socket
+  identity can no longer differ from the pathname interpreted by the kernel.
+
 - Contained exceptions from Kea operational control-query implementations for
   lease, reservation, and statistics collection. Transport implementation
   failures now become attributed retrieval errors instead of escaping the

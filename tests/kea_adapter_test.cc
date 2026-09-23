@@ -125,6 +125,13 @@ int main() {
   valid &= Check(!wrong_socket && error.find("/tmp/kea4.sock") !=
                                       std::string::npos,
                  "configuration replacing the managed socket was accepted");
+  const std::string nul_socket_path("/tmp/kea4.sock\0suffix", 21);
+  error.clear();
+  auto nul_socket_configuration = dang::plugins::kea::TranslateConfiguration(
+      xml, "kea-dhcp4-server", nul_socket_path, &error);
+  valid &= Check(!nul_socket_configuration &&
+                     error.find("contains NUL") != std::string::npos,
+                 "embedded-NUL configuration socket path was accepted");
   std::string http_socket_xml(xml);
   const auto socket_type = http_socket_xml.find("<socket-type>unix</socket-type>");
   http_socket_xml.replace(socket_type,
@@ -1151,6 +1158,12 @@ int main() {
   valid &= Check(!malformed_request &&
                      error.find("invalid Kea request") != std::string::npos,
                  "malformed Kea request escaped controlled failure");
+  error.clear();
+  auto nul_socket_response = dang::plugins::kea::SendControlQuery(
+      nul_socket_path, "nul-socket-test", nlohmann::json::object(), &error);
+  valid &= Check(!nul_socket_response &&
+                     error.find("contains NUL") != std::string::npos,
+                 "embedded-NUL query socket path reached the transport");
   const std::string missing_peer_path =
       "/tmp/dang-kea-missing-" + std::to_string(getpid()) + ".sock";
   unlink(missing_peer_path.c_str());
