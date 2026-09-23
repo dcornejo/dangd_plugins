@@ -128,6 +128,16 @@ DANG_KEA_DHCP6_SOCKET="$unavailable6" \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-before4-linux.xml \
   /tmp/kea-proposed4-linux.xml
 
+# Run this destructive socket-removal case last. It requires rollback failure
+# to carry the changed DHCPv6 module and configuration path.
+DANG_KEA_SKIP_OPERATIONAL=1 \
+DANG_KEA_EXPECT_ROLLBACK_FAILURE=kea-dhcp6-server \
+DANG_KEA_DHCP4_SOCKET="$unavailable4" \
+DANG_KEA_DHCP6_SOCKET="$socket6" \
+  ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before6-linux.xml \
+  /tmp/kea-proposed6-linux.xml
+
 if ip netns exec "$namespace" ip -o link show \
   | awk -F': ' '{print $2}' | sed 's/@.*//' \
   | grep -Ev '^(lo|dangkea0)$' | grep -q .; then

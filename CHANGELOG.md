@@ -15,6 +15,11 @@ All notable changes to the external dangd plugin collection are recorded here.
   packaged-daemon proof in both directions that selective transactions never
   contact the unchanged service.
 
+- Added native Linux and FreeBSD coverage for explicit Kea rollback failure
+  attribution. The isolated workflow removes the changed DHCPv6 daemon's UNIX
+  socket after apply and requires rollback to report both its module and exact
+  configuration instance path.
+
 - Added a bidirectional cross-host Kea interaction for one Linux and one
   FreeBSD secondary interface on an isolated VLAN. A minimal socket-level
   client sends DHCPv4 INIT-REBOOT and DHCPv6 Rapid Commit requests, then the

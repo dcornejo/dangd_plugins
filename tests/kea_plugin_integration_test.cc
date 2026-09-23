@@ -6,6 +6,7 @@
 #include "kea_adapter.h"
 
 #include <dlfcn.h>
+#include <unistd.h>
 
 #include <cstdlib>
 #include <fstream>
@@ -54,6 +55,8 @@ int main(int argc, char** argv) {
   const bool no_op = before == proposed;
   const bool skip_operational =
       std::getenv("DANG_KEA_SKIP_OPERATIONAL") != nullptr;
+  const char* expected_rollback_failure =
+      std::getenv("DANG_KEA_EXPECT_ROLLBACK_FAILURE");
   void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
   auto initialize = library ? reinterpret_cast<DangPluginInitV6>(
       dlsym(library, "dang_plugin_init_v6")) : nullptr;
@@ -92,6 +95,16 @@ int main(int argc, char** argv) {
         plugin5->v4.apply_hardware_action(plugin->context, prepared,
                                           action.action_id, &error))
         || Report("apply", error);
+  if (valid && expected_rollback_failure) {
+    const char* socket = std::string_view(expected_rollback_failure) ==
+            "kea-dhcp4-server"
+        ? std::getenv("DANG_KEA_DHCP4_SOCKET")
+        : std::string_view(expected_rollback_failure) == "kea-dhcp6-server"
+            ? std::getenv("DANG_KEA_DHCP6_SOCKET")
+            : nullptr;
+    valid = socket && *socket && ::unlink(socket) == 0;
+    if (!valid) std::cerr << "cannot remove expected rollback socket\n";
+  }
   if (valid && !no_op && !skip_operational)
     valid = NativeCommand(std::getenv("DANG_KEA_DHCP4_SOCKET"), "lease4-add",
                           {{"subnet-id", 401},
@@ -141,15 +154,29 @@ int main(int argc, char** argv) {
             std::string::npos;
     if (!valid) std::cerr << "operational XML is incomplete: " << xml << '\n';
   }
-  if (valid)
-    valid = plugin5->v4.rollback_hardware_action(plugin->context, prepared,
-                                                 action.action_id, &error)
-        || Report("rollback", error);
+  if (valid) {
+    const bool rolled_back = plugin5->v4.rollback_hardware_action(
+        plugin->context, prepared, action.action_id, &error);
+    if (expected_rollback_failure) {
+      const std::string expected_path =
+          "/{urn:ietf:params:xml:ns:yang:" +
+          std::string(expected_rollback_failure) + "}config";
+      valid = !rolled_back && error.message && error.instance_path &&
+          std::string_view(error.message).find(expected_rollback_failure) !=
+              std::string_view::npos &&
+          std::string_view(error.instance_path) == expected_path;
+      if (!valid) Report("expected rollback rejection", error);
+    } else {
+      valid = rolled_back || Report("rollback", error);
+    }
+  }
   if (prepared) plugin->release(plugin->context, prepared);
   if (plugin->destroy) plugin->destroy(plugin->context);
   dlclose(library);
   if (valid)
-    std::cout << (no_op
+    std::cout << (expected_rollback_failure
+        ? "Kea rollback failure attribution passed\n"
+        : no_op
         ? "Kea no-op validate, apply, and rollback passed\n"
         : skip_operational
             ? "Kea selective validate, apply, and rollback passed\n"

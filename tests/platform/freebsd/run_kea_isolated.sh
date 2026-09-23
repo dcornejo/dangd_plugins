@@ -120,6 +120,17 @@ jexec -l -U root "$jail_name" env \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-before4-freebsd.xml \
   /tmp/kea-proposed4-freebsd.xml
 
+# Run this destructive socket-removal case last and require structural
+# attribution of the expected DHCPv6 rollback failure.
+jexec -l -U root "$jail_name" env \
+  DANG_KEA_SKIP_OPERATIONAL=1 \
+  DANG_KEA_EXPECT_ROLLBACK_FAILURE=kea-dhcp6-server \
+  DANG_KEA_DHCP4_SOCKET="$unavailable4" \
+  DANG_KEA_DHCP6_SOCKET="$socket6" \
+  "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before6-freebsd.xml \
+  /tmp/kea-proposed6-freebsd.xml
+
 if jexec "$jail_name" ifconfig -l | tr ' ' '\n' | grep -Ev '^(lo0|dangkea0)$' \
   | grep -q .; then
   echo "unexpected host interface entered the VNET jail" >&2

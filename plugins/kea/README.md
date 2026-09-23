@@ -347,6 +347,10 @@ Each platform script then runs DHCPv4-only and DHCPv6-only transactions with
 the opposite, unchanged daemon deliberately pointed at a nonexistent socket.
 Successful validation, apply, and rollback therefore prove against packaged
 Kea that the plugin does not contact either unchanged daemon.
+Finally, each script applies a DHCPv6-only change, removes that daemon's socket,
+and requires rollback to fail with the DHCPv6 module name and configuration
+instance path. This failure case runs last because removing a bound UNIX socket
+intentionally makes that test daemon unreachable until cleanup.
 
 ### Cross-host VLAN interaction
 
