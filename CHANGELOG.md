@@ -9,6 +9,16 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added authoritative Kea rollback readback. Successful compensation after a
+  failed apply and successful explicit rollback now perform `config-get` on
+  every changed daemon in reverse rollback order and require the complete
+  managed prior dangd image to match before operational publication resumes. A
+  missing, unavailable, or still-candidate daemon keeps the pending mutation
+  marker set and reports the exact module configuration path. Portable tests
+  cover full, selective, and drifted rollback readback; the native Linux and
+  FreeBSD transaction matrices exercise successful readback against packaged
+  daemons.
+
 - Made Kea startup activation honor dangd as the definitive configuration
   authority. When dangd restores persisted intent from an initially empty
   datastore, the plugin captures each daemon's complete live configuration as

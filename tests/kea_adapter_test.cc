@@ -1778,6 +1778,71 @@ int main() {
                      transaction_calls.empty() && failed_module.empty() &&
                      command_reason.find("pairing") != std::string::npos,
                  "explicit rollback accepted a reordered transaction");
+
+  const std::vector<dang::plugins::kea::ServerConfiguration> readback_before{
+      {"kea-dhcp4-server", "Dhcp4", "/tmp/kea4.sock",
+       {{"Dhcp4", {{"server-tag", "before4"}}}}},
+      {"kea-dhcp6-server", "Dhcp6", "/tmp/kea6.sock",
+       {{"Dhcp6", {{"server-tag", "before6"}}}}}};
+  const std::vector<dang::plugins::kea::ServerConfiguration> readback_after{
+      {"kea-dhcp4-server", "Dhcp4", "/tmp/kea4.sock",
+       {{"Dhcp4", {{"server-tag", "after4"}}}}},
+      {"kea-dhcp6-server", "Dhcp6", "/tmp/kea6.sock",
+       {{"Dhcp6", {{"server-tag", "after6"}}}}}};
+  std::vector<std::string> readback_calls;
+  const dang::plugins::kea::ControlQuery restored_readback =
+      [&](std::string_view socket, std::string_view command,
+          const nlohmann::json& arguments,
+          std::string*) -> std::optional<nlohmann::json> {
+    readback_calls.emplace_back(socket);
+    if (command != "config-get" || !arguments.empty()) return std::nullopt;
+    const auto& restored = socket == "/tmp/kea4.sock"
+        ? readback_before[0].arguments : readback_before[1].arguments;
+    return OptionalJson(
+        nlohmann::json{{"result", 0}, {"arguments", restored}});
+  };
+  command_reason.clear();
+  valid &= Check(dang::plugins::kea::VerifyRestoredConfigurations(
+                     readback_before, readback_after, restored_readback,
+                     &failed_module, &command_reason) &&
+                     failed_module.empty() && command_reason.empty() &&
+                     readback_calls ==
+                         std::vector<std::string>{"/tmp/kea6.sock",
+                                                  "/tmp/kea4.sock"},
+                 "rollback readback did not verify every changed daemon");
+  readback_calls.clear();
+  const dang::plugins::kea::ControlQuery drifted_readback =
+      [&](std::string_view socket, std::string_view command,
+          const nlohmann::json& arguments,
+          std::string*) -> std::optional<nlohmann::json> {
+    readback_calls.emplace_back(socket);
+    if (command != "config-get" || !arguments.empty()) return std::nullopt;
+    const auto& live = socket == "/tmp/kea6.sock"
+        ? readback_after[1].arguments : readback_before[0].arguments;
+    return OptionalJson(nlohmann::json{{"result", 0}, {"arguments", live}});
+  };
+  command_reason.clear();
+  valid &= Check(!dang::plugins::kea::VerifyRestoredConfigurations(
+                      readback_before, readback_after, drifted_readback,
+                      &failed_module, &command_reason) &&
+                     failed_module == "kea-dhcp6-server" &&
+                     readback_calls ==
+                         std::vector<std::string>{"/tmp/kea6.sock"} &&
+                     command_reason.find("rollback readback failed") !=
+                         std::string::npos &&
+                     command_reason.find("server-tag") != std::string::npos,
+                 "rollback readback accepted a daemon that retained candidate "
+                 "state");
+  readback_calls.clear();
+  auto readback_only_six_changed = readback_before;
+  readback_only_six_changed[1] = readback_after[1];
+  command_reason.clear();
+  valid &= Check(dang::plugins::kea::VerifyRestoredConfigurations(
+                     readback_before, readback_only_six_changed,
+                     restored_readback, &failed_module, &command_reason) &&
+                     readback_calls ==
+                         std::vector<std::string>{"/tmp/kea6.sock"},
+                 "rollback readback contacted an unchanged daemon");
   transaction_calls.clear();
   const dang::plugins::kea::ConfigurationCommand throwing_apply =
       [&](const dang::plugins::kea::ServerConfiguration& server,

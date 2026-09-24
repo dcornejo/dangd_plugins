@@ -61,7 +61,9 @@ For every affected commit, the plugin:
    commit, requiring every value managed by dangd to match while ignoring
    Kea-added defaults and response metadata; and
 6. retains both prior configurations for dangd-triggered reverse rollback,
-   while reapplying only the changed subset.
+   while reapplying only the changed subset; and
+7. reads every restored daemon back after compensation or explicit rollback
+   before making the prior snapshot available for operational publication.
 
 This conservative restoration includes a daemon that returned an explicit
 error because the same path must also be safe when a reply is lost after Kea
@@ -71,6 +73,12 @@ An explicit dangd-triggered rollback attempts every changed daemon in reverse
 order even if one restoration fails. Its error identifies the first failing
 module and carries that module's configuration instance path, while the message
 retains failures from every attempted restoration.
+Successful rollback commands are not sufficient proof of restoration. The
+plugin follows them with `config-get` in the same reverse daemon order and
+projects each result onto the prior dangd image. Missing or changed managed
+values make rollback fail at the owning module's configuration path and leave
+operational publication suppressed. Apply compensation uses the same readback
+gate before clearing its pending-mutation marker.
 Before sending any command, the transaction helper requires each before-image
 and proposed image to have the same module, service, and socket identity at its
 index and requires module targets to be unique. A malformed or reordered plan

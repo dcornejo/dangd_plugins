@@ -2354,4 +2354,34 @@ bool RollbackChanged(const std::vector<ServerConfiguration>& before,
   return false;
 }
 
+bool VerifyRestoredConfigurations(
+    const std::vector<ServerConfiguration>& before,
+    const std::vector<ServerConfiguration>& proposed,
+    const ControlQuery& query, std::string* failed_module,
+    std::string* reason) {
+  if (failed_module) failed_module->clear();
+  if (reason) reason->clear();
+  if (!query) {
+    if (reason) *reason = "invalid Kea rollback readback";
+    return false;
+  }
+  if (!ValidateTransactionPairing(before, proposed, reason)) return false;
+  // Preserve rollback's reverse daemon order so the first reported readback
+  // failure is the first restored target whose outcome remains uncertain.
+  for (std::size_t index = before.size(); index > 0; --index) {
+    const auto& restored = before[index - 1];
+    if (restored.arguments == proposed[index - 1].arguments) continue;
+    std::string readback_error;
+    if (VerifyLiveConfiguration(restored, query, &readback_error)) continue;
+    if (readback_error.empty())
+      readback_error = "restored configuration does not match";
+    if (failed_module) *failed_module = restored.module_name;
+    if (reason)
+      *reason = restored.module_name + ": rollback readback failed: " +
+          readback_error;
+    return false;
+  }
+  return true;
+}
+
 }  // namespace dang::plugins::kea

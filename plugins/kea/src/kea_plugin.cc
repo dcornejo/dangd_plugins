@@ -4,8 +4,8 @@
 /**
  * @file
  * dangd transaction adapter for the Kea DHCPv4 and DHCPv6 services.  Validate
- * uses Kea's config-test command; apply uses config-set; rollback reapplies the
- * retained before-image to every service that was changed successfully.
+ * uses Kea's config-test command; apply uses config-set; rollback reapplies and
+ * reads back the retained before-image for every changed service.
  */
 
 #include "dangd/plugin_api.h"
@@ -41,6 +41,7 @@ using dang::plugins::kea::SendControlQuery;
 using dang::plugins::kea::ServerConfiguration;
 using dang::plugins::kea::TranslateConfiguration;
 using dang::plugins::kea::VerifyLiveConfiguration;
+using dang::plugins::kea::VerifyRestoredConfigurations;
 
 struct Prepared {
   // Vector order is fixed as DHCPv4 then DHCPv6 and is shared by both images;
@@ -292,7 +293,18 @@ int ApplyConfigurationImpl(void*, void* opaque, DangPluginErrorV1* error) {
   if (!ApplyWithCompensation(prepared->before, prepared->proposed, Execute,
                              &failed_module, &reason,
                              &compensation_complete)) {
-    if (pending && compensation_complete) ClearPendingApply();
+    if (pending && compensation_complete) {
+      std::string readback_module;
+      std::string readback_reason;
+      if (VerifyRestoredConfigurations(
+              prepared->before, prepared->proposed, SendControlQuery,
+              &readback_module, &readback_reason)) {
+        ClearPendingApply();
+      } else {
+        reason += "; " + readback_reason;
+        if (!readback_module.empty()) failed_module = readback_module;
+      }
+    }
     const std::string path = failed_module.empty()
         ? "/"
         : "/{urn:ietf:params:xml:ns:yang:" + failed_module + "}config";
@@ -316,8 +328,12 @@ int RollbackConfigurationImpl(void*, void* opaque, DangPluginErrorV1* error) {
   (void)BeginPendingMutation(*prepared);
   if (RollbackChanged(prepared->before, prepared->proposed, Execute,
                       &failed_module, &reason)) {
-    RememberAcceptedState(prepared->before);
-    return 1;
+    if (VerifyRestoredConfigurations(
+            prepared->before, prepared->proposed, SendControlQuery,
+            &failed_module, &reason)) {
+      RememberAcceptedState(prepared->before);
+      return 1;
+    }
   }
   const std::string path = failed_module.empty()
       ? "/"

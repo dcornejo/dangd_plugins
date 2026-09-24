@@ -155,6 +155,16 @@ using ConfigurationCommand = std::function<bool(
     const ConfigurationCommand& command, std::string* failed_module,
     std::string* reason);
 
+/**
+ * Reads back every changed daemon after compensation or explicit rollback.
+ * The prior image is not safe to publish until each restored target matches.
+ */
+[[nodiscard]] bool VerifyRestoredConfigurations(
+    const std::vector<ServerConfiguration>& before,
+    const std::vector<ServerConfiguration>& proposed,
+    const ControlQuery& query, std::string* failed_module,
+    std::string* reason);
+
 }  // namespace dang::plugins::kea
 
 #endif  // DANG_PLUGINS_KEA_ADAPTER_H_
