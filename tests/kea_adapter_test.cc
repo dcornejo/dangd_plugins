@@ -598,6 +598,63 @@ int main() {
                          std::string::npos,
                  "operational collectors did not share one query limit");
 
+  const nlohmann::json budget_lease{{"ip-address", "192.0.2.1"}};
+  std::size_t host_page = 0;
+  const dang::plugins::kea::ControlQuery populated_operational_read =
+      [&](std::string_view, std::string_view command,
+          const nlohmann::json&,
+          std::string*) -> std::optional<nlohmann::json> {
+    if (command == "config-get")
+      return OptionalJson(
+          nlohmann::json{{"result", 0}, {"arguments", dhcp4->arguments}});
+    if (command == "lease4-get-page")
+      return OptionalJson(nlohmann::json{
+          {"result", 0},
+          {"arguments", {{"count", 1}, {"leases", {budget_lease}}}}});
+    if (command == "reservation-get-page" && host_page++ == 0)
+      return OptionalJson(nlohmann::json{
+          {"result", 0},
+          {"arguments", {{"count", 1},
+                         {"hosts", nlohmann::json::array(
+                                       {nlohmann::json::object()})},
+                         {"next", {{"from", 1}, {"source-index", 0}}}}}});
+    if (command == "reservation-get-page")
+      return OptionalJson(nlohmann::json{{"result", 3}});
+    return std::nullopt;
+  };
+  failure_path.clear();
+  error.clear();
+  auto item_limited_state =
+      dang::plugins::kea::CollectAuthoritativeOperationalState(
+          *dhcp4, false, {}, populated_operational_read, &failure_path, &error,
+          {.page_size = 256,
+           .maximum_pages = 4,
+           .maximum_items = 1,
+           .maximum_bytes = 1024,
+           .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(!item_limited_state && failure_path == "state/hosts" &&
+                     error.find(
+                         "operational collection exceeds the item limit") !=
+                         std::string::npos,
+                 "operational collectors did not share one item limit");
+
+  host_page = 0;
+  failure_path.clear();
+  error.clear();
+  auto byte_limited_state =
+      dang::plugins::kea::CollectAuthoritativeOperationalState(
+          *dhcp4, false, {}, populated_operational_read, &failure_path, &error,
+          {.page_size = 256,
+           .maximum_pages = 4,
+           .maximum_items = 2,
+           .maximum_bytes = budget_lease.dump().size(),
+           .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(!byte_limited_state && failure_path == "state/hosts" &&
+                     error.find(
+                         "operational collection exceeds the byte limit") !=
+                         std::string::npos,
+                 "operational collectors did not share one byte limit");
+
   authority_checks = 0;
   const dang::plugins::kea::ControlQuery drifting_operational_read =
       [&](std::string_view, std::string_view command,

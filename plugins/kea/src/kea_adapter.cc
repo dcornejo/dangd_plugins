@@ -2032,6 +2032,8 @@ std::optional<std::string> CollectAuthoritativeOperationalState(
   const auto deadline =
       std::chrono::steady_clock::now() + limits.maximum_duration;
   std::size_t state_queries = 0;
+  std::size_t state_items = 0;
+  std::size_t state_bytes = 0;
   const ControlQuery bounded_query =
       [&](std::string_view socket_path, std::string_view command,
           const nlohmann::json& arguments,
@@ -2054,6 +2056,30 @@ std::optional<std::string> CollectAuthoritativeOperationalState(
     }
     return response;
   };
+  const auto account = [&](const nlohmann::json& entries,
+                           std::string_view description) {
+    if (!entries.is_array()) {
+      if (error)
+        *error = "invalid collected Kea " + std::string(description);
+      return false;
+    }
+    if (entries.size() > limits.maximum_items - state_items) {
+      if (error) *error = "Kea operational collection exceeds the item limit";
+      return false;
+    }
+    for (const auto& entry : entries) {
+      auto encoded = JsonText(entry, description, error);
+      if (!encoded) return false;
+      if (encoded->size() > limits.maximum_bytes - state_bytes) {
+        if (error)
+          *error = "Kea operational collection exceeds the byte limit";
+        return false;
+      }
+      state_bytes += encoded->size();
+    }
+    state_items += entries.size();
+    return true;
+  };
 
   at("config");
   if (!VerifyLiveConfiguration(expected, bounded_query, error))
@@ -2063,16 +2089,24 @@ std::optional<std::string> CollectAuthoritativeOperationalState(
   auto leases = CollectLeasePages(expected.socket_path, dhcp6, bounded_query,
                                   error, limits);
   if (!leases) return std::nullopt;
+  if (!account(leases->at("arguments").at("leases"), "lease entry"))
+    return std::nullopt;
 
   at("state/lease-stats");
   auto statistics = CollectStatistics(expected.socket_path, dhcp6, subnet_ids,
                                       bounded_query, error, limits);
   if (!statistics) return std::nullopt;
+  if (!IsResultCode(statistics->at("result"), 3) &&
+      !account(statistics->at("arguments").at("result-set").at("rows"),
+               "statistics row"))
+    return std::nullopt;
 
   at("state/hosts");
   auto hosts =
       CollectHostPages(expected.socket_path, bounded_query, error, limits);
   if (!hosts) return std::nullopt;
+  if (!account(hosts->at("arguments").at("hosts"), "reservation entry"))
+    return std::nullopt;
 
   at("state");
   auto state = TranslateOperationalState(expected.module_name, *leases,

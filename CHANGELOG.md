@@ -9,11 +9,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
-- Bounded each authoritative Kea daemon-state read by one shared 512-query
-  budget across lease pages, per-subnet statistics, and reservation pages.
-  Those queries and both configuration-authority checks also share one
-  30-second deadline. A sequence of individually valid collectors can no
-  longer multiply the complete operational request's resource allowance.
+- Bounded each authoritative Kea daemon-state read by shared limits of 512
+  state queries, 65,536 state entries, and 8 MiB of encoded native entry data
+  across lease pages, per-subnet statistics, and reservation pages. Those
+  queries and both configuration-authority checks also share one 30-second
+  deadline. A sequence of individually valid collectors can no longer
+  multiply the complete operational request's resource allowance.
 
 - Added continuous Kea configuration-authority checks to complete operational
   retrieval. Before and after collecting each daemon's multi-command state,

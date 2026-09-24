@@ -210,13 +210,14 @@ The provider marks this operational result complete. Lease enumeration uses
 Kea's `lease4-get-page` and `lease6-get-page`
 commands with a 256-entry page size and the last returned address as the opaque
 continuation cursor. It rejects malformed counts, oversized pages, repeated
-cursors including non-adjacent cycles, more than 65,536 leases, and more than
-8 MiB of accumulated native lease data. One production daemon-state read has a
-shared limit of 512 state control queries and 30 seconds across lease pages,
-per-subnet statistics, and reservation pages; the two authority checks are
-also inside that deadline. The deadline is checked both before and after every
-control call, so a slow final reply cannot be accepted after the budget. Each
-individual control exchange retains its five-second and 16 MiB limits.
+cursors including non-adjacent cycles, and oversized inventories. One
+production daemon-state read has shared limits of 512 state control queries,
+65,536 state entries, 8 MiB of encoded native entry data, and 30 seconds across
+lease pages, per-subnet statistics, and reservation pages; the two authority
+checks are also inside that deadline. The deadline is checked both before and
+after every control call, so a slow final reply cannot be accepted after the
+budget. Each individual control exchange retains its five-second and 16 MiB
+limits.
 Unexpected exceptions from the control-query implementation are contained as
 retrieval failures and cannot cross the plugin callback boundary.
 
@@ -236,18 +237,16 @@ DHCPv6 failure cannot discard the failure attribution or cause a partial result
 to be published.
 
 Host reservations use Kea's `reservation-get-page` continuation map and the
-same per-inventory item and byte safeguards and full cursor-cycle detection as
-leases.
+same full cursor-cycle detection as leases. Every returned reservation
+contributes to the complete read's shared entry and byte limits.
 Supplemental statistics are queried once per exact subnet ID in the last
 successfully applied configuration, so Kea cannot return an unbounded
-all-subnet result. The provider combines those results under a 65,536-row and
-8 MiB per-statistics-inventory limit while sharing the complete read's query
-and deadline budgets. Every successful reply must contain one unambiguous row
-whose `subnet-id` matches the exact query; mismatched identities, duplicate
-columns, multiple rows, or Kea reporting no statistics for an accepted
-configured subnet fail the complete retrieval. The latter detects
-datastore/daemon drift instead of publishing a misleading complete empty
-statistics tree.
+all-subnet result. Every row contributes to the complete read's shared entry
+and byte limits. Every successful reply must contain one unambiguous row whose
+`subnet-id` matches the exact query; mismatched identities, duplicate columns,
+multiple rows, or Kea reporting no statistics for an accepted configured
+subnet fail the complete retrieval. The latter detects datastore/daemon drift
+instead of publishing a misleading complete empty statistics tree.
 Candidate validation does not
 change that inventory; successful apply
 and rollback callbacks update it atomically. On startup, ABI-v6 applied-state
