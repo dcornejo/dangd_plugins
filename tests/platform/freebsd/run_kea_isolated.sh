@@ -24,6 +24,7 @@ cleanup() {
   rm -f "$socket4" "$socket6"
   rm -f /tmp/kea-dhcp4-freebsd.json /tmp/kea-dhcp6-freebsd.json \
     /tmp/kea-before-freebsd.xml /tmp/kea-proposed-freebsd.xml \
+    /tmp/kea-empty-freebsd.xml \
     /tmp/kea-before4-freebsd.xml /tmp/kea-proposed4-freebsd.xml \
     /tmp/kea-before6-freebsd.xml /tmp/kea-proposed6-freebsd.xml \
     /tmp/kea-proposed6-state-freebsd.xml \
@@ -59,6 +60,7 @@ sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
   -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
   -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
   "$root/tests/kea-proposed.xml" > /tmp/kea-proposed-freebsd.xml
+cp "$root/tests/kea-empty.xml" /tmp/kea-empty-freebsd.xml
 unavailable4="$runtime_dir/unavailable4.sock"
 sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
   -e "s#/var/run/kea/kea4-ctrl-socket#$unavailable4#g" \
@@ -104,6 +106,36 @@ while [ ! -S "$socket4" ] || [ ! -S "$socket6" ]; do
   fi
   sleep 0.1
 done
+
+# Match dangd's empty-to-restored startup transaction. Each live daemon image
+# becomes the rollback source before persisted dangd authority is applied and
+# verified; the fixture then proves that explicit rollback restores it.
+jexec -l -U root "$jail_name" env \
+  DANG_KEA_EMPTY_STARTUP=1 \
+  DANG_KEA_DHCP4_SOCKET="$socket4" \
+  DANG_KEA_DHCP6_SOCKET="$socket6" \
+  "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-empty-freebsd.xml \
+  /tmp/kea-proposed-freebsd.xml
+
+# Startup recovery must reject persisted intent when either live daemon has
+# drifted. The integration fixture restores each complete native image before
+# returning so these cases cannot contaminate the transaction matrix below.
+jexec -l -U root "$jail_name" env \
+  DANG_KEA_EXPECT_STARTUP_RECONCILE_FAILURE=kea-dhcp4-server \
+  DANG_KEA_DHCP4_SOCKET="$socket4" \
+  DANG_KEA_DHCP6_SOCKET="$socket6" \
+  "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before-freebsd.xml \
+  /tmp/kea-before-freebsd.xml
+
+jexec -l -U root "$jail_name" env \
+  DANG_KEA_EXPECT_STARTUP_RECONCILE_FAILURE=kea-dhcp6-server \
+  DANG_KEA_DHCP4_SOCKET="$socket4" \
+  DANG_KEA_DHCP6_SOCKET="$socket6" \
+  "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before-freebsd.xml \
+  /tmp/kea-before-freebsd.xml
 
 # Both sockets are absent, but only DHCPv6 changed. Validation must skip
 # unchanged DHCPv4 and attribute the expected rejection to DHCPv6.

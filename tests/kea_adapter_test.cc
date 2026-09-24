@@ -155,12 +155,23 @@ int main() {
   constexpr char absent_configuration_xml[] = R"xml(
     <data xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"/>)xml";
   error.clear();
+  bool configuration_missing = false;
   auto absent_configuration = dang::plugins::kea::TranslateConfiguration(
-      absent_configuration_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+      absent_configuration_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error,
+      &configuration_missing);
   valid &= Check(!absent_configuration &&
+                     configuration_missing &&
                      error.find("omits the module configuration container") !=
                          std::string::npos,
                  "absent Kea configuration produced an indirect error");
+  configuration_missing = true;
+  error.clear();
+  auto malformed_configuration = dang::plugins::kea::TranslateConfiguration(
+      "<config", "kea-dhcp4-server", "/tmp/kea4.sock", &error,
+      &configuration_missing);
+  valid &= Check(!malformed_configuration && !configuration_missing &&
+                     error.find("cannot parse") != std::string::npos,
+                 "malformed XML was mistaken for an absent Kea module");
   const std::string oversized_datastore(16U * 1024U * 1024U + 1U, 'x');
   error.clear();
   auto oversized_configuration = dang::plugins::kea::TranslateConfiguration(
@@ -479,6 +490,42 @@ int main() {
     return OptionalJson(
         nlohmann::json{{"result", 0}, {"arguments", live_configuration}});
   };
+  error.clear();
+  auto captured_configuration = dang::plugins::kea::ReadLiveConfiguration(
+      "kea-dhcp4-server", "/tmp/kea4.sock", matching_configuration, &error);
+  valid &= Check(captured_configuration &&
+                     captured_configuration->module_name ==
+                         "kea-dhcp4-server" &&
+                     captured_configuration->service_name == "Dhcp4" &&
+                     captured_configuration->socket_path == "/tmp/kea4.sock" &&
+                     !captured_configuration->arguments.contains("hash") &&
+                     captured_configuration->arguments.at("Dhcp4") ==
+                         live_configuration.at("Dhcp4"),
+                 "live Kea rollback image was not captured completely");
+  const dang::plugins::kea::ControlQuery missing_live_service =
+      [](std::string_view, std::string_view, const nlohmann::json&,
+         std::string*) {
+        return OptionalJson(nlohmann::json{
+            {"result", 0}, {"arguments", nlohmann::json::object()}});
+      };
+  error.clear();
+  valid &= Check(!dang::plugins::kea::ReadLiveConfiguration(
+                      "kea-dhcp4-server", "/tmp/kea4.sock",
+                      missing_live_service, &error) &&
+                     error.find("omits service Dhcp4") != std::string::npos,
+                 "live capture accepted a response without its service");
+  const dang::plugins::kea::ControlQuery ambiguous_live_response =
+      [](std::string_view, std::string_view, const nlohmann::json&,
+         std::string*) {
+        const nlohmann::json answer{
+            {"result", 0}, {"arguments", {{"Dhcp4", {}}}}};
+        return OptionalJson(nlohmann::json::array({answer, answer}));
+      };
+  error.clear();
+  valid &= Check(!dang::plugins::kea::ReadLiveConfiguration(
+                      "kea-dhcp4-server", "/tmp/kea4.sock",
+                      ambiguous_live_response, &error),
+                 "live capture accepted an ambiguous Kea response");
   error.clear();
   valid &= Check(dang::plugins::kea::VerifyLiveConfiguration(
                      *dhcp4, matching_configuration, &error),

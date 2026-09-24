@@ -9,6 +9,16 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Made Kea startup activation honor dangd as the definitive configuration
+  authority. When dangd restores persisted intent from an initially empty
+  datastore, the plugin captures each daemon's complete live configuration as
+  the rollback image, applies the persisted snapshot, and verifies it through
+  normal post-apply reconciliation. Direct restart recovery also reads both
+  live daemon configurations before accepting persisted state, rejecting an
+  unavailable or drifted DHCPv4/DHCPv6 image at its owning configuration path.
+  Native Linux and FreeBSD tests cover empty-to-persisted apply and rollback
+  plus drift rejection in both daemon directions.
+
 - Delayed Kea operational-authority promotion until ABI-v6 post-apply readback
   succeeds. Hardware apply no longer makes candidate intent visible through
   the plugin before dangd accepts the commit. A marker installed before the

@@ -34,6 +34,7 @@ using dang::plugins::kea::CommandSucceeded;
 using dang::plugins::kea::ExtractSubnetIds;
 using dang::plugins::kea::GuardPluginCallback;
 using dang::plugins::kea::PageLimits;
+using dang::plugins::kea::ReadLiveConfiguration;
 using dang::plugins::kea::RollbackChanged;
 using dang::plugins::kea::SendControlCommand;
 using dang::plugins::kea::SendControlQuery;
@@ -187,7 +188,8 @@ size_t DependencyCount(void*) { return 0; }
 const char* DependencyAt(void*, size_t) { return nullptr; }
 
 std::optional<std::vector<ServerConfiguration>> TranslateBoth(
-    const char* xml, DangPluginErrorV1* error) {
+    const char* xml, DangPluginErrorV1* error,
+    bool capture_missing_from_live = false) {
   if (!xml) {
     SetError(error, "the configuration snapshot is missing");
     return std::nullopt;
@@ -205,7 +207,12 @@ std::optional<std::vector<ServerConfiguration>> TranslateBoth(
        {std::pair{"kea-dhcp4-server", socket4},
         std::pair{"kea-dhcp6-server", socket6}}) {
     std::string reason;
-    auto translated = TranslateConfiguration(xml, module, socket, &reason);
+    bool missing = false;
+    auto translated =
+        TranslateConfiguration(xml, module, socket, &reason, &missing);
+    if (!translated && missing && capture_missing_from_live)
+      translated =
+          ReadLiveConfiguration(module, socket, SendControlQuery, &reason);
     if (!translated) {
       SetError(error, module + std::string(": ") + reason,
                "/{" + std::string("urn:ietf:params:xml:ns:yang:") +
@@ -228,7 +235,10 @@ int PrepareConfigurationImpl(void*, const DangTransactionV1* transaction,
     SetError(error, "the transaction input is incomplete");
     return 0;
   }
-  auto before = TranslateBoth(transaction->before_xml, error);
+  // Dangd activates startup configuration as an empty-to-running transaction.
+  // Capture any absent module's live image so failed startup can restore the
+  // daemon state that existed before dangd asserted its persisted authority.
+  auto before = TranslateBoth(transaction->before_xml, error, true);
   if (!before) return 0;
   auto proposed = TranslateBoth(transaction->proposed_xml, error);
   if (!proposed) return 0;
@@ -460,26 +470,26 @@ int ReconcileAppliedConfigurationImpl(
   auto accepted = TranslateBoth(current_xml, error);
   if (!accepted) return 0;
   // The prepared pair identifies the images this transaction actually changed.
-  // Read those daemons back before dangd makes the snapshot authoritative.
-  // A null preparation is retained for compatibility with direct ABI probes;
-  // production dangd reconciliation always supplies the prepared transaction.
+  // Read those daemons back before dangd makes the snapshot authoritative. A
+  // null preparation is startup recovery, where every daemon must match the
+  // persisted dangd snapshot before operational publication can resume.
   const auto* prepared = static_cast<const Prepared*>(opaque);
-  if (prepared) {
-    for (std::size_t index = 0; index < accepted->size(); ++index) {
-      if (index >= prepared->before.size() ||
-          index >= prepared->proposed.size() ||
-          prepared->before[index].arguments ==
-              prepared->proposed[index].arguments)
-        continue;
-      std::string reason;
-      if (VerifyLiveConfiguration((*accepted)[index], SendControlQuery,
-                                  &reason))
-        continue;
-      const std::string& module = (*accepted)[index].module_name;
-      SetError(error, module + ": " + reason,
-               "/{urn:ietf:params:xml:ns:yang:" + module + "}config");
-      return 0;
-    }
+  if (prepared && (prepared->before.size() != accepted->size() ||
+                   prepared->proposed.size() != accepted->size())) {
+    SetError(error, "the prepared Kea transaction is inconsistent", "/");
+    return 0;
+  }
+  for (std::size_t index = 0; index < accepted->size(); ++index) {
+    if (prepared && prepared->before[index].arguments ==
+                        prepared->proposed[index].arguments)
+      continue;
+    std::string reason;
+    if (VerifyLiveConfiguration((*accepted)[index], SendControlQuery, &reason))
+      continue;
+    const std::string& module = (*accepted)[index].module_name;
+    SetError(error, module + ": " + reason,
+             "/{urn:ietf:params:xml:ns:yang:" + module + "}config");
+    return 0;
   }
   RememberAcceptedState(*accepted);
   *result = {.applied_xml = current_xml,

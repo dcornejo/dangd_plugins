@@ -21,6 +21,7 @@ cleanup() {
   rm -f "$socket4" "$socket6"
   rm -f /tmp/kea-dhcp4.conf /tmp/kea-dhcp6.conf \
     /tmp/kea-before-linux.xml /tmp/kea-proposed-linux.xml \
+    /tmp/kea-empty-linux.xml \
     /tmp/kea-before4-linux.xml /tmp/kea-proposed4-linux.xml \
     /tmp/kea-before6-linux.xml /tmp/kea-proposed6-linux.xml \
     /tmp/kea-proposed6-state-linux.xml \
@@ -65,6 +66,7 @@ sed -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
   -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
   "$root/tests/kea-proposed.xml" \
   > /tmp/kea-proposed-linux.xml
+cp "$root/tests/kea-empty.xml" /tmp/kea-empty-linux.xml
 unavailable4="$runtime_dir/unavailable4.sock"
 sed -e "s#/var/run/kea/kea4-ctrl-socket#$unavailable4#g" \
   -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
@@ -116,6 +118,34 @@ while [ ! -S "$socket4" ] || [ ! -S "$socket6" ]; do
   fi
   sleep 0.1
 done
+
+# Match dangd's real startup path: the restored datastore changes from empty
+# to persisted intent. The plugin must capture both running daemon images for
+# rollback, apply the persisted configuration, verify it, and restore the
+# captured images when the integration transaction rolls back.
+DANG_KEA_EMPTY_STARTUP=1 \
+DANG_KEA_DHCP4_SOCKET="$socket4" \
+DANG_KEA_DHCP6_SOCKET="$socket6" \
+  ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-empty-linux.xml \
+  /tmp/kea-proposed-linux.xml
+
+# Startup recovery must reject persisted intent when either live daemon has
+# drifted. The integration fixture restores each complete native image before
+# returning so these cases cannot contaminate the transaction matrix below.
+DANG_KEA_EXPECT_STARTUP_RECONCILE_FAILURE=kea-dhcp4-server \
+DANG_KEA_DHCP4_SOCKET="$socket4" \
+DANG_KEA_DHCP6_SOCKET="$socket6" \
+  ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before-linux.xml \
+  /tmp/kea-before-linux.xml
+
+DANG_KEA_EXPECT_STARTUP_RECONCILE_FAILURE=kea-dhcp6-server \
+DANG_KEA_DHCP4_SOCKET="$socket4" \
+DANG_KEA_DHCP6_SOCKET="$socket6" \
+  ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before-linux.xml \
+  /tmp/kea-before-linux.xml
 
 # Both sockets are absent, but only DHCPv6 changed. The expected failure must
 # therefore be attributed to DHCPv6 without attempting unchanged DHCPv4.

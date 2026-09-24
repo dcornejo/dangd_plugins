@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -95,6 +96,13 @@ const char* SocketForModule(std::string_view module) {
   return nullptr;
 }
 
+struct SavedConfiguration {
+  std::string socket;
+  nlohmann::json arguments;
+};
+
+std::optional<SavedConfiguration> saved_configuration;
+
 bool RemoveHostHook(std::string_view module) {
   const char* socket = SocketForModule(module);
   const char* service = module == "kea-dhcp4-server" ? "Dhcp4"
@@ -131,11 +139,23 @@ bool RemoveHostHook(std::string_view module) {
       std::cerr << "config-get did not contain exactly one host hook\n";
       return false;
     }
-    return NativeCommand(socket, "config-set", arguments);
+    if (!NativeCommand(socket, "config-set", arguments)) return false;
+    saved_configuration = SavedConfiguration{socket, answer.at("arguments")};
+    saved_configuration->arguments.erase("hash");
+    return true;
   } catch (const std::exception& exception) {
     std::cerr << "cannot prepare host-hook drift: " << exception.what() << '\n';
     return false;
   }
+}
+
+bool RestoreRemovedHostHook() {
+  if (!saved_configuration) return true;
+  const bool restored = NativeCommand(saved_configuration->socket.c_str(),
+                                      "config-set",
+                                      saved_configuration->arguments);
+  if (restored) saved_configuration.reset();
+  return restored;
 }
 
 /** Verifies that failed ABI calls never leave caller-owned stale outputs. */
@@ -208,6 +228,10 @@ int main(int argc, char** argv) {
       std::getenv("DANG_KEA_FORCE_LEASE_PAGING") != nullptr;
   const bool force_host_paging =
       std::getenv("DANG_KEA_FORCE_HOST_PAGING") != nullptr;
+  const bool test_noop_seed =
+      std::getenv("DANG_KEA_TEST_NOOP_SEED") != nullptr;
+  const bool empty_startup =
+      std::getenv("DANG_KEA_EMPTY_STARTUP") != nullptr;
   bool valid = !force_host_paging || AddDhcp6PagingReservations(&proposed);
   const bool no_op = before == proposed;
   const char* expected_rollback_failure =
@@ -222,6 +246,8 @@ int main(int argc, char** argv) {
       std::getenv("DANG_KEA_EXPECT_OPERATIONAL_FAILURE");
   const char* expected_operational_subtree =
       std::getenv("DANG_KEA_EXPECT_OPERATIONAL_SUBTREE");
+  const char* expected_startup_failure =
+      std::getenv("DANG_KEA_EXPECT_STARTUP_RECONCILE_FAILURE");
   const char* remove_host_hook = std::getenv("DANG_KEA_REMOVE_HOST_HOOK");
   void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
   auto initialize = library ? reinterpret_cast<DangPluginInitV6>(
@@ -234,15 +260,47 @@ int main(int argc, char** argv) {
     return 1;
   }
   valid = valid && CheckCallbackOutputContracts(*plugin6);
+  if (valid && expected_startup_failure)
+    valid = RemoveHostHook(expected_startup_failure);
   DangTransactionV1 transaction{before.c_str(), proposed.c_str(), "[]"};
   DangPluginErrorV1 error{};
   DangAppliedConfigurationV1 reconciled{};
+  void* startup_prepared = nullptr;
+  const bool seed_with_noop = expected_validate_failure ||
+      expected_operational_failure || skip_operational || test_noop_seed;
+  if (valid && seed_with_noop) {
+    DangTransactionV1 startup{before.c_str(), before.c_str(), "[]"};
+    valid = plugin->prepare(plugin->context, &startup, &startup_prepared,
+                            &error) || Report("startup preparation", error);
+  }
+  const bool startup_accepted = empty_startup ? valid :
+      valid && plugin6->reconcile_applied_configuration(
+          plugin->context, startup_prepared, before.c_str(), &reconciled,
+          &error);
+  if (startup_prepared)
+    plugin->release(plugin->context, startup_prepared);
+  if (expected_startup_failure) {
+    const std::string expected_path =
+        "/{urn:ietf:params:xml:ns:yang:" +
+        std::string(expected_startup_failure) + "}config";
+    const bool rejected = !startup_accepted && error.message &&
+        error.instance_path &&
+        std::string_view(error.message).find(expected_startup_failure) !=
+            std::string_view::npos &&
+        std::string_view(error.instance_path) == expected_path;
+    const bool restored = RestoreRemovedHostHook();
+    valid = valid && rejected && restored;
+    if (!valid) Report("expected startup reconciliation rejection", error);
+    if (plugin->destroy) plugin->destroy(plugin->context);
+    dlclose(library);
+    if (valid) std::cout << "Kea startup reconciliation rejection passed\n";
+    return valid ? 0 : 1;
+  }
   valid = valid &&
-      (plugin6->reconcile_applied_configuration(
-           plugin->context, nullptr, before.c_str(), &reconciled, &error) ||
-       Report("startup reconciliation", error));
-  valid = valid && reconciled.applied_xml == before.c_str() &&
-          reconciled.outcomes == nullptr && reconciled.outcome_count == 0;
+      (startup_accepted || Report("startup reconciliation", error));
+  if (!empty_startup)
+    valid = valid && reconciled.applied_xml == before.c_str() &&
+        reconciled.outcomes == nullptr && reconciled.outcome_count == 0;
   void* prepared = nullptr;
   if (valid)
     valid = plugin->prepare(plugin->context, &transaction, &prepared, &error)
@@ -468,6 +526,10 @@ int main(int argc, char** argv) {
         state.data_xml != nullptr && state.complete == 1;
     if (!valid) Report("post-rollback operational restoration", error);
   }
+  if (remove_host_hook) {
+    const bool restored = RestoreRemovedHostHook();
+    valid = valid && restored;
+  }
   if (prepared) plugin->release(plugin->context, prepared);
   if (plugin->destroy) plugin->destroy(plugin->context);
   dlclose(library);
@@ -482,6 +544,8 @@ int main(int argc, char** argv) {
         ? "Kea post-apply reconciliation rejection passed\n"
         : expected_rollback_failure
         ? "Kea rollback failure attribution passed\n"
+        : empty_startup
+        ? "Kea empty-datastore startup apply and rollback passed\n"
         : no_op
         ? "Kea no-op validate, apply, and rollback passed\n"
         : skip_operational

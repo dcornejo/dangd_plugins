@@ -49,11 +49,14 @@ using ConfigurationCommand = std::function<bool(
 /**
  * Converts one official Kea configuration container into control JSON.
  * Returns no value when XML is malformed, the requested module is unsupported,
- * or values cannot be represented by Kea's control API.
+ * or values cannot be represented by Kea's control API. When provided,
+ * configuration_missing distinguishes a valid datastore without the requested
+ * module from every other translation failure.
  */
 [[nodiscard]] std::optional<ServerConfiguration> TranslateConfiguration(
     std::string_view datastore_xml, std::string_view module_name,
-    std::string_view socket_path, std::string* error);
+    std::string_view socket_path, std::string* error,
+    bool* configuration_missing = nullptr);
 
 /** Sends one command over a bounded local Kea UNIX control socket. */
 [[nodiscard]] std::optional<nlohmann::json> SendControlCommand(
@@ -64,6 +67,11 @@ using ConfigurationCommand = std::function<bool(
 [[nodiscard]] std::optional<nlohmann::json> SendControlQuery(
     std::string_view socket_path, std::string_view command,
     const nlohmann::json& arguments, std::string* error);
+
+/** Captures one daemon's complete native configuration as a rollback image. */
+[[nodiscard]] std::optional<ServerConfiguration> ReadLiveConfiguration(
+    std::string_view module_name, std::string_view socket_path,
+    const ControlQuery& query, std::string* error);
 
 /**
  * Reads one daemon's effective configuration and verifies every managed value.

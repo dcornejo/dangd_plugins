@@ -280,9 +280,17 @@ multiple rows, or Kea reporting no statistics for an accepted configured
 subnet fail the complete retrieval. The latter detects datastore/daemon drift
 instead of publishing a misleading complete empty statistics tree.
 Candidate validation does not change that inventory; successful reconciliation
-and rollback callbacks update it atomically. On startup, ABI-v6 applied-state
-reconciliation rebuilds both subnet inventories from dangd's accepted snapshot
-before operational retrieval, so a restart cannot silently omit statistics.
+and rollback callbacks update it atomically. On initial startup, dangd presents
+the restored datastore as an empty-to-persisted transaction. The plugin reads
+each daemon's complete native configuration as the rollback image, applies
+dangd's persisted authority, and accepts it only after post-apply readback.
+If startup fails, normal transaction rollback restores those captured native
+images. During direct applied-state recovery without a prepared transaction,
+ABI-v6 reconciliation instead reads both live daemon configurations and
+requires their managed values to match dangd's persisted snapshot before
+rebuilding the subnet inventories. Unavailable or drifted startup state
+therefore blocks operational publication instead of silently blessing intent
+as applied state.
 The pinned modules declare no
 RPC or notification surface.
 
@@ -414,6 +422,14 @@ It verifies that no
 other interface entered the isolation boundary and removes the temporary
 memory-backed lease databases, unique sockets, PID storage, and namespace or
 jail afterward.
+Before that transaction matrix, each script exercises dangd's real startup
+shape with an empty before-image and the persisted Kea datastore as the
+candidate. Success proves that both native boot configurations were captured,
+the persisted snapshot was applied and read back, and explicit rollback
+restored the captured images. Separate direct-recovery cases then drift the
+DHCPv4 and DHCPv6 daemons in turn and require rejection at the exact module
+configuration path; the fixture restores each complete native image before
+continuing.
 Each platform script then runs DHCPv4-only and DHCPv6-only transactions with
 the opposite, unchanged daemon deliberately pointed at a nonexistent socket.
 Successful validation, apply, and rollback therefore prove against packaged

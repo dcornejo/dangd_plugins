@@ -1428,7 +1428,9 @@ void FindSubnetIds(const nlohmann::json& value, std::string_view list_name,
 
 std::optional<ServerConfiguration> TranslateConfiguration(
     std::string_view datastore_xml, std::string_view module_name,
-    std::string_view socket_path, std::string* error) {
+    std::string_view socket_path, std::string* error,
+    bool* configuration_missing) {
+  if (configuration_missing) *configuration_missing = false;
   const bool dhcp4 = module_name == "kea-dhcp4-server";
   const bool dhcp6 = module_name == "kea-dhcp6-server";
   if (!dhcp4 && !dhcp6) {
@@ -1465,6 +1467,8 @@ std::optional<ServerConfiguration> TranslateConfiguration(
                      &configuration_count);
   if (configuration_count != 1) {
     xmlFreeDoc(document);
+    if (configuration_count == 0 && configuration_missing)
+      *configuration_missing = true;
     if (error)
       *error = configuration_count == 0
           ? "Kea datastore omits the module configuration container"
@@ -1683,6 +1687,34 @@ std::optional<nlohmann::json> SendControlQuery(
     if (error) *error = std::string("invalid Kea response: ") + exception.what();
     return std::nullopt;
   }
+}
+
+std::optional<ServerConfiguration> ReadLiveConfiguration(
+    std::string_view module_name, std::string_view socket_path,
+    const ControlQuery& query, std::string* error) {
+  const std::string service = module_name == "kea-dhcp4-server" ? "Dhcp4"
+      : module_name == "kea-dhcp6-server" ? "Dhcp6" : "";
+  if (service.empty() || !query) {
+    if (error) *error = "invalid live Kea configuration request";
+    return std::nullopt;
+  }
+  auto response = RunControlQuery(query, socket_path, "config-get",
+                                  nlohmann::json::object(), error);
+  if (!response || !CommandSucceeded(*response, error)) return std::nullopt;
+  const nlohmann::json* answer = Answer(*response);
+  if (!answer || !answer->contains("arguments") ||
+      !answer->at("arguments").is_object()) {
+    if (error) *error = "Kea config-get response omits arguments";
+    return std::nullopt;
+  }
+  nlohmann::json arguments = answer->at("arguments");
+  arguments.erase("hash");
+  if (!arguments.contains(service) || !arguments.at(service).is_object()) {
+    if (error) *error = "Kea config-get response omits service " + service;
+    return std::nullopt;
+  }
+  return ServerConfiguration{std::string(module_name), service,
+                             std::string(socket_path), std::move(arguments)};
 }
 
 bool VerifyLiveConfiguration(const ServerConfiguration& expected,
