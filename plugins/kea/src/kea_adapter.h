@@ -31,6 +31,7 @@ struct PageLimits {
   std::size_t maximum_pages = 512;
   std::size_t maximum_items = 65536;
   std::size_t maximum_bytes = 8U * 1024U * 1024U;
+  std::size_t maximum_xml_bytes = 16U * 1024U * 1024U;
   std::chrono::milliseconds maximum_duration{30000};
 };
 
@@ -108,8 +109,9 @@ using ConfigurationCommand = std::function<bool(
  * failure_path identifies the configuration or state subtree responsible for
  * a failure. The closing check prevents publication when Kea's managed
  * configuration changed or became unavailable during the multi-command read.
- * PageLimits bound the aggregate state entries, bytes, queries, and duration
- * rather than restarting for leases, statistics, and reservations.
+ * PageLimits bound the aggregate state entries, native bytes, modeled XML,
+ * queries, and duration rather than restarting for leases, statistics, and
+ * reservations.
  */
 [[nodiscard]] std::optional<std::string> CollectAuthoritativeOperationalState(
     const ServerConfiguration& expected, bool dhcp6,

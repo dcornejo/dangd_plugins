@@ -591,6 +591,7 @@ int main() {
            .maximum_pages = 1,
            .maximum_items = 65536,
            .maximum_bytes = 8U * 1024U * 1024U,
+           .maximum_xml_bytes = 16U * 1024U * 1024U,
            .maximum_duration = std::chrono::milliseconds(100)});
   valid &= Check(!query_limited_state && failure_path == "state/hosts" &&
                      error.find(
@@ -631,6 +632,7 @@ int main() {
            .maximum_pages = 4,
            .maximum_items = 1,
            .maximum_bytes = 1024,
+           .maximum_xml_bytes = 16U * 1024U * 1024U,
            .maximum_duration = std::chrono::milliseconds(100)});
   valid &= Check(!item_limited_state && failure_path == "state/hosts" &&
                      error.find(
@@ -648,12 +650,39 @@ int main() {
            .maximum_pages = 4,
            .maximum_items = 2,
            .maximum_bytes = budget_lease.dump().size(),
+           .maximum_xml_bytes = 16U * 1024U * 1024U,
            .maximum_duration = std::chrono::milliseconds(100)});
   valid &= Check(!byte_limited_state && failure_path == "state/hosts" &&
                      error.find(
                          "operational collection exceeds the byte limit") !=
                          std::string::npos,
                  "operational collectors did not share one byte limit");
+
+  failure_path.clear();
+  error.clear();
+  auto xml_limited_state =
+      dang::plugins::kea::CollectAuthoritativeOperationalState(
+          *dhcp4, false, {}, stable_operational_read, &failure_path, &error,
+          {.page_size = 256,
+           .maximum_pages = 4,
+           .maximum_items = 2,
+           .maximum_bytes = 1024,
+           .maximum_xml_bytes = 1,
+           .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(!xml_limited_state && failure_path == "state" &&
+                     error == "Kea operational XML exceeds the byte limit",
+                 "oversized modeled operational XML was published");
+
+  failure_path.clear();
+  error.clear();
+  auto invalid_xml_limit =
+      dang::plugins::kea::CollectAuthoritativeOperationalState(
+          *dhcp4, false, {}, stable_operational_read, &failure_path, &error,
+          {.maximum_xml_bytes = 0});
+  valid &= Check(!invalid_xml_limit && failure_path == "state" &&
+                     error ==
+                         "invalid Kea operational collection configuration",
+                 "zero modeled-XML limit reached a Kea collector");
 
   authority_checks = 0;
   const dang::plugins::kea::ControlQuery drifting_operational_read =

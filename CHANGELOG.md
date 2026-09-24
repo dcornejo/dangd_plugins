@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Enforced dangd's 16 MiB operational-XML ceiling inside the Kea provider.
+  DHCPv4 consumes from the complete document budget before DHCPv6 receives the
+  remainder, so JSON escaping or binary-to-base64 expansion cannot produce an
+  oversized plugin result for dangd to reject only after handoff.
+
 - Bounded each authoritative Kea daemon-state read by shared limits of 512
   state queries, 65,536 state entries, and 8 MiB of encoded native entry data
   across lease pages, per-subnet statistics, and reservation pages. Those

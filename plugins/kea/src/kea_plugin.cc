@@ -29,6 +29,7 @@ using dang::plugins::kea::ApplyWithCompensation;
 using dang::plugins::kea::CollectAuthoritativeOperationalState;
 using dang::plugins::kea::CommandSucceeded;
 using dang::plugins::kea::ExtractSubnetIds;
+using dang::plugins::kea::PageLimits;
 using dang::plugins::kea::RollbackChanged;
 using dang::plugins::kea::SendControlCommand;
 using dang::plugins::kea::SendControlQuery;
@@ -46,6 +47,11 @@ struct Prepared {
 thread_local std::string callback_error;
 thread_local std::string callback_path;
 thread_local std::string operational_xml;
+
+// Match dangd's default XML document ceiling before returning a provider
+// buffer. The remaining allowance is shared by the DHCPv4 and DHCPv6 trees.
+constexpr std::size_t kMaximumOperationalXmlBytes = 16U * 1024U * 1024U;
+constexpr std::string_view kOperationalClose = "</data>";
 
 // Operational state must describe only configuration accepted by dangd and
 // known to have reached Kea. Preparing or validating a candidate therefore
@@ -311,10 +317,22 @@ int Operational(void*, DangOperationalDataV1* result,
       return 0;
     }
     std::string failure_path;
+    if (operational_xml.size() + kOperationalClose.size() >=
+        kMaximumOperationalXmlBytes) {
+      SetError(error,
+               module +
+                   std::string(": operational XML exceeds the byte limit"),
+               "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +
+                   "}state");
+      return 0;
+    }
+    PageLimits limits;
+    limits.maximum_xml_bytes = kMaximumOperationalXmlBytes -
+        operational_xml.size() - kOperationalClose.size();
     auto state = CollectAuthoritativeOperationalState(
         accepted.configurations[server_index], dhcp6,
         accepted.subnet_ids[server_index], SendControlQuery, &failure_path,
-        &reason);
+        &reason, limits);
     if (!state) {
       SetError(error, module + std::string(": ") + reason,
                "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +
@@ -324,7 +342,7 @@ int Operational(void*, DangOperationalDataV1* result,
     operational_xml += *state;
     ++server_index;
   }
-  operational_xml += "</data>";
+  operational_xml += kOperationalClose;
   result->data_xml = operational_xml.c_str();
   return 1;
 }

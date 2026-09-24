@@ -2024,6 +2024,7 @@ std::optional<std::string> CollectAuthoritativeOperationalState(
 
   if (!query || limits.page_size == 0 || limits.maximum_pages == 0 ||
       limits.maximum_items == 0 || limits.maximum_bytes == 0 ||
+      limits.maximum_xml_bytes == 0 ||
       limits.maximum_duration <= std::chrono::milliseconds::zero()) {
     at("state");
     if (error) *error = "invalid Kea operational collection configuration";
@@ -2112,6 +2113,10 @@ std::optional<std::string> CollectAuthoritativeOperationalState(
   auto state = TranslateOperationalState(expected.module_name, *leases,
                                          *statistics, *hosts, error);
   if (!state) return std::nullopt;
+  if (state->size() > limits.maximum_xml_bytes) {
+    if (error) *error = "Kea operational XML exceeds the byte limit";
+    return std::nullopt;
+  }
 
   // Kea exposes no transaction spanning these read commands. Rechecking the
   // managed image closes the observable drift window before dangd publishes

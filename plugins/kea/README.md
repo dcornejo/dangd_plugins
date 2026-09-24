@@ -217,7 +217,11 @@ lease pages, per-subnet statistics, and reservation pages; the two authority
 checks are also inside that deadline. The deadline is checked both before and
 after every control call, so a slow final reply cannot be accepted after the
 budget. Each individual control exchange retains its five-second and 16 MiB
-limits.
+limits. The final modeled document is independently limited to 16 MiB to match
+dangd's operational callback boundary. DHCPv4 and DHCPv6 consume one shared
+XML allowance, including the NETCONF data wrapper, so escaping and base64
+expansion cannot multiply the accepted native-data budget into an oversized
+provider result.
 Unexpected exceptions from the control-query implementation are contained as
 retrieval failures and cannot cross the plugin callback boundary.
 
