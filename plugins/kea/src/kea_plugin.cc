@@ -14,6 +14,7 @@
 #include "kea_callback_guard.h"
 #include "kea_model_sources.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
@@ -72,6 +73,9 @@ struct AcceptedConfigurationSnapshot {
   // reconciliation or complete compensation. Operational reads fail closed
   // while the backend is not yet known to match accepted dangd state.
   std::string pending_module;
+  // Exact proposal that owns pending_module. Reconciliation cannot use a
+  // different or no-op prepared transaction to clear unresolved hardware.
+  std::vector<ServerConfiguration> pending_proposal;
 };
 
 std::shared_mutex accepted_state_mutex;
@@ -90,7 +94,39 @@ void RememberAcceptedState(
   accepted_state = std::move(next);
 }
 
-bool BeginPendingMutation(const Prepared& prepared) {
+bool SameConfigurationSet(const std::vector<ServerConfiguration>& left,
+                          const std::vector<ServerConfiguration>& right) {
+  if (left.size() != right.size()) return false;
+  for (std::size_t index = 0; index < left.size(); ++index) {
+    if (left[index].module_name != right[index].module_name ||
+        left[index].service_name != right[index].service_name ||
+        left[index].socket_path != right[index].socket_path ||
+        left[index].arguments != right[index].arguments)
+      return false;
+  }
+  return true;
+}
+
+std::string ConfigurationMismatchModule(
+    const std::vector<ServerConfiguration>& left,
+    const std::vector<ServerConfiguration>& right) {
+  const std::size_t shared = std::min(left.size(), right.size());
+  for (std::size_t index = 0; index < shared; ++index) {
+    if (left[index].module_name != right[index].module_name ||
+        left[index].service_name != right[index].service_name ||
+        left[index].socket_path != right[index].socket_path ||
+        left[index].arguments != right[index].arguments)
+      return right[index].module_name.empty() ? left[index].module_name
+                                              : right[index].module_name;
+  }
+  if (left.size() > shared) return left[shared].module_name;
+  if (right.size() > shared) return right[shared].module_name;
+  return {};
+}
+
+bool BeginPendingApply(const Prepared& prepared, bool* pending,
+                       std::string* failed_module, std::string* reason) {
+  if (pending) *pending = false;
   std::string module;
   for (std::size_t index = 0;
        index < prepared.before.size() && index < prepared.proposed.size();
@@ -100,15 +136,86 @@ bool BeginPendingMutation(const Prepared& prepared) {
       break;
     }
   }
-  if (module.empty()) return false;
   std::lock_guard lock(accepted_state_mutex);
+  if (!accepted_state.pending_module.empty()) {
+    if (failed_module) *failed_module = accepted_state.pending_module;
+    if (reason)
+      *reason = accepted_state.pending_module +
+          ": an earlier Kea mutation is still unresolved";
+    return false;
+  }
+  if (!accepted_state.configurations.empty() &&
+      !SameConfigurationSet(accepted_state.configurations, prepared.before)) {
+    const std::string mismatch = ConfigurationMismatchModule(
+        accepted_state.configurations, prepared.before);
+    if (failed_module) *failed_module = mismatch;
+    if (reason)
+      *reason = (mismatch.empty() ? std::string("Kea") : mismatch) +
+          ": prepared before-image is not the accepted configuration";
+    return false;
+  }
+  if (module.empty()) return true;
   accepted_state.pending_module = std::move(module);
+  accepted_state.pending_proposal = prepared.proposed;
+  if (pending) *pending = true;
   return true;
 }
 
 void ClearPendingApply() {
   std::lock_guard lock(accepted_state_mutex);
   accepted_state.pending_module.clear();
+  accepted_state.pending_proposal.clear();
+}
+
+bool BeginPendingRollback(const Prepared& prepared, std::string* failed_module,
+                          std::string* reason) {
+  std::string module;
+  for (std::size_t index = 0;
+       index < prepared.before.size() && index < prepared.proposed.size();
+       ++index) {
+    if (prepared.before[index].arguments != prepared.proposed[index].arguments) {
+      module = prepared.before[index].module_name;
+      break;
+    }
+  }
+  std::lock_guard lock(accepted_state_mutex);
+  if (!accepted_state.pending_module.empty() &&
+      !SameConfigurationSet(accepted_state.pending_proposal,
+                            prepared.proposed) &&
+      !SameConfigurationSet(accepted_state.pending_proposal,
+                            prepared.before)) {
+    if (failed_module) *failed_module = accepted_state.pending_module;
+    if (reason)
+      *reason = accepted_state.pending_module +
+          ": rollback does not own the unresolved Kea mutation";
+    return false;
+  }
+  if (accepted_state.pending_module.empty() &&
+      !accepted_state.configurations.empty() &&
+      !SameConfigurationSet(accepted_state.configurations, prepared.before) &&
+      !SameConfigurationSet(accepted_state.configurations,
+                            prepared.proposed)) {
+    const std::string mismatch = ConfigurationMismatchModule(
+        accepted_state.configurations, prepared.before);
+    if (failed_module) *failed_module = mismatch;
+    if (reason)
+      *reason = (mismatch.empty() ? std::string("Kea") : mismatch) +
+          ": rollback transaction is stale";
+    return false;
+  }
+  if (module.empty()) {
+    if (!accepted_state.pending_module.empty()) {
+      if (failed_module) *failed_module = accepted_state.pending_module;
+      if (reason)
+        *reason = accepted_state.pending_module +
+            ": no-op rollback cannot clear an unresolved Kea mutation";
+      return false;
+    }
+    return true;
+  }
+  accepted_state.pending_module = std::move(module);
+  accepted_state.pending_proposal = prepared.before;
+  return true;
 }
 
 void SetError(DangPluginErrorV1* error, std::string message,
@@ -288,7 +395,14 @@ int ApplyConfigurationImpl(void*, void* opaque, DangPluginErrorV1* error) {
   }
   std::string failed_module;
   std::string reason;
-  const bool pending = BeginPendingMutation(*prepared);
+  bool pending = false;
+  if (!BeginPendingApply(*prepared, &pending, &failed_module, &reason)) {
+    const std::string path = failed_module.empty()
+        ? "/"
+        : "/{urn:ietf:params:xml:ns:yang:" + failed_module + "}config";
+    SetError(error, std::move(reason), path);
+    return 0;
+  }
   bool compensation_complete = false;
   if (!ApplyWithCompensation(prepared->before, prepared->proposed, Execute,
                              &failed_module, &reason,
@@ -325,7 +439,13 @@ int RollbackConfigurationImpl(void*, void* opaque, DangPluginErrorV1* error) {
   // Rollback is another multi-daemon hardware mutation. Suppress operational
   // publication from its first changing config-set until every restoration
   // succeeds and the accepted before-image is installed atomically.
-  (void)BeginPendingMutation(*prepared);
+  if (!BeginPendingRollback(*prepared, &failed_module, &reason)) {
+    const std::string path = failed_module.empty()
+        ? "/"
+        : "/{urn:ietf:params:xml:ns:yang:" + failed_module + "}config";
+    SetError(error, std::move(reason), path);
+    return 0;
+  }
   if (RollbackChanged(prepared->before, prepared->proposed, Execute,
                       &failed_module, &reason)) {
     if (VerifyRestoredConfigurations(
@@ -513,8 +633,45 @@ int ReconcileAppliedConfigurationImpl(
       return 0;
     }
   }
+  bool prepared_changes_configuration = false;
+  std::string prepared_changed_module;
+  if (prepared) {
+    for (std::size_t index = 0; index < prepared->before.size(); ++index) {
+      if (prepared->before[index].arguments !=
+          prepared->proposed[index].arguments) {
+        prepared_changes_configuration = true;
+        prepared_changed_module = prepared->proposed[index].module_name;
+        break;
+      }
+    }
+  }
+  bool verify_all_pending = false;
+  {
+    std::shared_lock lock(accepted_state_mutex);
+    if (!accepted_state.pending_module.empty()) {
+      if (!SameConfigurationSet(accepted_state.pending_proposal, *accepted)) {
+        const std::string& module = accepted_state.pending_module;
+        SetError(error,
+                 module +
+                     ": applied snapshot does not own the pending mutation",
+                 "/{urn:ietf:params:xml:ns:yang:" + module + "}config");
+        return 0;
+      }
+      // An ordinary changing transaction verifies its changed subset below.
+      // Null/no-op recovery has no such delta, so it must verify every daemon
+      // before it may resolve the exact pending proposal.
+      verify_all_pending = !prepared_changes_configuration;
+    } else if (prepared_changes_configuration) {
+      const std::string& module = prepared_changed_module;
+      SetError(error,
+               module + ": prepared proposal has not been applied",
+               "/{urn:ietf:params:xml:ns:yang:" + module + "}config");
+      return 0;
+    }
+  }
   for (std::size_t index = 0; index < accepted->size(); ++index) {
-    if (prepared && prepared->before[index].arguments ==
+    if (prepared && !verify_all_pending &&
+        prepared->before[index].arguments ==
                         prepared->proposed[index].arguments)
       continue;
     std::string reason;

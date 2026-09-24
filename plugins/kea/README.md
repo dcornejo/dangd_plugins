@@ -84,6 +84,11 @@ Before sending any command, the transaction helper requires each before-image
 and proposed image to have the same module, service, and socket identity at its
 index and requires module targets to be unique. A malformed or reordered plan
 therefore cannot apply one daemon and compensate a different daemon.
+Apply also requires its before-image to match the plugin's accepted snapshot.
+Once a changing apply begins, its pending marker retains the complete proposed
+daemon images. Until that transaction is reconciled or fully restored, a
+second apply, stale rollback, unapplied reconciliation, or unrelated no-op
+transaction cannot replace or clear the marker.
 An exception from the command implementation is contained as an outcome-
 unknown failure and triggers reverse compensation. An exception while restoring
 one daemon is reported without preventing restoration of earlier daemons.
@@ -280,6 +285,10 @@ closed before querying state. The marker is installed before the first changing
 intent before dangd accepts the commit. Reconciliation atomically promotes the
 verified image and clears the marker. Complete reverse compensation or rollback
 clears it against the prior image; incomplete compensation keeps reads closed.
+The marker is transaction-bound: reconciliation must present the proposal that
+created it, and a changed prepared proposal without a marker is rejected as
+unapplied. Callback reordering or stale prepared handles therefore cannot turn
+intent into authority without a corresponding native mutation.
 
 Host reservations use Kea's `reservation-get-page` continuation map and the
 same full cursor-cycle detection as leases. Every returned reservation

@@ -9,6 +9,16 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Bound Kea's pending-mutation marker to the exact proposed daemon images and
+  accepted before-image. Apply now rejects stale baselines and any second
+  mutation while prior hardware remains unresolved. Reconciliation rejects a
+  changed proposal that was never applied and cannot use a different or no-op
+  transaction to clear the marker; rollback likewise must own either the
+  pending proposal or accepted transaction. Portable tests cover unapplied
+  reconciliation, while native failure injection proves retry, no-op
+  reconciliation, and no-op rollback all fail before contacting the lost
+  daemon.
+
 - Bound Kea ABI-v6 reconciliation to its prepared transaction. Before any live
   readback or authority promotion, the translated applied XML must exactly
   match the prepared proposed DHCPv4 and DHCPv6 images, including module,
