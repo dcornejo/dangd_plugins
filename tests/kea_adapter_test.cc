@@ -756,6 +756,23 @@ int main() {
   auto state4 = dang::plugins::kea::TranslateOperationalState(
       "kea-dhcp4-server", leases4, stats4, hosts4, &error);
   valid &= Check(state4.has_value(), error.c_str());
+  error.clear();
+  auto exact_state4 = state4
+      ? dang::plugins::kea::TranslateOperationalState(
+            "kea-dhcp4-server", leases4, stats4, hosts4, &error,
+            state4->size())
+      : std::nullopt;
+  valid &= Check(exact_state4 && *exact_state4 == *state4,
+                 "exact modeled-XML boundary rejected valid state");
+  error.clear();
+  auto oversized_state4 = state4
+      ? dang::plugins::kea::TranslateOperationalState(
+            "kea-dhcp4-server", leases4, stats4, hosts4, &error,
+            state4->size() - 1)
+      : std::nullopt;
+  valid &= Check(!oversized_state4 &&
+                     error == "Kea operational XML exceeds the byte limit",
+                 "incremental modeled-XML boundary accepted oversized state");
   valid &= Check(state4 && state4->find("<hw-address>AAECAwQF</hw-address>") !=
                      std::string::npos,
                  "DHCPv4 hardware address was not encoded as YANG binary");

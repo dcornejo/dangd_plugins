@@ -221,7 +221,10 @@ limits. The final modeled document is independently limited to 16 MiB to match
 dangd's operational callback boundary. DHCPv4 and DHCPv6 consume one shared
 XML allowance, including the NETCONF data wrapper, so escaping and base64
 expansion cannot multiply the accepted native-data budget into an oversized
-provider result.
+provider result. Translation checks the remaining allowance after every lease,
+statistics row, and reservation. It assembles the already-bounded fragments
+directly into the final state string, avoiding an unbounded complete document
+or chained concatenation temporaries before rejection.
 Unexpected exceptions from the control-query implementation are contained as
 retrieval failures and cannot cross the plugin callback boundary.
 

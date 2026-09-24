@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -98,11 +99,12 @@ using ConfigurationCommand = std::function<bool(
     const std::vector<std::uint32_t>& subnet_ids, const ControlQuery& query,
     std::string* error, const PageLimits& limits = {});
 
-/** Converts native lease and supplemental-statistic replies to modeled XML. */
+/** Converts native replies to modeled XML under an incremental byte ceiling. */
 [[nodiscard]] std::optional<std::string> TranslateOperationalState(
     std::string_view module_name, const nlohmann::json& leases,
     const nlohmann::json& statistics, const nlohmann::json& hosts,
-    std::string* error);
+    std::string* error,
+    std::size_t maximum_xml_bytes = std::numeric_limits<std::size_t>::max());
 
 /**
  * Collects one daemon's modeled state between two authority checks.

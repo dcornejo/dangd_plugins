@@ -608,6 +608,14 @@ std::optional<std::string> JsonText(const nlohmann::json& value,
   }
 }
 
+bool CheckOperationalXmlSize(const std::string& xml,
+                             std::size_t maximum_bytes,
+                             std::string* error) {
+  if (xml.size() <= maximum_bytes) return true;
+  if (error) *error = "Kea operational XML exceeds the byte limit";
+  return false;
+}
+
 std::optional<nlohmann::json> RunControlQuery(
     const ControlQuery& query, std::string_view socket_path,
     std::string_view command, const nlohmann::json& arguments,
@@ -924,14 +932,20 @@ bool AppendUnsignedLeaf(std::string* xml, std::string_view name,
 }
 
 std::optional<std::string> BuildLeases(const nlohmann::json& response,
-                                       bool dhcp6, std::string* error) {
+                                       bool dhcp6,
+                                       std::size_t maximum_xml_bytes,
+                                       std::string* error) {
   const nlohmann::json* answer = Answer(response);
   if (!answer || !answer->contains("result") ||
       !answer->at("result").is_number_integer()) {
     if (error) *error = "Kea lease reply omits an integer result";
     return std::nullopt;
   }
-  if (IsResultCode(answer->at("result"), 3)) return "<leases/>";
+  if (IsResultCode(answer->at("result"), 3)) {
+    std::string xml = "<leases/>";
+    return CheckOperationalXmlSize(xml, maximum_xml_bytes, error)
+        ? std::optional<std::string>(std::move(xml)) : std::nullopt;
+  }
   if (!IsResultCode(answer->at("result"), 0)) {
     if (error) *error = RejectionReason(*answer, "Kea rejected the lease query");
     return std::nullopt;
@@ -1059,19 +1073,29 @@ std::optional<std::string> BuildLeases(const nlohmann::json& response,
                             error))
         return std::nullopt;
     xml += "</lease>";
+    if (!CheckOperationalXmlSize(xml, maximum_xml_bytes, error))
+      return std::nullopt;
   }
-  return xml + "</leases>";
+  xml += "</leases>";
+  return CheckOperationalXmlSize(xml, maximum_xml_bytes, error)
+      ? std::optional<std::string>(std::move(xml)) : std::nullopt;
 }
 
 std::optional<std::string> BuildStatistics(const nlohmann::json& response,
-                                           bool dhcp6, std::string* error) {
+                                           bool dhcp6,
+                                           std::size_t maximum_xml_bytes,
+                                           std::string* error) {
   const nlohmann::json* answer = Answer(response);
   if (!answer || !answer->contains("result") ||
       !answer->at("result").is_number_integer()) {
     if (error) *error = "Kea statistics reply omits an integer result";
     return std::nullopt;
   }
-  if (IsResultCode(answer->at("result"), 3)) return "<lease-stats/>";
+  if (IsResultCode(answer->at("result"), 3)) {
+    std::string xml = "<lease-stats/>";
+    return CheckOperationalXmlSize(xml, maximum_xml_bytes, error)
+        ? std::optional<std::string>(std::move(xml)) : std::nullopt;
+  }
   if (!IsResultCode(answer->at("result"), 0)) {
     if (error)
       *error = RejectionReason(*answer, "Kea rejected the statistics query");
@@ -1124,8 +1148,12 @@ std::optional<std::string> BuildStatistics(const nlohmann::json& response,
             "</" + std::string(name) + ">";
       }
       xml += "</subnet>";
+      if (!CheckOperationalXmlSize(xml, maximum_xml_bytes, error))
+        return std::nullopt;
     }
-    return xml + "</lease-stats>";
+    xml += "</lease-stats>";
+    return CheckOperationalXmlSize(xml, maximum_xml_bytes, error)
+        ? std::optional<std::string>(std::move(xml)) : std::nullopt;
   } catch (const std::exception& exception) {
     if (error) *error = std::string("invalid Kea statistics reply: ") + exception.what();
     return std::nullopt;
@@ -1211,14 +1239,20 @@ bool AppendOptionData(std::string* xml, const nlohmann::json& host, bool dhcp6,
 }
 
 std::optional<std::string> BuildHosts(const nlohmann::json& response,
-                                      bool dhcp6, std::string* error) {
+                                      bool dhcp6,
+                                      std::size_t maximum_xml_bytes,
+                                      std::string* error) {
   const nlohmann::json* answer = Answer(response);
   if (!answer || !answer->contains("result") ||
       !answer->at("result").is_number_integer()) {
     if (error) *error = "Kea host reply omits an integer result";
     return std::nullopt;
   }
-  if (IsResultCode(answer->at("result"), 3)) return "<hosts/>";
+  if (IsResultCode(answer->at("result"), 3)) {
+    std::string xml = "<hosts/>";
+    return CheckOperationalXmlSize(xml, maximum_xml_bytes, error)
+        ? std::optional<std::string>(std::move(xml)) : std::nullopt;
+  }
   if (!IsResultCode(answer->at("result"), 0)) {
     if (error) *error = RejectionReason(*answer, "Kea rejected the host query");
     return std::nullopt;
@@ -1354,8 +1388,12 @@ std::optional<std::string> BuildHosts(const nlohmann::json& response,
       xml += "<user-context>" + *escaped + "</user-context>";
     }
     xml += "</host>";
+    if (!CheckOperationalXmlSize(xml, maximum_xml_bytes, error))
+      return std::nullopt;
   }
-  return xml + "</hosts>";
+  xml += "</hosts>";
+  return CheckOperationalXmlSize(xml, maximum_xml_bytes, error)
+      ? std::optional<std::string>(std::move(xml)) : std::nullopt;
 }
 
 void FindSubnetIds(const nlohmann::json& value, std::string_view list_name,
@@ -1996,22 +2034,38 @@ std::optional<nlohmann::json> CollectStatistics(
 std::optional<std::string> TranslateOperationalState(
     std::string_view module_name, const nlohmann::json& leases,
     const nlohmann::json& statistics, const nlohmann::json& hosts,
-    std::string* error) {
+    std::string* error, std::size_t maximum_xml_bytes) {
   const bool dhcp6 = module_name == "kea-dhcp6-server";
   if (!dhcp6 && module_name != "kea-dhcp4-server") {
     if (error) *error = "unsupported Kea module";
     return std::nullopt;
   }
-  auto lease_xml = BuildLeases(leases, dhcp6, error);
+  const std::string prefix = "<state xmlns=\"urn:ietf:params:xml:ns:yang:" +
+      std::string(module_name) + "\">";
+  constexpr std::string_view suffix = "</state>";
+  if (prefix.size() > maximum_xml_bytes ||
+      suffix.size() > maximum_xml_bytes - prefix.size()) {
+    if (error) *error = "Kea operational XML exceeds the byte limit";
+    return std::nullopt;
+  }
+  std::size_t remaining = maximum_xml_bytes - prefix.size() - suffix.size();
+  auto lease_xml = BuildLeases(leases, dhcp6, remaining, error);
   if (!lease_xml) return std::nullopt;
-  auto statistic_xml = BuildStatistics(statistics, dhcp6, error);
+  remaining -= lease_xml->size();
+  auto statistic_xml = BuildStatistics(statistics, dhcp6, remaining, error);
   if (!statistic_xml) return std::nullopt;
-  auto host_xml = BuildHosts(hosts, dhcp6, error);
+  remaining -= statistic_xml->size();
+  auto host_xml = BuildHosts(hosts, dhcp6, remaining, error);
   if (!host_xml) return std::nullopt;
-  const std::string ns = "urn:ietf:params:xml:ns:yang:" +
-      std::string(module_name);
-  return "<state xmlns=\"" + ns + "\">" + *lease_xml + *statistic_xml +
-      *host_xml + "</state>";
+  std::string state;
+  state.reserve(prefix.size() + lease_xml->size() + statistic_xml->size() +
+                host_xml->size() + suffix.size());
+  state += prefix;
+  state += *lease_xml;
+  state += *statistic_xml;
+  state += *host_xml;
+  state += suffix;
+  return state;
 }
 
 std::optional<std::string> CollectAuthoritativeOperationalState(
@@ -2111,7 +2165,8 @@ std::optional<std::string> CollectAuthoritativeOperationalState(
 
   at("state");
   auto state = TranslateOperationalState(expected.module_name, *leases,
-                                         *statistics, *hosts, error);
+                                         *statistics, *hosts, error,
+                                         limits.maximum_xml_bytes);
   if (!state) return std::nullopt;
   if (state->size() > limits.maximum_xml_bytes) {
     if (error) *error = "Kea operational XML exceeds the byte limit";

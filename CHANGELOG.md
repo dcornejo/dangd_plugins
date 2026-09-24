@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Applied the Kea operational-XML allowance during translation after every
+  lease, statistics row, and reservation, then assembled the bounded fragments
+  without chained temporary strings. Oversized modeled state is now stopped
+  during construction instead of only after a complete document is allocated.
+
 - Enforced dangd's 16 MiB operational-XML ceiling inside the Kea provider.
   DHCPv4 consumes from the complete document budget before DHCPv6 receives the
   remainder, so JSON escaping or binary-to-base64 expansion cannot produce an
