@@ -9,6 +9,13 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Made every Kea callback output deterministic on failure. YANG-source,
+  prepared-transaction, hardware-action, operational-data, and applied-state
+  outputs are cleared before input validation, and every guarded invocation
+  clears the caller's error descriptor before dispatch. Reused ABI structures
+  can no longer expose stale pointers, counts, completeness flags, or error
+  strings after either a rejected or successful call.
+
 - Added a final exception barrier around every stateful integer-returning Kea
   plugin callback: YANG source retrieval, transaction preparation, validation,
   apply, rollback, hardware actions, operational retrieval, and applied-state

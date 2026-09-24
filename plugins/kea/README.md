@@ -84,6 +84,11 @@ retrieval, transaction, hardware-action, operational, or reconciliation work
 become attributed plugin failures and cannot cross dangd's C ABI. This last-
 resort reporter uses fixed thread-local storage so handling an allocation
 failure does not require another allocation.
+Every guarded call clears its error descriptor before dispatch. Callbacks with
+caller-owned output storage also zero that output before validating inputs, so
+a failed call cannot expose pointers, counts, completeness flags, or prepared
+transaction handles left by an earlier invocation. A successful call likewise
+cannot appear to retain an older diagnostic when the host reuses descriptors.
 Dangd remains the definitive configuration authority. Kea lease or host
 database backends provide runtime data and storage mechanics; they never
 replace the applied dangd snapshot as configuration intent. ABI-v6

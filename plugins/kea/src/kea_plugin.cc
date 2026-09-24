@@ -110,6 +110,10 @@ void SetUnexpectedError(DangPluginErrorV1* error, std::string_view callback,
 template <typename Callback>
 int Guard(std::string_view name, DangPluginErrorV1* error,
           Callback&& callback) noexcept {
+  // A host may reuse one error descriptor across several callbacks. Clear it
+  // before dispatch so success cannot appear to carry an older failure and a
+  // callback that fails before SetError cannot expose stale borrowed strings.
+  if (error) *error = {};
   return GuardPluginCallback(
       std::forward<Callback>(callback),
       [&](std::string_view detail) noexcept {
@@ -125,6 +129,7 @@ int SourceAtImpl(void*, size_t index, DangYangSourceV1* source,
     SetError(error, "the YANG source output is missing");
     return 0;
   }
+  *source = {};
   static const DangYangSourceV1 sources[]{
       {"kea-types", "2025-06-25", kKeaTypesYang,
        std::strlen(kKeaTypesYang),
@@ -191,7 +196,12 @@ std::optional<std::vector<ServerConfiguration>> TranslateBoth(
 
 int PrepareConfigurationImpl(void*, const DangTransactionV1* transaction,
                              void** result, DangPluginErrorV1* error) {
-  if (!transaction || !result) {
+  if (!result) {
+    SetError(error, "the transaction input is incomplete");
+    return 0;
+  }
+  *result = nullptr;
+  if (!transaction) {
     SetError(error, "the transaction input is incomplete");
     return 0;
   }
@@ -285,7 +295,12 @@ size_t HardwareActionCount(void*, void* opaque) {
 int HardwareActionAtImpl(void*, void* opaque, size_t index,
                          DangHardwareActionV1* action,
                          DangPluginErrorV1* error) {
-  if (!opaque || !action || index != 0) {
+  if (!action) {
+    SetError(error, "the Kea transaction action is unavailable");
+    return 0;
+  }
+  *action = {};
+  if (!opaque || index != 0) {
     SetError(error, "the Kea transaction action is unavailable");
     return 0;
   }
@@ -321,6 +336,7 @@ int OperationalImpl(void*, DangOperationalDataV1* result,
     SetError(error, "the operational data output is missing");
     return 0;
   }
+  *result = {};
   const char* socket4 = std::getenv("DANG_KEA_DHCP4_SOCKET");
   const char* socket6 = std::getenv("DANG_KEA_DHCP6_SOCKET");
   if (!socket4 || !*socket4 || !socket6 || !*socket6) {
@@ -380,6 +396,7 @@ int OperationalV2Impl(void* context, DangOperationalDataV2* result,
     SetError(error, "the operational data output is missing");
     return 0;
   }
+  *result = {};
   DangOperationalDataV1 legacy{};
   if (!OperationalImpl(context, &legacy, error)) return 0;
   *result = {legacy.data_xml, 1};
@@ -389,7 +406,12 @@ int OperationalV2Impl(void* context, DangOperationalDataV2* result,
 int ReconcileAppliedConfigurationImpl(
     void*, void* opaque, const char* current_xml,
     DangAppliedConfigurationV1* result, DangPluginErrorV1* error) {
-  if (!result || !current_xml) {
+  if (!result) {
+    SetError(error, "the applied Kea configuration snapshot is missing", "/");
+    return 0;
+  }
+  *result = {};
+  if (!current_xml) {
     SetError(error, "the applied Kea configuration snapshot is missing", "/");
     return 0;
   }

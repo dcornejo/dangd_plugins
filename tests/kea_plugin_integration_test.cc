@@ -138,6 +138,61 @@ bool RemoveHostHook(std::string_view module) {
   }
 }
 
+/** Verifies that failed ABI calls never leave caller-owned stale outputs. */
+bool CheckCallbackOutputContracts(const DangPluginV6& plugin6) {
+  const DangPluginV5& plugin5 = plugin6.v5;
+  const DangPluginV1& plugin = plugin5.v4.v3.v2.v1;
+  DangPluginErrorV1 error{"stale error", "stale path"};
+
+  DangYangSourceV1 source{"stale", "stale", "stale", 5, "stale",
+                          DANG_YANG_IMPLEMENTED_V1, nullptr, 1};
+  bool valid = !plugin.yang_source_at(plugin.context,
+                                      plugin.yang_source_count(plugin.context),
+                                      &source, &error) &&
+      source.module_name == nullptr && source.revision == nullptr &&
+      source.source == nullptr && source.source_size == 0 &&
+      source.source_uri == nullptr && source.role == 0 &&
+      source.enabled_features == nullptr &&
+      source.enabled_feature_count == 0;
+
+  int marker = 0;
+  void* prepared = &marker;
+  valid = valid && !plugin.prepare(plugin.context, nullptr, &prepared, &error) &&
+      prepared == nullptr;
+
+  DangHardwareActionV1 action{"stale", "stale", DANG_HARDWARE_ACTIVATE_V1,
+                              nullptr, 1};
+  valid = valid && !plugin5.v4.hardware_action_at(
+      plugin.context, nullptr, 1, &action, &error) &&
+      action.action_id == nullptr && action.instance_path == nullptr &&
+      action.action_class == 0 && action.dependencies == nullptr &&
+      action.dependency_count == 0;
+
+  DangOperationalDataV1 legacy_state{"stale"};
+  valid = valid && !plugin5.v4.v3.get_operational_data(
+      plugin.context, &legacy_state, &error) &&
+      legacy_state.data_xml == nullptr;
+
+  DangOperationalDataV2 state{"stale", 1};
+  valid = valid && !plugin5.get_operational_data_v2(
+      plugin.context, &state, &error) && state.data_xml == nullptr &&
+      state.complete == 0;
+
+  DangAppliedConfigurationV1 applied{"stale", nullptr, 1};
+  valid = valid && !plugin6.reconcile_applied_configuration(
+      plugin.context, nullptr, nullptr, &applied, &error) &&
+      applied.applied_xml == nullptr && applied.outcomes == nullptr &&
+      applied.outcome_count == 0;
+
+  source = {};
+  error = {"stale error", "stale path"};
+  valid = valid && plugin.yang_source_at(plugin.context, 0, &source, &error) &&
+      source.module_name != nullptr && error.message == nullptr &&
+      error.instance_path == nullptr;
+  if (!valid) std::cerr << "plugin callback output contract failed\n";
+  return valid;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -178,6 +233,7 @@ int main(int argc, char** argv) {
     std::cerr << (library ? "missing plugin initializer" : dlerror()) << '\n';
     return 1;
   }
+  valid = valid && CheckCallbackOutputContracts(*plugin6);
   DangTransactionV1 transaction{before.c_str(), proposed.c_str(), "[]"};
   DangPluginErrorV1 error{};
   DangAppliedConfigurationV1 reconciled{};
