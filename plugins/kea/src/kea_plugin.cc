@@ -20,24 +20,20 @@
 #include <new>
 #include <optional>
 #include <string>
-#include <tuple>
 #include <utility>
 #include <vector>
 
 namespace {
 
 using dang::plugins::kea::ApplyWithCompensation;
+using dang::plugins::kea::CollectAuthoritativeOperationalState;
 using dang::plugins::kea::CommandSucceeded;
-using dang::plugins::kea::CollectHostPages;
-using dang::plugins::kea::CollectLeasePages;
-using dang::plugins::kea::CollectStatistics;
 using dang::plugins::kea::ExtractSubnetIds;
 using dang::plugins::kea::RollbackChanged;
 using dang::plugins::kea::SendControlCommand;
 using dang::plugins::kea::SendControlQuery;
 using dang::plugins::kea::ServerConfiguration;
 using dang::plugins::kea::TranslateConfiguration;
-using dang::plugins::kea::TranslateOperationalState;
 using dang::plugins::kea::VerifyLiveConfiguration;
 
 struct Prepared {
@@ -302,50 +298,27 @@ int Operational(void*, DangOperationalDataV1* result,
       "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">";
   const AcceptedConfigurationSnapshot accepted = AcceptedSnapshot();
   std::size_t server_index = 0;
-  for (const auto& [module, socket, dhcp6] : {
-           std::tuple{"kea-dhcp4-server", socket4, false},
-           std::tuple{"kea-dhcp6-server", socket6, true}}) {
+  for (const auto& [module, dhcp6] : {
+           std::pair{"kea-dhcp4-server", false},
+           std::pair{"kea-dhcp6-server", true}}) {
     std::string reason;
-    if (server_index >= accepted.configurations.size() ||
-        !VerifyLiveConfiguration(accepted.configurations[server_index],
-                                 SendControlQuery, &reason)) {
+    if (server_index >= accepted.configurations.size()) {
       SetError(error,
-               module + std::string(": ") +
-                   (reason.empty() ? "accepted configuration is unavailable"
-                                   : reason),
+               module +
+                   std::string(": accepted configuration is unavailable"),
                "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +
                    "}config");
       return 0;
     }
-    auto leases = CollectLeasePages(socket, dhcp6, SendControlQuery, &reason);
-    if (!leases) {
-      SetError(error, module + std::string(": ") + reason,
-               "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +
-                   "}state/leases");
-      return 0;
-    }
-    auto statistics = CollectStatistics(socket, dhcp6,
-                                        accepted.subnet_ids[server_index],
-                                        SendControlQuery, &reason);
-    if (!statistics) {
-      SetError(error, module + std::string(": ") + reason,
-               "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +
-                   "}state/lease-stats");
-      return 0;
-    }
-    auto hosts = CollectHostPages(socket, SendControlQuery, &reason);
-    if (!hosts) {
-      SetError(error, module + std::string(": ") + reason,
-               "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +
-                   "}state/hosts");
-      return 0;
-    }
-    auto state = TranslateOperationalState(module, *leases, *statistics,
-                                           *hosts, &reason);
+    std::string failure_path;
+    auto state = CollectAuthoritativeOperationalState(
+        accepted.configurations[server_index], dhcp6,
+        accepted.subnet_ids[server_index], SendControlQuery, &failure_path,
+        &reason);
     if (!state) {
       SetError(error, module + std::string(": ") + reason,
                "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +
-                   "}state");
+                   "}" + failure_path);
       return 0;
     }
     operational_xml += *state;

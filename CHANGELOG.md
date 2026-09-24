@@ -10,10 +10,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 ### Added
 
 - Added continuous Kea configuration-authority checks to complete operational
-  retrieval. Before collecting a daemon's state, the plugin now compares its
-  live `config-get` image with the accepted dangd snapshot and fails at the
-  owning module's `config` path on unavailability or drift. The configuration
-  and subnet inventories are captured atomically.
+  retrieval. Before and after collecting each daemon's multi-command state,
+  the plugin now compares its live `config-get` image with the accepted dangd
+  snapshot and fails at the owning module's `config` path on unavailability or
+  drift. The closing check prevents publication when Kea changes during the
+  read, and the configuration and subnet inventories are captured atomically.
 
 - Added authoritative post-apply Kea configuration readback. ABI-v6
   reconciliation now uses `config-get` for every daemon changed by the

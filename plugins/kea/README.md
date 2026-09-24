@@ -218,14 +218,20 @@ individual control exchange retains its five-second and 16 MiB limits.
 Unexpected exceptions from the control-query implementation are contained as
 retrieval failures and cannot cross the plugin callback boundary.
 
-Before collecting any operational state for a daemon, the provider reads its
-complete live configuration and projects it onto the accepted dangd image.
+Before and after collecting operational state for a daemon, the provider reads
+its complete live configuration and projects it onto the accepted dangd image.
 Missing sockets and out-of-band changes therefore fail at the owning module's
 `config` path instead of allowing state from a configuration that dangd did not
-accept. The accepted configuration and subnet inventory are captured under one
-lock, so one operational request cannot combine snapshots from two commits.
-DHCPv4 is verified and collected before DHCPv6; a later DHCPv6 failure cannot
-discard the failure attribution or cause a partial result to be published.
+accept. The closing check also rejects an assembled result when configuration
+drifted during its lease, statistics, and reservation queries. Kea does not
+offer one snapshot transaction spanning those commands, so a transient change
+that is restored before the closing check cannot be distinguished; the two
+authority checks are the strongest available consistency boundary without
+stopping the daemon. The accepted configuration and subnet inventory are
+captured under one lock, so one operational request cannot combine snapshots
+from two dangd commits. DHCPv4 is verified and collected before DHCPv6; a later
+DHCPv6 failure cannot discard the failure attribution or cause a partial result
+to be published.
 
 Host reservations use Kea's `reservation-get-page` continuation map and the
 same aggregate safeguards and full cursor-cycle detection as leases.

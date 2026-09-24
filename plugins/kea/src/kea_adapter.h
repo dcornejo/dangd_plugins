@@ -103,6 +103,18 @@ using ConfigurationCommand = std::function<bool(
     const nlohmann::json& statistics, const nlohmann::json& hosts,
     std::string* error);
 
+/**
+ * Collects one daemon's modeled state between two authority checks.
+ * failure_path identifies the configuration or state subtree responsible for
+ * a failure. The closing check prevents publication when Kea's managed
+ * configuration changed or became unavailable during the multi-command read.
+ */
+[[nodiscard]] std::optional<std::string> CollectAuthoritativeOperationalState(
+    const ServerConfiguration& expected, bool dhcp6,
+    const std::vector<std::uint32_t>& subnet_ids, const ControlQuery& query,
+    std::string* failure_path, std::string* error,
+    const PageLimits& limits = {});
+
 /** Extracts Kea's result/text fields and accepts only result code zero. */
 [[nodiscard]] bool CommandSucceeded(const nlohmann::json& response,
                                     std::string* reason);

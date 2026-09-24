@@ -2014,6 +2014,45 @@ std::optional<std::string> TranslateOperationalState(
       *host_xml + "</state>";
 }
 
+std::optional<std::string> CollectAuthoritativeOperationalState(
+    const ServerConfiguration& expected, bool dhcp6,
+    const std::vector<std::uint32_t>& subnet_ids, const ControlQuery& query,
+    std::string* failure_path, std::string* error, const PageLimits& limits) {
+  const auto at = [failure_path](std::string_view path) {
+    if (failure_path) *failure_path = path;
+  };
+
+  at("config");
+  if (!VerifyLiveConfiguration(expected, query, error)) return std::nullopt;
+
+  at("state/leases");
+  auto leases = CollectLeasePages(expected.socket_path, dhcp6, query, error,
+                                  limits);
+  if (!leases) return std::nullopt;
+
+  at("state/lease-stats");
+  auto statistics = CollectStatistics(expected.socket_path, dhcp6, subnet_ids,
+                                      query, error, limits);
+  if (!statistics) return std::nullopt;
+
+  at("state/hosts");
+  auto hosts = CollectHostPages(expected.socket_path, query, error, limits);
+  if (!hosts) return std::nullopt;
+
+  at("state");
+  auto state = TranslateOperationalState(expected.module_name, *leases,
+                                         *statistics, *hosts, error);
+  if (!state) return std::nullopt;
+
+  // Kea exposes no transaction spanning these read commands. Rechecking the
+  // managed image closes the observable drift window before dangd publishes
+  // the assembled state.
+  at("config");
+  if (!VerifyLiveConfiguration(expected, query, error)) return std::nullopt;
+  if (failure_path) failure_path->clear();
+  return state;
+}
+
 bool CommandSucceeded(const nlohmann::json& response, std::string* reason) {
   const nlohmann::json* answer = &response;
   if (response.is_array()) {

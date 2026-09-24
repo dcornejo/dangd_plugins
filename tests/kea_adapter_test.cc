@@ -556,6 +556,75 @@ int main() {
                      error.find("omits Dhcp4/server-tag") !=
                          std::string::npos,
                  "missing live Kea configuration was accepted");
+
+  std::size_t authority_checks = 0;
+  const dang::plugins::kea::ControlQuery stable_operational_read =
+      [&](std::string_view, std::string_view command,
+          const nlohmann::json& arguments,
+          std::string*) -> std::optional<nlohmann::json> {
+    if (command == "config-get") {
+      ++authority_checks;
+      if (!arguments.is_object() || !arguments.empty()) return std::nullopt;
+      return OptionalJson(
+          nlohmann::json{{"result", 0}, {"arguments", dhcp4->arguments}});
+    }
+    if (command == "lease4-get-page" || command == "reservation-get-page")
+      return OptionalJson(nlohmann::json{{"result", 3}});
+    return std::nullopt;
+  };
+  std::string failure_path;
+  error.clear();
+  auto stable_state =
+      dang::plugins::kea::CollectAuthoritativeOperationalState(
+          *dhcp4, false, {}, stable_operational_read, &failure_path, &error);
+  valid &= Check(stable_state && authority_checks == 2 &&
+                     failure_path.empty(),
+                 "operational read was not bounded by two authority checks");
+
+  authority_checks = 0;
+  const dang::plugins::kea::ControlQuery drifting_operational_read =
+      [&](std::string_view, std::string_view command,
+          const nlohmann::json&,
+          std::string*) -> std::optional<nlohmann::json> {
+    if (command == "config-get") {
+      nlohmann::json live = dhcp4->arguments;
+      if (++authority_checks == 2) live["Dhcp4"]["server-tag"] = "changed";
+      return OptionalJson(
+          nlohmann::json{{"result", 0}, {"arguments", std::move(live)}});
+    }
+    if (command == "lease4-get-page" || command == "reservation-get-page")
+      return OptionalJson(nlohmann::json{{"result", 3}});
+    return std::nullopt;
+  };
+  failure_path.clear();
+  error.clear();
+  auto drifted_state =
+      dang::plugins::kea::CollectAuthoritativeOperationalState(
+          *dhcp4, false, {}, drifting_operational_read, &failure_path, &error);
+  valid &= Check(!drifted_state && authority_checks == 2 &&
+                     failure_path == "config" &&
+                     error.find("Dhcp4/server-tag") != std::string::npos,
+                 "configuration drift during operational collection was published");
+
+  const dang::plugins::kea::ControlQuery failed_operational_read =
+      [&](std::string_view, std::string_view command,
+          const nlohmann::json&,
+          std::string* query_error) -> std::optional<nlohmann::json> {
+    if (command == "config-get")
+      return OptionalJson(
+          nlohmann::json{{"result", 0}, {"arguments", dhcp4->arguments}});
+    if (query_error) *query_error = "injected lease failure";
+    return std::nullopt;
+  };
+  failure_path.clear();
+  error.clear();
+  valid &= Check(
+      !dang::plugins::kea::CollectAuthoritativeOperationalState(
+          *dhcp4, false, {}, failed_operational_read, &failure_path, &error) &&
+          failure_path == "state/leases" &&
+          error == "injected lease failure",
+      "authoritative operational failure lost its model path");
+
   const nlohmann::json leases4 = nlohmann::json::parse(R"json({
     "result": 0, "arguments": {"leases": [{
       "ip-address": "192.0.2.44", "hw-address": "00:01:02:03:04:05",
