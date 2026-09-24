@@ -114,6 +114,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Made the Kea stalled-peer deadline fixture scheduler-tolerant. The peer now
+  remains stalled behind an explicit release for up to 30 seconds, while the
+  client must still report its five-second transport timeout within a generous
+  ten-second wall-clock bound. Successful runs release the peer immediately,
+  eliminating the fixed six-second test delay and its one-second race margin.
+
 - Matched system-ordered Kea configuration lists by their pinned YANG keys and
   system-ordered leaf-lists by value. Native Kea reservation and leaf-list
   reordering no longer creates false drift, while invalid or duplicate keys,

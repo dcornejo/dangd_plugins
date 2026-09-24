@@ -227,6 +227,10 @@ directly into the final state string, avoiding an unbounded complete document
 or chained concatenation temporaries before rejection.
 Unexpected exceptions from the control-query implementation are contained as
 retrieval failures and cannot cross the plugin callback boundary.
+The portable adapter test holds a synthetic peer open until the client reports
+its five-second deadline, then releases it immediately. This distinguishes a
+real transport timeout from peer-initiated EOF without a scheduler-sensitive
+fixed sleep.
 
 Before and after collecting operational state for a daemon, the provider reads
 its complete live configuration and projects it onto the accepted dangd image.

@@ -5,11 +5,13 @@
 
 #include <cerrno>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -1813,10 +1815,15 @@ int main() {
     valid &= Check(!closed_response && !error.empty(),
                    "a closed Kea peer did not return a controlled error");
 
-    std::thread stalled_peer([listener]() {
+    std::mutex stalled_mutex;
+    std::condition_variable release_stalled_peer;
+    bool release_stalled = false;
+    std::thread stalled_peer([&]() {
       const int connection = accept(listener, nullptr, nullptr);
       if (connection >= 0) {
-        std::this_thread::sleep_for(std::chrono::seconds(6));
+        std::unique_lock lock(stalled_mutex);
+        (void)release_stalled_peer.wait_for(
+            lock, std::chrono::seconds(30), [&]() { return release_stalled; });
         close(connection);
       }
     });
@@ -1826,10 +1833,15 @@ int main() {
         closed_socket, "stalled-peer-test",
         {{"payload", std::string(15 * 1024 * 1024, 'x')}}, &error);
     const auto stalled_elapsed = std::chrono::steady_clock::now() - stalled_start;
+    {
+      std::lock_guard lock(stalled_mutex);
+      release_stalled = true;
+    }
+    release_stalled_peer.notify_one();
     stalled_peer.join();
     valid &= Check(!stalled_response &&
                        error.find("timed out") != std::string::npos &&
-                       stalled_elapsed < std::chrono::seconds(6),
+                       stalled_elapsed < std::chrono::seconds(10),
                    "a stalled Kea peer escaped the exchange deadline");
   }
   if (listener >= 0) close(listener);
