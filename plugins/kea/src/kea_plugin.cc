@@ -485,15 +485,33 @@ int ReconcileAppliedConfigurationImpl(
   }
   auto accepted = TranslateBoth(current_xml, error);
   if (!accepted) return 0;
-  // The prepared pair identifies the images this transaction actually changed.
-  // Read those daemons back before dangd makes the snapshot authoritative. A
-  // null preparation is startup recovery, where every daemon must match the
-  // persisted dangd snapshot before operational publication can resume.
+  // Bind current_xml to the prepared proposal before using that proposal to
+  // select changed daemons. Then read those daemons back before dangd makes the
+  // snapshot authoritative. A null preparation is startup recovery, where
+  // every daemon must match persisted intent before publication can resume.
   const auto* prepared = static_cast<const Prepared*>(opaque);
   if (prepared && (prepared->before.size() != accepted->size() ||
                    prepared->proposed.size() != accepted->size())) {
     SetError(error, "the prepared Kea transaction is inconsistent", "/");
     return 0;
+  }
+  if (prepared) {
+    for (std::size_t index = 0; index < accepted->size(); ++index) {
+      const auto& proposed = prepared->proposed[index];
+      const auto& current = (*accepted)[index];
+      if (current.module_name == proposed.module_name &&
+          current.service_name == proposed.service_name &&
+          current.socket_path == proposed.socket_path &&
+          current.arguments == proposed.arguments)
+        continue;
+      const std::string& module = current.module_name.empty()
+          ? proposed.module_name : current.module_name;
+      SetError(error,
+               module +
+                   ": applied snapshot does not match the prepared proposal",
+               "/{urn:ietf:params:xml:ns:yang:" + module + "}config");
+      return 0;
+    }
   }
   for (std::size_t index = 0; index < accepted->size(); ++index) {
     if (prepared && prepared->before[index].arguments ==

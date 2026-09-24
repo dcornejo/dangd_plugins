@@ -232,6 +232,8 @@ int main(int argc, char** argv) {
       std::getenv("DANG_KEA_TEST_NOOP_SEED") != nullptr;
   const bool empty_startup =
       std::getenv("DANG_KEA_EMPTY_STARTUP") != nullptr;
+  const bool expect_prepared_mismatch =
+      std::getenv("DANG_KEA_EXPECT_PREPARED_MISMATCH") != nullptr;
   bool valid = !force_host_paging || AddDhcp6PagingReservations(&proposed);
   const bool no_op = before == proposed;
   const char* expected_rollback_failure =
@@ -267,7 +269,8 @@ int main(int argc, char** argv) {
   DangAppliedConfigurationV1 reconciled{};
   void* startup_prepared = nullptr;
   const bool seed_with_noop = expected_validate_failure ||
-      expected_operational_failure || skip_operational || test_noop_seed;
+      expected_operational_failure || skip_operational || test_noop_seed ||
+      expect_prepared_mismatch;
   if (valid && seed_with_noop) {
     DangTransactionV1 startup{before.c_str(), before.c_str(), "[]"};
     valid = plugin->prepare(plugin->context, &startup, &startup_prepared,
@@ -305,6 +308,26 @@ int main(int argc, char** argv) {
   if (valid)
     valid = plugin->prepare(plugin->context, &transaction, &prepared, &error)
         || Report("prepare", error);
+  if (expect_prepared_mismatch) {
+    DangAppliedConfigurationV1 mismatched{"stale", nullptr, 1};
+    const bool accepted = valid && plugin6->reconcile_applied_configuration(
+        plugin->context, prepared, before.c_str(), &mismatched, &error);
+    const bool rejected = !accepted && error.message && error.instance_path &&
+        std::string_view(error.message).find(
+            "does not match the prepared proposal") != std::string_view::npos &&
+        std::string_view(error.instance_path) ==
+            "/{urn:ietf:params:xml:ns:yang:kea-dhcp4-server}config" &&
+        mismatched.applied_xml == nullptr && mismatched.outcomes == nullptr &&
+        mismatched.outcome_count == 0;
+    valid = valid && rejected;
+    if (!valid) Report("expected prepared reconciliation mismatch", error);
+    if (prepared) plugin->release(plugin->context, prepared);
+    if (plugin->destroy) plugin->destroy(plugin->context);
+    dlclose(library);
+    if (valid)
+      std::cout << "Kea prepared reconciliation mismatch rejection passed\n";
+    return valid ? 0 : 1;
+  }
   if (valid) {
     const bool validated =
         plugin->validate(plugin->context, prepared, &error);

@@ -653,6 +653,13 @@ if(BUILD_TESTING)
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-before.xml")
   set_tests_properties(kea_noop_transaction PROPERTIES ENVIRONMENT
     "DANG_KEA_DHCP4_SOCKET=/var/run/kea/kea4-ctrl-socket;DANG_KEA_DHCP6_SOCKET=/var/run/kea/kea6-ctrl-socket;DANG_KEA_TEST_NOOP_SEED=1")
+  add_test(NAME kea_prepared_reconciliation_mismatch
+    COMMAND kea_plugin_integration_test $<TARGET_FILE:dangd_kea_plugin>
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-before.xml"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-proposed.xml")
+  set_tests_properties(kea_prepared_reconciliation_mismatch PROPERTIES
+    ENVIRONMENT
+      "DANG_KEA_DHCP4_SOCKET=/var/run/kea/kea4-ctrl-socket;DANG_KEA_DHCP6_SOCKET=/var/run/kea/kea6-ctrl-socket;DANG_KEA_EXPECT_PREPARED_MISMATCH=1")
 endif()
 
 include(GNUInstallDirs)

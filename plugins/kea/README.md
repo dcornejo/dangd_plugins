@@ -56,10 +56,11 @@ For every affected commit, the plugin:
    `config-test` only to those servers before making any change;
 3. sends `config-set` to changed DHCPv4 and then changed DHCPv6 images;
 4. treats a failed call as outcome-unknown and restores that daemon followed by
-   every earlier changed daemon in reverse order; and
+   every earlier changed daemon in reverse order;
 5. reads every changed daemon back with `config-get` before dangd accepts the
-   commit, requiring every value managed by dangd to match while ignoring
-   Kea-added defaults and response metadata; and
+   commit, first requiring the applied XML to match that prepared proposal and
+   then requiring every value managed by dangd to match while ignoring
+   Kea-added defaults and response metadata;
 6. retains both prior configurations for dangd-triggered reverse rollback,
    while reapplying only the changed subset; and
 7. reads every restored daemon back after compensation or explicit rollback
@@ -108,6 +109,10 @@ a different order. The pinned models' user-ordered subnet, pool, prefix-pool,
 and client-class lists retain positional comparison, as do arrays embedded in
 arbitrary JSON values. Missing, duplicated, changed, or additional managed
 values reject the commit with the owning module and configuration path.
+Reconciliation also binds the applied XML to the prepared proposal before it
+uses that proposal to decide which daemons require readback. A stale prepared
+handle, a different applied snapshot, or a reordered target cannot skip the
+correct authority check or clear a pending mutation marker.
 
 Every control exchange must return exactly one answer. Empty or multi-answer
 transaction replies fail closed, so an ambiguous response can never be treated

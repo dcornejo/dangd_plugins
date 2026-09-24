@@ -9,6 +9,14 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Bound Kea ABI-v6 reconciliation to its prepared transaction. Before any live
+  readback or authority promotion, the translated applied XML must exactly
+  match the prepared proposed DHCPv4 and DHCPv6 images, including module,
+  service, socket, and managed arguments. A stale, mismatched, or incorrectly
+  paired callback now fails at the first owning module configuration path and
+  leaves caller outputs cleared. A daemonless integration test proves this
+  rejection occurs before control-socket access.
+
 - Added authoritative Kea rollback readback. Successful compensation after a
   failed apply and successful explicit rollback now perform `config-get` on
   every changed daemon in reverse rollback order and require the complete
