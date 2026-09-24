@@ -83,10 +83,12 @@ database backends provide runtime data and storage mechanics; they never
 replace the applied dangd snapshot as configuration intent. ABI-v6
 reconciliation projects each live `config-get` image onto the corresponding
 translated dangd image, so Kea defaults and its read-only content hash do not
-create false drift. Object-backed YANG lists are compared by their managed
-content because Kea may reorder them; scalar leaf-lists retain exact ordering.
-A missing, changed, or additional managed value rejects the commit with the
-owning module and configuration path.
+create false drift. System-ordered YANG lists are compared by their declared
+keys and system-ordered leaf-lists by value because Kea may serialize either in
+a different order. The pinned models' user-ordered subnet, pool, prefix-pool,
+and client-class lists retain positional comparison, as do arrays embedded in
+arbitrary JSON values. Missing, duplicated, changed, or additional managed
+values reject the commit with the owning module and configuration path.
 
 Every control exchange must return exactly one answer. Empty or multi-answer
 transaction replies fail closed, so an ambiguous response can never be treated

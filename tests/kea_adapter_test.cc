@@ -26,6 +26,10 @@ bool Check(bool condition, const char* message) {
   return condition;
 }
 
+std::optional<nlohmann::json> OptionalJson(nlohmann::json value) {
+  return std::optional<nlohmann::json>(value);
+}
+
 }  // namespace
 
 int main() {
@@ -447,7 +451,8 @@ int main() {
     if (command != "config-get" || !arguments.is_object() ||
         !arguments.empty())
       return std::nullopt;
-    return nlohmann::json{{"result", 0}, {"arguments", live_configuration}};
+    return OptionalJson(
+        nlohmann::json{{"result", 0}, {"arguments", live_configuration}});
   };
   error.clear();
   valid &= Check(dang::plugins::kea::VerifyLiveConfiguration(
@@ -471,8 +476,70 @@ int main() {
   error.clear();
   valid &= Check(!dang::plugins::kea::VerifyLiveConfiguration(
                       reordered_expected, matching_configuration, &error) &&
-                     error.find("managed list entry") != std::string::npos,
+                     error.find("hostname") != std::string::npos,
                  "changed member of reordered Kea list was accepted");
+  live_configuration = reordered_expected.arguments;
+  auto& duplicate_reservations = live_configuration["Dhcp4"]["reservations"];
+  duplicate_reservations.at(1)["hw-address"] =
+      duplicate_reservations.at(0)["hw-address"];
+  error.clear();
+  valid &= Check(!dang::plugins::kea::VerifyLiveConfiguration(
+                      reordered_expected, matching_configuration, &error) &&
+                     error.find("duplicate list identity") != std::string::npos,
+                 "duplicate live Kea list identity was accepted");
+  dang::plugins::kea::ServerConfiguration ordered_expected = *dhcp4;
+  auto& expected_subnets = ordered_expected.arguments["Dhcp4"]["subnet4"];
+  nlohmann::json second_subnet = expected_subnets.at(0);
+  second_subnet["id"] = 5;
+  second_subnet["subnet"] = "198.51.100.0/24";
+  expected_subnets.push_back(second_subnet);
+  live_configuration = ordered_expected.arguments;
+  auto& live_subnets = live_configuration["Dhcp4"]["subnet4"];
+  std::reverse(live_subnets.begin(), live_subnets.end());
+  error.clear();
+  valid &= Check(!dang::plugins::kea::VerifyLiveConfiguration(
+                      ordered_expected, matching_configuration, &error) &&
+                     error.find("subnet4/0/id") != std::string::npos,
+                 "reordered user-ordered Kea list was accepted");
+  dang::plugins::kea::ServerConfiguration embedded_json_expected = *dhcp4;
+  auto& embedded_reservations =
+      embedded_json_expected.arguments["Dhcp4"]["hooks-libraries"]
+                                      .at(0)["parameters"]["reservations"];
+  embedded_reservations = nlohmann::json::array();
+  embedded_reservations.push_back({{"id", 1}});
+  embedded_reservations.push_back({{"id", 2}});
+  live_configuration = embedded_json_expected.arguments;
+  auto& live_embedded_reservations =
+      live_configuration["Dhcp4"]["hooks-libraries"]
+                        .at(0)["parameters"]["reservations"];
+  std::reverse(live_embedded_reservations.begin(),
+               live_embedded_reservations.end());
+  error.clear();
+  valid &= Check(!dang::plugins::kea::VerifyLiveConfiguration(
+                      embedded_json_expected, matching_configuration,
+                      &error) &&
+                     error.find("parameters/reservations/0/id") !=
+                         std::string::npos,
+                 "reordered arbitrary JSON array was treated as a YANG list");
+  dang::plugins::kea::ServerConfiguration leaf_list_expected = *dhcp6;
+  auto& expected_relay_options =
+      leaf_list_expected.arguments["Dhcp6"]["relay-supplied-options"];
+  expected_relay_options.push_back("66");
+  live_configuration = leaf_list_expected.arguments;
+  auto& live_relay_options =
+      live_configuration["Dhcp6"]["relay-supplied-options"];
+  std::reverse(live_relay_options.begin(), live_relay_options.end());
+  error.clear();
+  valid &= Check(dang::plugins::kea::VerifyLiveConfiguration(
+                     leaf_list_expected, matching_configuration, &error),
+                 "reordered system-ordered Kea leaf-list was rejected");
+  live_relay_options.at(1) = live_relay_options.at(0);
+  error.clear();
+  valid &= Check(!dang::plugins::kea::VerifyLiveConfiguration(
+                      leaf_list_expected, matching_configuration, &error) &&
+                     error.find("duplicate leaf-list value") !=
+                         std::string::npos,
+                 "duplicate live Kea leaf-list value was accepted");
   live_configuration = dhcp4->arguments;
   live_configuration["hash"] = "read-only";
   live_configuration["Dhcp4"]["authoritative"] = false;
@@ -864,7 +931,7 @@ int main() {
       [](std::string_view, std::string_view, const nlohmann::json&,
          std::string*) -> std::optional<nlohmann::json> {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    return nlohmann::json{{"result", 3}};
+    return OptionalJson(nlohmann::json{{"result", 3}});
   };
   error.clear();
   auto late_lease_page = dang::plugins::kea::CollectLeasePages(
@@ -901,10 +968,10 @@ int main() {
     static constexpr const char* addresses[]{"192.0.2.1", "192.0.2.2",
                                               "192.0.2.1"};
     const std::string address = addresses[lease_cycle_invocation++];
-    return nlohmann::json{
+    return OptionalJson(nlohmann::json{
         {"result", 0},
         {"arguments",
-         {{"count", 1}, {"leases", {{{"ip-address", address}}}}}}};
+         {{"count", 1}, {"leases", {{{"ip-address", address}}}}}}});
   };
   error.clear();
   auto lease_cycle = dang::plugins::kea::CollectLeasePages(
@@ -994,7 +1061,7 @@ int main() {
       [](std::string_view, std::string_view, const nlohmann::json&,
          std::string*) -> std::optional<nlohmann::json> {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    return nlohmann::json{{"result", 3}};
+    return OptionalJson(nlohmann::json{{"result", 3}});
   };
   error.clear();
   auto late_host_page = dang::plugins::kea::CollectHostPages(
@@ -1013,12 +1080,12 @@ int main() {
           std::string*) -> std::optional<nlohmann::json> {
     static constexpr std::uint64_t positions[]{1, 2, 1};
     const auto position = positions[host_cycle_invocation++];
-    return nlohmann::json{
+    return OptionalJson(nlohmann::json{
         {"result", 0},
         {"arguments",
          {{"count", 1},
           {"hosts", {{{"subnet-id", 4}, {"hw-address", "00:01"}}}},
-          {"next", {{"from", position}, {"source-index", 0}}}}}};
+          {"next", {{"from", position}, {"source-index", 0}}}}}});
   };
   error.clear();
   auto host_cycle = dang::plugins::kea::CollectHostPages(
@@ -1069,7 +1136,7 @@ int main() {
       [](std::string_view, std::string_view, const nlohmann::json&,
          std::string*) -> std::optional<nlohmann::json> {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    return nlohmann::json{{"result", 3}};
+    return OptionalJson(nlohmann::json{{"result", 3}});
   };
   error.clear();
   auto late_statistics = dang::plugins::kea::CollectStatistics(
@@ -1084,7 +1151,7 @@ int main() {
   const dang::plugins::kea::ControlQuery missing_statistics =
       [](std::string_view, std::string_view, const nlohmann::json&,
          std::string*) -> std::optional<nlohmann::json> {
-    return nlohmann::json{{"result", 3}};
+    return OptionalJson(nlohmann::json{{"result", 3}});
   };
   error.clear();
   auto absent_configured_statistics =
@@ -1135,11 +1202,11 @@ int main() {
   const dang::plugins::kea::ControlQuery wrong_statistics =
       [](std::string_view, std::string_view, const nlohmann::json&,
          std::string*) -> std::optional<nlohmann::json> {
-    return nlohmann::json{
+    return OptionalJson(nlohmann::json{
         {"result", 0},
         {"arguments", {{"result-set",
                          {{"columns", {"subnet-id", "total-addresses"}},
-                          {"rows", {{99, 32}}}}}}}};
+                          {"rows", {{99, 32}}}}}}}});
   };
   error.clear();
   auto mismatched_statistics = dang::plugins::kea::CollectStatistics(
@@ -1156,11 +1223,11 @@ int main() {
   const dang::plugins::kea::ControlQuery ambiguous_statistics =
       [](std::string_view, std::string_view, const nlohmann::json&,
          std::string*) -> std::optional<nlohmann::json> {
-    return nlohmann::json{
+    return OptionalJson(nlohmann::json{
         {"result", 0},
         {"arguments", {{"result-set",
                          {{"columns", {"subnet-id", "subnet-id"}},
-                          {"rows", {{4, 4}}}}}}}};
+                          {"rows", {{4, 4}}}}}}}});
   };
   error.clear();
   auto duplicate_collected_statistic_columns =
@@ -1178,11 +1245,11 @@ int main() {
   const dang::plugins::kea::ControlQuery multiple_statistics =
       [](std::string_view, std::string_view, const nlohmann::json&,
          std::string*) -> std::optional<nlohmann::json> {
-    return nlohmann::json{
+    return OptionalJson(nlohmann::json{
         {"result", 0},
         {"arguments", {{"result-set",
                          {{"columns", {"subnet-id", "total-addresses"}},
-                          {"rows", {{4, 32}, {4, 33}}}}}}}};
+                          {"rows", {{4, 32}, {4, 33}}}}}}}});
   };
   error.clear();
   auto multiple_statistic_rows = dang::plugins::kea::CollectStatistics(
@@ -1250,11 +1317,11 @@ int main() {
   const dang::plugins::kea::ControlQuery oversized_count_page =
       [](std::string_view, std::string_view, const nlohmann::json&,
          std::string*) -> std::optional<nlohmann::json> {
-    return nlohmann::json{
+    return OptionalJson(nlohmann::json{
         {"result", 0},
         {"arguments",
          {{"count", std::numeric_limits<std::uint64_t>::max()},
-          {"leases", nlohmann::json::array()}}}};
+          {"leases", nlohmann::json::array()}}}});
   };
   error.clear();
   auto rejected_oversized_count = dang::plugins::kea::CollectLeasePages(
@@ -1270,14 +1337,14 @@ int main() {
   const dang::plugins::kea::ControlQuery oversized_host_cursor =
       [](std::string_view, std::string_view, const nlohmann::json&,
          std::string*) -> std::optional<nlohmann::json> {
-    return nlohmann::json{
+    return OptionalJson(nlohmann::json{
         {"result", 0},
         {"arguments",
          {{"count", 1},
           {"hosts", {{{"subnet-id", 4}, {"hw-address", "00:01"}}}},
           {"next",
            {{"from", std::numeric_limits<std::uint64_t>::max()},
-            {"source-index", 0}}}}}};
+            {"source-index", 0}}}}}});
   };
   error.clear();
   auto rejected_host_cursor = dang::plugins::kea::CollectHostPages(

@@ -96,10 +96,16 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
-- Compared object-backed Kea configuration lists by managed content rather
-  than serialized position. Native Kea reservation reordering no longer
-  creates false drift, while missing, duplicated, additional, or changed list
-  entries still fail closed. Scalar leaf-list ordering remains exact.
+- Matched system-ordered Kea configuration lists by their pinned YANG keys and
+  system-ordered leaf-lists by value. Native Kea reservation and leaf-list
+  reordering no longer creates false drift, while invalid or duplicate keys,
+  duplicate values, and missing, additional, or changed entries fail closed.
+  User-ordered subnet, pool, prefix-pool, and client-class lists still require
+  exact order, as do arrays inside arbitrary JSON values.
+
+- Made the Kea adapter test's synthetic control replies construct their
+  optional JSON result explicitly, avoiding ambiguous-conversion warnings with
+  the nlohmann JSON version packaged by the supported Linux environment.
 
 - Failed complete Kea operational retrieval when the daemon reports no
   statistics for an exact subnet present in dangd's accepted configuration.

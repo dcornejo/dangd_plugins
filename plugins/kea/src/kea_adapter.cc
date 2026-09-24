@@ -624,6 +624,93 @@ std::optional<nlohmann::json> RunControlQuery(
   }
 }
 
+bool HasPathSegment(std::string_view path, std::string_view segment) {
+  for (std::size_t begin = 0; begin <= path.size();) {
+    const std::size_t end = path.find('/', begin);
+    const std::string_view candidate = end == std::string_view::npos
+        ? path.substr(begin)
+        : path.substr(begin, end - begin);
+    if (candidate == segment) return true;
+    if (end == std::string_view::npos) break;
+    begin = end + 1;
+  }
+  return false;
+}
+
+bool IsEmbeddedJsonPath(std::string_view path) {
+  return HasPathSegment(path, "user-context") ||
+      HasPathSegment(path, "parameters") ||
+      HasPathSegment(path, "dhcp-queue-control") ||
+      (HasPathSegment(path, "http-headers") &&
+       HasPathSegment(path, "value"));
+}
+
+const std::vector<std::string>* SystemOrderedListKeys(std::string_view path) {
+  if (IsEmbeddedJsonPath(path)) return nullptr;
+  // These are the keys of every system-ordered configuration list in the
+  // pinned Kea modules, after conversion to native Kea JSON member names.
+  // User-ordered subnet, pool, PD-pool, and client-class lists intentionally
+  // do not appear here and retain positional comparison.
+  static const std::map<std::string, std::vector<std::string>, std::less<>>
+      keys{{"clients", {"user", "password", "user-file", "password-file"}},
+           {"config-databases", {"type"}},
+           {"control-sockets", {"socket-type"}},
+           {"hooks-libraries", {"library"}},
+           {"hosts-databases", {"type"}},
+           {"http-headers", {"name"}},
+           {"loggers", {"name"}},
+           {"option-data", {"code", "space", "data"}},
+           {"option-def", {"code", "space"}},
+           {"output-options", {"output"}},
+           {"reservations", {}},
+           {"shared-networks", {"name"}}};
+  const std::size_t separator = path.rfind('/');
+  const std::string_view name = separator == std::string_view::npos
+      ? path
+      : path.substr(separator + 1);
+  const auto found = keys.find(name);
+  return found == keys.end() ? nullptr : &found->second;
+}
+
+bool IsSystemOrderedLeafList(std::string_view path) {
+  if (IsEmbeddedJsonPath(path)) return false;
+  const std::size_t separator = path.rfind('/');
+  return IsLeafList(separator == std::string_view::npos
+                        ? path
+                        : path.substr(separator + 1));
+}
+
+std::optional<std::string> ConfigurationListIdentity(
+    const nlohmann::json& entry, const std::vector<std::string>& keys) {
+  if (!entry.is_object()) return std::nullopt;
+  nlohmann::json identity = nlohmann::json::array();
+  if (keys.empty()) {
+    // The YANG reservation key is identifier-type plus identifier. Conversion
+    // represents that pair as one native member whose name is the type.
+    static constexpr std::string_view identifiers[]{
+        "circuit-id", "client-id", "duid", "flex-id", "hw-address"};
+    for (const std::string_view name : identifiers) {
+      const auto found = entry.find(name);
+      if (found == entry.end()) continue;
+      if (identity.empty()) {
+        identity.push_back(name);
+        identity.push_back(*found);
+      } else {
+        return std::nullopt;
+      }
+    }
+    return identity.size() == 2
+        ? std::optional<std::string>(identity.dump())
+        : std::nullopt;
+  }
+  for (const std::string& key : keys) {
+    const auto found = entry.find(key);
+    if (found == entry.end()) return std::nullopt;
+    identity.push_back(*found);
+  }
+  return identity.dump();
+}
+
 bool ContainsExpectedConfiguration(const nlohmann::json& actual,
                                    const nlohmann::json& expected,
                                    std::string path, std::string* error) {
@@ -650,38 +737,71 @@ bool ContainsExpectedConfiguration(const nlohmann::json& actual,
         *error = "Kea live configuration has a different list size at " + path;
       return false;
     }
-    // Kea may return object-backed YANG lists in an implementation-defined
-    // order. Match each managed object once by content so serialization order
-    // cannot manufacture drift, while scalar leaf-lists retain exact ordering.
-    if (std::all_of(expected.begin(), expected.end(),
-                    [](const nlohmann::json& entry) {
-                      return entry.is_object();
-                    }) &&
-        std::all_of(actual.begin(), actual.end(),
-                    [](const nlohmann::json& entry) {
-                      return entry.is_object();
-                    })) {
-      std::vector<bool> matched(actual.size(), false);
-      for (std::size_t expected_index = 0; expected_index < expected.size();
-           ++expected_index) {
-        bool found = false;
-        for (std::size_t actual_index = 0; actual_index < actual.size();
-             ++actual_index) {
-          if (!matched[actual_index] &&
-              ContainsExpectedConfiguration(actual[actual_index],
-                                            expected[expected_index], path,
-                                            nullptr)) {
-            matched[actual_index] = true;
-            found = true;
-            break;
-          }
-        }
-        if (!found) {
+    if (IsSystemOrderedLeafList(path)) {
+      std::set<std::string, std::less<>> expected_values;
+      std::set<std::string, std::less<>> actual_values;
+      for (std::size_t index = 0; index < expected.size(); ++index) {
+        if (expected[index].is_array() || expected[index].is_object() ||
+            !expected_values.emplace(expected[index].dump()).second) {
           if (error)
-            *error = "Kea live configuration omits a managed list entry at " +
-                path + "/" + std::to_string(expected_index);
+            *error = "authoritative Kea configuration has an invalid or "
+                     "duplicate leaf-list value at " +
+                path + "/" + std::to_string(index);
           return false;
         }
+      }
+      for (std::size_t index = 0; index < actual.size(); ++index) {
+        if (actual[index].is_array() || actual[index].is_object() ||
+            !actual_values.emplace(actual[index].dump()).second) {
+          if (error)
+            *error = "Kea live configuration has an invalid or duplicate "
+                     "leaf-list value at " +
+                path + "/" + std::to_string(index);
+          return false;
+        }
+      }
+      if (actual_values != expected_values) {
+        if (error) *error = "Kea live configuration differs at " + path;
+        return false;
+      }
+      return true;
+    }
+    if (const auto* keys = SystemOrderedListKeys(path)) {
+      std::map<std::string, std::size_t, std::less<>> expected_indexes;
+      std::map<std::string, const nlohmann::json*, std::less<>> actual_entries;
+      for (std::size_t index = 0; index < expected.size(); ++index) {
+        const auto identity = ConfigurationListIdentity(expected[index], *keys);
+        if (!identity || !expected_indexes.emplace(*identity, index).second) {
+          if (error)
+            *error = "authoritative Kea configuration has an invalid or "
+                     "duplicate list identity at " +
+                path + "/" + std::to_string(index);
+          return false;
+        }
+      }
+      for (std::size_t index = 0; index < actual.size(); ++index) {
+        const auto identity = ConfigurationListIdentity(actual[index], *keys);
+        if (!identity ||
+            !actual_entries.emplace(*identity, &actual[index]).second) {
+          if (error)
+            *error = "Kea live configuration has an invalid or duplicate "
+                     "list identity at " +
+                path + "/" + std::to_string(index);
+          return false;
+        }
+      }
+      for (const auto& [identity, index] : expected_indexes) {
+        const auto found = actual_entries.find(identity);
+        if (found == actual_entries.end()) {
+          if (error)
+            *error = "Kea live configuration omits a managed list entry at " +
+                path + "/" + std::to_string(index);
+          return false;
+        }
+        if (!ContainsExpectedConfiguration(*found->second, expected[index],
+                                           path + "/" + std::to_string(index),
+                                           error))
+          return false;
       }
       return true;
     }
