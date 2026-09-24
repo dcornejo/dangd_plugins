@@ -582,6 +582,23 @@ int main() {
                  "operational read was not bounded by two authority checks");
 
   authority_checks = 0;
+  failure_path.clear();
+  error.clear();
+  auto query_limited_state =
+      dang::plugins::kea::CollectAuthoritativeOperationalState(
+          *dhcp4, false, {}, stable_operational_read, &failure_path, &error,
+          {.page_size = 256,
+           .maximum_pages = 1,
+           .maximum_items = 65536,
+           .maximum_bytes = 8U * 1024U * 1024U,
+           .maximum_duration = std::chrono::milliseconds(100)});
+  valid &= Check(!query_limited_state && failure_path == "state/hosts" &&
+                     error.find(
+                         "operational collection exceeds the query limit") !=
+                         std::string::npos,
+                 "operational collectors did not share one query limit");
+
+  authority_checks = 0;
   const dang::plugins::kea::ControlQuery drifting_operational_read =
       [&](std::string_view, std::string_view command,
           const nlohmann::json&,

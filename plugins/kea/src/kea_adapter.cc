@@ -2022,21 +2022,56 @@ std::optional<std::string> CollectAuthoritativeOperationalState(
     if (failure_path) *failure_path = path;
   };
 
+  if (!query || limits.page_size == 0 || limits.maximum_pages == 0 ||
+      limits.maximum_items == 0 || limits.maximum_bytes == 0 ||
+      limits.maximum_duration <= std::chrono::milliseconds::zero()) {
+    at("state");
+    if (error) *error = "invalid Kea operational collection configuration";
+    return std::nullopt;
+  }
+  const auto deadline =
+      std::chrono::steady_clock::now() + limits.maximum_duration;
+  std::size_t state_queries = 0;
+  const ControlQuery bounded_query =
+      [&](std::string_view socket_path, std::string_view command,
+          const nlohmann::json& arguments,
+          std::string* query_error) -> std::optional<nlohmann::json> {
+    if (std::chrono::steady_clock::now() >= deadline) {
+      if (query_error)
+        *query_error = "Kea operational collection exceeded its deadline";
+      return std::nullopt;
+    }
+    if (command != "config-get" && ++state_queries > limits.maximum_pages) {
+      if (query_error)
+        *query_error = "Kea operational collection exceeds the query limit";
+      return std::nullopt;
+    }
+    auto response = query(socket_path, command, arguments, query_error);
+    if (std::chrono::steady_clock::now() >= deadline) {
+      if (query_error)
+        *query_error = "Kea operational collection exceeded its deadline";
+      return std::nullopt;
+    }
+    return response;
+  };
+
   at("config");
-  if (!VerifyLiveConfiguration(expected, query, error)) return std::nullopt;
+  if (!VerifyLiveConfiguration(expected, bounded_query, error))
+    return std::nullopt;
 
   at("state/leases");
-  auto leases = CollectLeasePages(expected.socket_path, dhcp6, query, error,
-                                  limits);
+  auto leases = CollectLeasePages(expected.socket_path, dhcp6, bounded_query,
+                                  error, limits);
   if (!leases) return std::nullopt;
 
   at("state/lease-stats");
   auto statistics = CollectStatistics(expected.socket_path, dhcp6, subnet_ids,
-                                      query, error, limits);
+                                      bounded_query, error, limits);
   if (!statistics) return std::nullopt;
 
   at("state/hosts");
-  auto hosts = CollectHostPages(expected.socket_path, query, error, limits);
+  auto hosts =
+      CollectHostPages(expected.socket_path, bounded_query, error, limits);
   if (!hosts) return std::nullopt;
 
   at("state");
@@ -2048,7 +2083,8 @@ std::optional<std::string> CollectAuthoritativeOperationalState(
   // managed image closes the observable drift window before dangd publishes
   // the assembled state.
   at("config");
-  if (!VerifyLiveConfiguration(expected, query, error)) return std::nullopt;
+  if (!VerifyLiveConfiguration(expected, bounded_query, error))
+    return std::nullopt;
   if (failure_path) failure_path->clear();
   return state;
 }

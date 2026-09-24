@@ -108,6 +108,8 @@ using ConfigurationCommand = std::function<bool(
  * failure_path identifies the configuration or state subtree responsible for
  * a failure. The closing check prevents publication when Kea's managed
  * configuration changed or became unavailable during the multi-command read.
+ * maximum_pages and maximum_duration bound the aggregate state queries rather
+ * than restarting for leases, statistics, and reservations.
  */
 [[nodiscard]] std::optional<std::string> CollectAuthoritativeOperationalState(
     const ServerConfiguration& expected, bool dhcp6,
