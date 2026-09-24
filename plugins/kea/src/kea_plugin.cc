@@ -11,9 +11,11 @@
 #include "dangd/plugin_api.h"
 
 #include "kea_adapter.h"
+#include "kea_callback_guard.h"
 #include "kea_model_sources.h"
 
 #include <array>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
@@ -29,6 +31,7 @@ using dang::plugins::kea::ApplyWithCompensation;
 using dang::plugins::kea::CollectAuthoritativeOperationalState;
 using dang::plugins::kea::CommandSucceeded;
 using dang::plugins::kea::ExtractSubnetIds;
+using dang::plugins::kea::GuardPluginCallback;
 using dang::plugins::kea::PageLimits;
 using dang::plugins::kea::RollbackChanged;
 using dang::plugins::kea::SendControlCommand;
@@ -47,6 +50,7 @@ struct Prepared {
 thread_local std::string callback_error;
 thread_local std::string callback_path;
 thread_local std::string operational_xml;
+thread_local std::array<char, 1024> unexpected_callback_error;
 
 // Match dangd's default XML document ceiling before returning a provider
 // buffer. The remaining allowance is shared by the DHCPv4 and DHCPv6 trees.
@@ -91,10 +95,32 @@ void SetError(DangPluginErrorV1* error, std::string message,
   error->instance_path = callback_path.empty() ? nullptr : callback_path.c_str();
 }
 
+void SetUnexpectedError(DangPluginErrorV1* error, std::string_view callback,
+                        std::string_view detail) noexcept {
+  if (!error) return;
+  std::snprintf(unexpected_callback_error.data(),
+                unexpected_callback_error.size(),
+                "%.*s callback threw: %.*s",
+                static_cast<int>(callback.size()), callback.data(),
+                static_cast<int>(detail.size()), detail.data());
+  error->message = unexpected_callback_error.data();
+  error->instance_path = "/";
+}
+
+template <typename Callback>
+int Guard(std::string_view name, DangPluginErrorV1* error,
+          Callback&& callback) noexcept {
+  return GuardPluginCallback(
+      std::forward<Callback>(callback),
+      [&](std::string_view detail) noexcept {
+        SetUnexpectedError(error, name, detail);
+      });
+}
+
 size_t SourceCount(void*) { return 4; }
 
-int SourceAt(void*, size_t index, DangYangSourceV1* source,
-             DangPluginErrorV1* error) {
+int SourceAtImpl(void*, size_t index, DangYangSourceV1* source,
+                 DangPluginErrorV1* error) {
   if (!source) {
     SetError(error, "the YANG source output is missing");
     return 0;
@@ -163,8 +189,8 @@ std::optional<std::vector<ServerConfiguration>> TranslateBoth(
   return configurations;
 }
 
-int PrepareConfiguration(void*, const DangTransactionV1* transaction,
-                         void** result, DangPluginErrorV1* error) {
+int PrepareConfigurationImpl(void*, const DangTransactionV1* transaction,
+                             void** result, DangPluginErrorV1* error) {
   if (!transaction || !result) {
     SetError(error, "the transaction input is incomplete");
     return 0;
@@ -189,7 +215,7 @@ bool Execute(const ServerConfiguration& server, std::string_view command,
   return response && CommandSucceeded(*response, reason);
 }
 
-int ValidateConfiguration(void*, void* opaque, DangPluginErrorV1* error) {
+int ValidateConfigurationImpl(void*, void* opaque, DangPluginErrorV1* error) {
   const auto* prepared = static_cast<Prepared*>(opaque);
   if (!prepared) {
     SetError(error, "the prepared Kea transaction is missing");
@@ -210,7 +236,7 @@ int ValidateConfiguration(void*, void* opaque, DangPluginErrorV1* error) {
   return 1;
 }
 
-int ApplyConfiguration(void*, void* opaque, DangPluginErrorV1* error) {
+int ApplyConfigurationImpl(void*, void* opaque, DangPluginErrorV1* error) {
   const auto* prepared = static_cast<Prepared*>(opaque);
   if (!prepared) {
     SetError(error, "the prepared Kea transaction is missing");
@@ -230,7 +256,7 @@ int ApplyConfiguration(void*, void* opaque, DangPluginErrorV1* error) {
   return 1;
 }
 
-int RollbackConfiguration(void*, void* opaque, DangPluginErrorV1* error) {
+int RollbackConfigurationImpl(void*, void* opaque, DangPluginErrorV1* error) {
   const auto* prepared = static_cast<Prepared*>(opaque);
   if (!prepared) {
     SetError(error, "the prepared Kea transaction is missing");
@@ -256,9 +282,9 @@ size_t HardwareActionCount(void*, void* opaque) {
   return opaque ? 1 : 0;
 }
 
-int HardwareActionAt(void*, void* opaque, size_t index,
-                     DangHardwareActionV1* action,
-                     DangPluginErrorV1* error) {
+int HardwareActionAtImpl(void*, void* opaque, size_t index,
+                         DangHardwareActionV1* action,
+                         DangPluginErrorV1* error) {
   if (!opaque || !action || index != 0) {
     SetError(error, "the Kea transaction action is unavailable");
     return 0;
@@ -270,26 +296,27 @@ int HardwareActionAt(void*, void* opaque, size_t index,
   return 1;
 }
 
-int ApplyHardwareAction(void* context, void* opaque, const char* action_id,
-                        DangPluginErrorV1* error) {
+int ApplyHardwareActionImpl(void* context, void* opaque, const char* action_id,
+                            DangPluginErrorV1* error) {
   if (!action_id || std::string_view(action_id) != "configuration") {
     SetError(error, "the Kea hardware action ID is unknown");
     return 0;
   }
-  return ApplyConfiguration(context, opaque, error);
+  return ApplyConfigurationImpl(context, opaque, error);
 }
 
-int RollbackHardwareAction(void* context, void* opaque, const char* action_id,
-                           DangPluginErrorV1* error) {
+int RollbackHardwareActionImpl(void* context, void* opaque,
+                               const char* action_id,
+                               DangPluginErrorV1* error) {
   if (!action_id || std::string_view(action_id) != "configuration") {
     SetError(error, "the Kea hardware action ID is unknown");
     return 0;
   }
-  return RollbackConfiguration(context, opaque, error);
+  return RollbackConfigurationImpl(context, opaque, error);
 }
 
-int Operational(void*, DangOperationalDataV1* result,
-                DangPluginErrorV1* error) {
+int OperationalImpl(void*, DangOperationalDataV1* result,
+                    DangPluginErrorV1* error) {
   if (!result) {
     SetError(error, "the operational data output is missing");
     return 0;
@@ -347,21 +374,21 @@ int Operational(void*, DangOperationalDataV1* result,
   return 1;
 }
 
-int OperationalV2(void* context, DangOperationalDataV2* result,
-                  DangPluginErrorV1* error) {
+int OperationalV2Impl(void* context, DangOperationalDataV2* result,
+                      DangPluginErrorV1* error) {
   if (!result) {
     SetError(error, "the operational data output is missing");
     return 0;
   }
   DangOperationalDataV1 legacy{};
-  if (!Operational(context, &legacy, error)) return 0;
+  if (!OperationalImpl(context, &legacy, error)) return 0;
   *result = {legacy.data_xml, 1};
   return 1;
 }
 
-int ReconcileAppliedConfiguration(void*, void* opaque, const char* current_xml,
-                                  DangAppliedConfigurationV1* result,
-                                  DangPluginErrorV1* error) {
+int ReconcileAppliedConfigurationImpl(
+    void*, void* opaque, const char* current_xml,
+    DangAppliedConfigurationV1* result, DangPluginErrorV1* error) {
   if (!result || !current_xml) {
     SetError(error, "the applied Kea configuration snapshot is missing", "/");
     return 0;
@@ -395,6 +422,86 @@ int ReconcileAppliedConfiguration(void*, void* opaque, const char* current_xml,
              .outcomes = nullptr,
              .outcome_count = 0};
   return 1;
+}
+
+int SourceAt(void* context, size_t index, DangYangSourceV1* source,
+             DangPluginErrorV1* error) noexcept {
+  return Guard("YANG source", error, [&]() {
+    return SourceAtImpl(context, index, source, error);
+  });
+}
+
+int PrepareConfiguration(void* context, const DangTransactionV1* transaction,
+                         void** result, DangPluginErrorV1* error) noexcept {
+  return Guard("prepare", error, [&]() {
+    return PrepareConfigurationImpl(context, transaction, result, error);
+  });
+}
+
+int ValidateConfiguration(void* context, void* opaque,
+                          DangPluginErrorV1* error) noexcept {
+  return Guard("validate", error, [&]() {
+    return ValidateConfigurationImpl(context, opaque, error);
+  });
+}
+
+int ApplyConfiguration(void* context, void* opaque,
+                       DangPluginErrorV1* error) noexcept {
+  return Guard("apply", error, [&]() {
+    return ApplyConfigurationImpl(context, opaque, error);
+  });
+}
+
+int RollbackConfiguration(void* context, void* opaque,
+                          DangPluginErrorV1* error) noexcept {
+  return Guard("rollback", error, [&]() {
+    return RollbackConfigurationImpl(context, opaque, error);
+  });
+}
+
+int HardwareActionAt(void* context, void* opaque, size_t index,
+                     DangHardwareActionV1* action,
+                     DangPluginErrorV1* error) noexcept {
+  return Guard("hardware-action", error, [&]() {
+    return HardwareActionAtImpl(context, opaque, index, action, error);
+  });
+}
+
+int ApplyHardwareAction(void* context, void* opaque, const char* action_id,
+                        DangPluginErrorV1* error) noexcept {
+  return Guard("hardware apply", error, [&]() {
+    return ApplyHardwareActionImpl(context, opaque, action_id, error);
+  });
+}
+
+int RollbackHardwareAction(void* context, void* opaque, const char* action_id,
+                           DangPluginErrorV1* error) noexcept {
+  return Guard("hardware rollback", error, [&]() {
+    return RollbackHardwareActionImpl(context, opaque, action_id, error);
+  });
+}
+
+int Operational(void* context, DangOperationalDataV1* result,
+                DangPluginErrorV1* error) noexcept {
+  return Guard("operational", error, [&]() {
+    return OperationalImpl(context, result, error);
+  });
+}
+
+int OperationalV2(void* context, DangOperationalDataV2* result,
+                  DangPluginErrorV1* error) noexcept {
+  return Guard("complete operational", error, [&]() {
+    return OperationalV2Impl(context, result, error);
+  });
+}
+
+int ReconcileAppliedConfiguration(
+    void* context, void* opaque, const char* current_xml,
+    DangAppliedConfigurationV1* result, DangPluginErrorV1* error) noexcept {
+  return Guard("applied-state reconciliation", error, [&]() {
+    return ReconcileAppliedConfigurationImpl(context, opaque, current_xml,
+                                              result, error);
+  });
 }
 
 const DangPluginV6 kPlugin{

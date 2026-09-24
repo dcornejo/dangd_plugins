@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "kea_adapter.h"
+#include "kea_callback_guard.h"
 
 #include <cerrno>
 #include <chrono>
@@ -35,6 +36,28 @@ std::optional<nlohmann::json> OptionalJson(nlohmann::json value) {
 }  // namespace
 
 int main() {
+  std::string guarded_failure;
+  const int guarded_standard_exception =
+      dang::plugins::kea::GuardPluginCallback(
+          []() -> int { throw std::runtime_error("injected callback failure"); },
+          [&](std::string_view detail) { guarded_failure = detail; });
+  bool valid = Check(guarded_standard_exception == 0 &&
+                         guarded_failure == "injected callback failure",
+                     "standard exception escaped the plugin callback guard");
+  guarded_failure.clear();
+  const int guarded_unknown_exception =
+      dang::plugins::kea::GuardPluginCallback(
+          []() -> int { throw 7; },
+          [&](std::string_view detail) { guarded_failure = detail; });
+  valid &= Check(guarded_unknown_exception == 0 &&
+                     guarded_failure == "unknown exception",
+                 "unknown exception escaped the plugin callback guard");
+  valid &= Check(dang::plugins::kea::GuardPluginCallback(
+                     []() { return 1; },
+                     [&](std::string_view) { guarded_failure = "unexpected"; }) ==
+                     1 && guarded_failure == "unknown exception",
+                 "successful plugin callback entered its failure handler");
+
   constexpr char xml[] = R"xml(<config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
   <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
     <server-tag>123</server-tag>
@@ -92,10 +115,10 @@ int main() {
   error.clear();
   auto missing_socket = dang::plugins::kea::TranslateConfiguration(
       missing_socket_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
-  bool valid = Check(!missing_socket &&
-                         error.find("preserve the managed UNIX control socket") !=
-                             std::string::npos,
-                     "configuration without the managed socket was accepted");
+  valid &= Check(!missing_socket &&
+                     error.find("preserve the managed UNIX control socket") !=
+                         std::string::npos,
+                 "configuration without the managed socket was accepted");
   constexpr char foreign_namespace_xml[] = R"xml(
     <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server"
             xmlns:other="urn:example:other">

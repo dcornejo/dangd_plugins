@@ -78,6 +78,12 @@ therefore cannot apply one daemon and compensate a different daemon.
 An exception from the command implementation is contained as an outcome-
 unknown failure and triggers reverse compensation. An exception while restoring
 one daemon is reported without preventing restoration of earlier daemons.
+Every stateful integer-returning plugin entry point also has a final exception
+barrier. Unexpected standard or nonstandard C++ exceptions from schema
+retrieval, transaction, hardware-action, operational, or reconciliation work
+become attributed plugin failures and cannot cross dangd's C ABI. This last-
+resort reporter uses fixed thread-local storage so handling an allocation
+failure does not require another allocation.
 Dangd remains the definitive configuration authority. Kea lease or host
 database backends provide runtime data and storage mechanics; they never
 replace the applied dangd snapshot as configuration intent. ABI-v6

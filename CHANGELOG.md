@@ -9,6 +9,13 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added a final exception barrier around every stateful integer-returning Kea
+  plugin callback: YANG source retrieval, transaction preparation, validation,
+  apply, rollback, hardware actions, operational retrieval, and applied-state
+  reconciliation. Standard and unknown C++ exceptions become controlled plugin
+  failures through a fixed thread-local error buffer instead of crossing the C
+  ABI or allocating while the exception is handled.
+
 - Applied the Kea operational-XML allowance during translation after every
   lease, statistics row, and reservation, then assembled the bounded fragments
   without chained temporary strings. Oversized modeled state is now stopped
