@@ -1638,10 +1638,13 @@ int main() {
         return true;
       };
   std::string failed_module;
+  bool compensation_complete = false;
   command_reason.clear();
   valid &= Check(!dang::plugins::kea::ApplyWithCompensation(
                      transaction_before, transaction_after, ambiguous_apply,
-                     &failed_module, &command_reason) &&
+                     &failed_module, &command_reason,
+                     &compensation_complete) &&
+                     compensation_complete &&
                      failed_module == "kea-dhcp6-server" &&
                      transaction_calls ==
                          std::vector<std::string>{"after4:config-set",
@@ -1884,9 +1887,12 @@ int main() {
         return true;
       };
   command_reason.clear();
+  compensation_complete = true;
   valid &= Check(!dang::plugins::kea::ApplyWithCompensation(
                      transaction_before, transaction_after,
-                     failed_compensation, &failed_module, &command_reason) &&
+                     failed_compensation, &failed_module, &command_reason,
+                     &compensation_complete) &&
+                     !compensation_complete &&
                      transaction_calls ==
                          std::vector<std::string>{"after4:config-set",
                                                   "before4:config-set"} &&
@@ -1908,9 +1914,12 @@ int main() {
         return true;
       };
   command_reason.clear();
+  compensation_complete = true;
   valid &= Check(!dang::plugins::kea::ApplyWithCompensation(
                      transaction_before, transaction_after,
-                     throwing_compensation, &failed_module, &command_reason) &&
+                     throwing_compensation, &failed_module, &command_reason,
+                     &compensation_complete) &&
+                     !compensation_complete &&
                      transaction_calls ==
                          std::vector<std::string>{"after4:config-set",
                                                   "after6:config-set",

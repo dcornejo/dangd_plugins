@@ -252,11 +252,21 @@ drifted during its lease, statistics, and reservation queries. Kea does not
 offer one snapshot transaction spanning those commands, so a transient change
 that is restored before the closing check cannot be distinguished; the two
 authority checks are the strongest available consistency boundary without
-stopping the daemon. The accepted configuration and subnet inventory are
-captured under one lock, so one operational request cannot combine snapshots
-from two dangd commits. DHCPv4 is verified and collected before DHCPv6; a later
-DHCPv6 failure cannot discard the failure attribution or cause a partial result
-to be published.
+stopping the daemon. The accepted configuration and subnet inventory are held
+under one shared authority lock for the complete operational collection.
+Changing apply and rollback take the exclusive side before their first native
+operation, so they wait for existing reads and later reads see the pending
+marker. One request therefore cannot overlap hardware mutation or combine
+snapshots from two dangd commits. DHCPv4 is verified and collected before
+DHCPv6; a later DHCPv6 failure cannot discard the failure attribution or cause
+a partial result to be published.
+Successful hardware apply does not promote the proposed snapshot. Until ABI-v6
+readback succeeds, a retained pending marker makes operational retrieval fail
+closed before querying state. The marker is installed before the first changing
+`config-set`, so a concurrent read cannot publish a partial apply or candidate
+intent before dangd accepts the commit. Reconciliation atomically promotes the
+verified image and clears the marker. Complete reverse compensation or rollback
+clears it against the prior image; incomplete compensation keeps reads closed.
 
 Host reservations use Kea's `reservation-get-page` continuation map and the
 same full cursor-cycle detection as leases. Every returned reservation
@@ -269,8 +279,7 @@ and byte limits. Every successful reply must contain one unambiguous row whose
 multiple rows, or Kea reporting no statistics for an accepted configured
 subnet fail the complete retrieval. The latter detects datastore/daemon drift
 instead of publishing a misleading complete empty statistics tree.
-Candidate validation does not
-change that inventory; successful apply
+Candidate validation does not change that inventory; successful reconciliation
 and rollback callbacks update it atomically. On startup, ABI-v6 applied-state
 reconciliation rebuilds both subnet inventories from dangd's accepted snapshot
 before operational retrieval, so a restart cannot silently omit statistics.

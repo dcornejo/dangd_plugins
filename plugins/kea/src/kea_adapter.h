@@ -128,12 +128,14 @@ using ConfigurationCommand = std::function<bool(
 /**
  * Applies paired server images in order and restores every possibly changed
  * server in reverse order after failure, including the ambiguous failed call.
+ * When supplied, compensation_complete reports whether every required reverse
+ * operation succeeded after a failed apply.
  */
 [[nodiscard]] bool ApplyWithCompensation(
     const std::vector<ServerConfiguration>& before,
     const std::vector<ServerConfiguration>& proposed,
     const ConfigurationCommand& command, std::string* failed_module,
-    std::string* reason);
+    std::string* reason, bool* compensation_complete = nullptr);
 
 /**
  * Restores changed paired server images in reverse order. All restorations are

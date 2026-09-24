@@ -9,6 +9,18 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Delayed Kea operational-authority promotion until ABI-v6 post-apply readback
+  succeeds. Hardware apply no longer makes candidate intent visible through
+  the plugin before dangd accepts the commit. A marker installed before the
+  first changing `config-set` suppresses concurrent reads through partial apply
+  and remains set after incomplete compensation; reconciliation, complete
+  compensation, or rollback resolves it against an atomic accepted snapshot.
+  Operational collection retains the shared side of the authority lock through
+  every native query, while mutations acquire the exclusive side before their
+  first command, preventing an already-started read from overlapping apply.
+  Native integration now proves suppression before reconciliation and
+  publication after reconciliation on Linux and FreeBSD.
+
 - Made every Kea callback output deterministic on failure. YANG-source,
   prepared-transaction, hardware-action, operational-data, and applied-state
   outputs are cleared before input validation, and every guarded invocation

@@ -294,6 +294,36 @@ int main(int argc, char** argv) {
       valid = applied || Report("apply", error);
     }
   }
+  if (valid && expected_apply_failure) {
+    DangOperationalDataV2 state{"stale", 1};
+    const bool retrieved =
+        plugin5->get_operational_data_v2(plugin->context, &state, &error);
+    const std::string expected_path =
+        "/{urn:ietf:params:xml:ns:yang:" +
+        std::string(expected_apply_failure) + "}config";
+    valid = !retrieved && state.data_xml == nullptr && state.complete == 0 &&
+        error.message && error.instance_path &&
+        std::string_view(error.message).find("awaiting dangd reconciliation") !=
+            std::string_view::npos &&
+        std::string_view(error.instance_path) == expected_path;
+    if (!valid) Report("incompletely compensated operational suppression",
+                       error);
+  }
+  if (valid && !expected_validate_failure && !expected_apply_failure &&
+      !no_op && !skip_operational) {
+    // Hardware has the proposed image, but dangd has not accepted readback.
+    // Operational publication must continue to use the prior accepted image
+    // and therefore fail closed on the temporary configuration mismatch.
+    DangOperationalDataV2 state{"stale", 1};
+    const bool retrieved =
+        plugin5->get_operational_data_v2(plugin->context, &state, &error);
+    valid = !retrieved && state.data_xml == nullptr && state.complete == 0 &&
+        error.message && error.instance_path &&
+        std::string_view(error.message).find("awaiting dangd reconciliation") !=
+            std::string_view::npos &&
+        std::string_view(error.instance_path).ends_with("}config");
+    if (!valid) Report("uncommitted operational suppression", error);
+  }
   if (valid && expected_reconcile_failure)
     valid = RemoveHostHook(expected_reconcile_failure);
   if (valid && !expected_validate_failure && !expected_apply_failure) {
@@ -421,6 +451,22 @@ int main(int argc, char** argv) {
     } else {
       valid = rolled_back || Report("rollback", error);
     }
+  }
+  if (valid && expected_rollback_failure) {
+    DangOperationalDataV2 state{"stale", 1};
+    const bool retrieved =
+        plugin5->get_operational_data_v2(plugin->context, &state, &error);
+    valid = !retrieved && state.data_xml == nullptr && state.complete == 0 &&
+        error.message && error.instance_path &&
+        std::string_view(error.message).find("awaiting dangd reconciliation") !=
+            std::string_view::npos;
+    if (!valid) Report("incomplete rollback operational suppression", error);
+  }
+  if (valid && expected_reconcile_failure) {
+    DangOperationalDataV2 state{};
+    valid = plugin5->get_operational_data_v2(plugin->context, &state, &error) &&
+        state.data_xml != nullptr && state.complete == 1;
+    if (!valid) Report("post-rollback operational restoration", error);
   }
   if (prepared) plugin->release(plugin->context, prepared);
   if (plugin->destroy) plugin->destroy(plugin->context);

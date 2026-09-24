@@ -2246,9 +2246,10 @@ bool ApplyWithCompensation(
     const std::vector<ServerConfiguration>& before,
     const std::vector<ServerConfiguration>& proposed,
     const ConfigurationCommand& command, std::string* failed_module,
-    std::string* reason) {
+    std::string* reason, bool* compensation_complete) {
   if (failed_module) failed_module->clear();
   if (reason) reason->clear();
+  if (compensation_complete) *compensation_complete = true;
   if (!command) {
     if (reason) *reason = "invalid Kea configuration transaction";
     return false;
@@ -2277,6 +2278,7 @@ bool ApplyWithCompensation(
       std::string rollback_error;
       if (!RunConfigurationCommand(command, server, "config-set",
                                    &rollback_error)) {
+        if (compensation_complete) *compensation_complete = false;
         if (rollback_error.empty())
           rollback_error = "configuration rollback command failed";
         failure += "; rollback of " + server.module_name + " failed: " +

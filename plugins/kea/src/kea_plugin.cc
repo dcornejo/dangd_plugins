@@ -21,6 +21,7 @@
 #include <mutex>
 #include <new>
 #include <optional>
+#include <shared_mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -59,31 +60,53 @@ constexpr std::string_view kOperationalClose = "</data>";
 
 // Operational state must describe only configuration accepted by dangd and
 // known to have reached Kea. Preparing or validating a candidate therefore
-// cannot alter this state; successful apply, rollback, and startup
-// reconciliation callbacks are its only writers.
-std::mutex accepted_state_mutex;
-std::array<std::vector<std::uint32_t>, 2> accepted_subnet_ids;
-std::vector<ServerConfiguration> accepted_configurations;
-
+// cannot alter this state. Apply also leaves it unchanged until post-apply
+// reconciliation accepts readback; reconciliation and rollback are its only
+// writers.
 struct AcceptedConfigurationSnapshot {
   std::array<std::vector<std::uint32_t>, 2> subnet_ids;
   std::vector<ServerConfiguration> configurations;
+  // Nonempty from the start of a changing hardware apply until verified
+  // reconciliation or complete compensation. Operational reads fail closed
+  // while the backend is not yet known to match accepted dangd state.
+  std::string pending_module;
 };
+
+std::shared_mutex accepted_state_mutex;
+AcceptedConfigurationSnapshot accepted_state;
 
 void RememberAcceptedState(
     const std::vector<ServerConfiguration>& configurations) {
-  std::array<std::vector<std::uint32_t>, 2> next;
-  for (std::size_t index = 0; index < configurations.size() && index < next.size();
-       ++index)
-    next[index] = ExtractSubnetIds(configurations[index]);
+  // Build the complete replacement before taking the lock. If allocation
+  // fails, readers retain the previous internally consistent snapshot.
+  AcceptedConfigurationSnapshot next;
+  next.configurations = configurations;
+  for (std::size_t index = 0;
+       index < configurations.size() && index < next.subnet_ids.size(); ++index)
+    next.subnet_ids[index] = ExtractSubnetIds(configurations[index]);
   std::lock_guard lock(accepted_state_mutex);
-  accepted_subnet_ids = std::move(next);
-  accepted_configurations = configurations;
+  accepted_state = std::move(next);
 }
 
-AcceptedConfigurationSnapshot AcceptedSnapshot() {
+bool BeginPendingMutation(const Prepared& prepared) {
+  std::string module;
+  for (std::size_t index = 0;
+       index < prepared.before.size() && index < prepared.proposed.size();
+       ++index) {
+    if (prepared.before[index].arguments != prepared.proposed[index].arguments) {
+      module = prepared.proposed[index].module_name;
+      break;
+    }
+  }
+  if (module.empty()) return false;
   std::lock_guard lock(accepted_state_mutex);
-  return {accepted_subnet_ids, accepted_configurations};
+  accepted_state.pending_module = std::move(module);
+  return true;
+}
+
+void ClearPendingApply() {
+  std::lock_guard lock(accepted_state_mutex);
+  accepted_state.pending_module.clear();
 }
 
 void SetError(DangPluginErrorV1* error, std::string message,
@@ -254,15 +277,18 @@ int ApplyConfigurationImpl(void*, void* opaque, DangPluginErrorV1* error) {
   }
   std::string failed_module;
   std::string reason;
+  const bool pending = BeginPendingMutation(*prepared);
+  bool compensation_complete = false;
   if (!ApplyWithCompensation(prepared->before, prepared->proposed, Execute,
-                             &failed_module, &reason)) {
+                             &failed_module, &reason,
+                             &compensation_complete)) {
+    if (pending && compensation_complete) ClearPendingApply();
     const std::string path = failed_module.empty()
         ? "/"
         : "/{urn:ietf:params:xml:ns:yang:" + failed_module + "}config";
     SetError(error, std::move(reason), path);
     return 0;
   }
-  RememberAcceptedState(prepared->proposed);
   return 1;
 }
 
@@ -274,6 +300,10 @@ int RollbackConfigurationImpl(void*, void* opaque, DangPluginErrorV1* error) {
   }
   std::string failed_module;
   std::string reason;
+  // Rollback is another multi-daemon hardware mutation. Suppress operational
+  // publication from its first changing config-set until every restoration
+  // succeeds and the accepted before-image is installed atomically.
+  (void)BeginPendingMutation(*prepared);
   if (RollbackChanged(prepared->before, prepared->proposed, Execute,
                       &failed_module, &reason)) {
     RememberAcceptedState(prepared->before);
@@ -337,6 +367,19 @@ int OperationalImpl(void*, DangOperationalDataV1* result,
     return 0;
   }
   *result = {};
+  // Retain a shared authority lock through the complete multi-command read.
+  // Apply must acquire the exclusive side before its first config-set, so a
+  // state collection can never overlap a hardware configuration transition.
+  std::shared_lock accepted_lock(accepted_state_mutex);
+  const AcceptedConfigurationSnapshot accepted = accepted_state;
+  if (!accepted.pending_module.empty()) {
+    SetError(error,
+             accepted.pending_module +
+                 ": applied configuration is awaiting dangd reconciliation",
+             "/{urn:ietf:params:xml:ns:yang:" + accepted.pending_module +
+                 "}config");
+    return 0;
+  }
   const char* socket4 = std::getenv("DANG_KEA_DHCP4_SOCKET");
   const char* socket6 = std::getenv("DANG_KEA_DHCP6_SOCKET");
   if (!socket4 || !*socket4 || !socket6 || !*socket6) {
@@ -345,7 +388,6 @@ int OperationalImpl(void*, DangOperationalDataV1* result,
   }
   operational_xml =
       "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">";
-  const AcceptedConfigurationSnapshot accepted = AcceptedSnapshot();
   std::size_t server_index = 0;
   for (const auto& [module, dhcp6] : {
            std::pair{"kea-dhcp4-server", false},
