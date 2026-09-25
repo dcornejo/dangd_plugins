@@ -132,7 +132,9 @@ using ConfigurationCommand = std::function<bool(
  * PageLimits bound the aggregate state entries, native bytes, modeled XML,
  * queries, and duration rather than restarting for leases, statistics, and
  * reservations and HA status. When supplied, ha_operational_xml receives the
- * dang-kea-ha relationship entries separately from the ISC module state.
+ * dang-kea-ha relationship entries separately from the ISC module state only
+ * after their count, mode, local name, and local role match the accepted HA
+ * configuration.
  */
 [[nodiscard]] std::optional<std::string> CollectAuthoritativeOperationalState(
     const ServerConfiguration& expected, bool dhcp6,

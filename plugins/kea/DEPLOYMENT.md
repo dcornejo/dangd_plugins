@@ -92,6 +92,10 @@ peer-minus-local clock skew. Nullable clock fields remain absent until Kea has
 calculated them.
 Remote status is present for load-balancing and hot-standby and absent for
 passive-backup, matching Kea's native response contract.
+The collector also requires the reported relationship count, mode, local
+server name, and local role to match the accepted HA hook parameters before it
+publishes any entry. This prevents stale status or a response from another
+member from being attributed to the authoritative dangd configuration.
 The numeric relationship ID is stable only until that daemon's accepted HA
 configuration changes; use the reported server names for operator-facing
 identity. Collection occurs between the same two complete configuration checks

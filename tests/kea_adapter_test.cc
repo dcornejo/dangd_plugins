@@ -433,6 +433,9 @@ int main() {
                      error.find("high-availability is missing") !=
                          std::string::npos,
                  "missing HA status was accepted for an HA relationship");
+  nlohmann::json authoritative_ha_status = ha_status;
+  authoritative_ha_status["arguments"]["high-availability"][0]["ha-servers"]
+                         ["local"]["server-name"] = "primary";
   const dang::plugins::kea::ControlQuery ha_operational_read =
       [&](std::string_view, std::string_view command, const nlohmann::json&,
           std::string*) -> std::optional<nlohmann::json> {
@@ -441,7 +444,7 @@ int main() {
           nlohmann::json{{"result", 0}, {"arguments", ha_member->arguments}});
     if (command == "lease4-get-page" || command == "reservation-get-page")
       return OptionalJson(nlohmann::json{{"result", 3}});
-    if (command == "status-get") return OptionalJson(ha_status);
+    if (command == "status-get") return OptionalJson(authoritative_ha_status);
     return std::nullopt;
   };
   std::string ha_failure_path;
@@ -454,7 +457,48 @@ int main() {
   valid &= Check(authoritative_ha_state && !collected_ha_state.empty() &&
                      ha_failure_path.empty(),
                  "HA status was not collected inside the authority checks");
-  nlohmann::json two_ha_relationships = ha_status;
+  const auto rejects_mismatched_ha_identity =
+      [&](const nlohmann::json& rejected_status,
+          std::string_view expected_error, const char* description) {
+        const dang::plugins::kea::ControlQuery rejected_read =
+            [&](std::string_view socket, std::string_view command,
+                const nlohmann::json& arguments,
+                std::string* query_error) -> std::optional<nlohmann::json> {
+          if (command == "status-get") return OptionalJson(rejected_status);
+          return ha_operational_read(socket, command, arguments, query_error);
+        };
+        ha_failure_path.clear();
+        collected_ha_state = "stale";
+        error.clear();
+        auto rejected =
+            dang::plugins::kea::CollectAuthoritativeOperationalState(
+                *ha_member, false, {}, rejected_read, &ha_failure_path, &error,
+                {}, &collected_ha_state);
+        return Check(!rejected && ha_failure_path == "ha-state" &&
+                         collected_ha_state.empty() &&
+                         error.find(expected_error) != std::string::npos,
+                     description);
+      };
+  nlohmann::json mismatched_ha_identity = authoritative_ha_status;
+  mismatched_ha_identity["arguments"]["high-availability"][0]["ha-mode"] =
+      "load-balancing";
+  valid &= rejects_mismatched_ha_identity(
+      mismatched_ha_identity, "mode does not match accepted configuration",
+      "HA status from a different configured mode was published");
+  mismatched_ha_identity = authoritative_ha_status;
+  mismatched_ha_identity["arguments"]["high-availability"][0]["ha-servers"]
+                        ["local"]["server-name"] = "other-primary";
+  valid &= rejects_mismatched_ha_identity(
+      mismatched_ha_identity,
+      "local server-name does not match accepted configuration",
+      "HA status from a different local member was published");
+  mismatched_ha_identity = authoritative_ha_status;
+  mismatched_ha_identity["arguments"]["high-availability"][0]["ha-servers"]
+                        ["local"]["role"] = "standby";
+  valid &= rejects_mismatched_ha_identity(
+      mismatched_ha_identity, "local role does not match accepted configuration",
+      "HA status with a stale local role was published");
+  nlohmann::json two_ha_relationships = authoritative_ha_status;
   two_ha_relationships["arguments"]["high-availability"].push_back(
       two_ha_relationships["arguments"]["high-availability"].front());
   const dang::plugins::kea::ControlQuery item_limited_ha_read =
@@ -475,6 +519,10 @@ int main() {
           ha_failure_path == "ha-state" && collected_ha_state.empty() &&
           error.find("exceeds the item limit") != std::string::npos,
       "HA relationships bypassed the shared operational item limit");
+  valid &= rejects_mismatched_ha_identity(
+      two_ha_relationships,
+      "relationship count does not match accepted configuration",
+      "extra HA status relationship was attributed to the accepted image");
   const dang::plugins::kea::ControlQuery malformed_ha_operational_read =
       [&](std::string_view, std::string_view command,
           const nlohmann::json& arguments,

@@ -544,6 +544,117 @@ bool HasHaHook(const ServerConfiguration& server) {
   return false;
 }
 
+struct HaRelationshipIdentity {
+  std::string mode;
+  std::string server_name;
+  std::string role;
+};
+
+std::optional<std::vector<HaRelationshipIdentity>>
+ConfiguredHaRelationshipIdentities(const ServerConfiguration& server,
+                                   std::string* error) {
+  try {
+    const auto& hooks =
+        server.arguments.at(server.service_name).at("hooks-libraries");
+    if (!hooks.is_array())
+      throw std::runtime_error("hooks-libraries is not an array");
+    for (const auto& hook : hooks) {
+      if (!hook.is_object()) continue;
+      const auto library = hook.find("library");
+      if (library == hook.end() || !library->is_string() ||
+          BaseName(library->get_ref<const std::string&>()) !=
+              "libdhcp_ha.so")
+        continue;
+      const auto& relationships =
+          hook.at("parameters").at("high-availability");
+      if (!relationships.is_array())
+        throw std::runtime_error("high-availability is not an array");
+      std::vector<HaRelationshipIdentity> identities;
+      identities.reserve(relationships.size());
+      for (const auto& relationship : relationships) {
+        const auto& mode = relationship.at("mode");
+        const auto& server_name = relationship.at("this-server-name");
+        const auto& peers = relationship.at("peers");
+        if (!relationship.is_object() || !mode.is_string() ||
+            !server_name.is_string() || !peers.is_array())
+          throw std::runtime_error("relationship identity is malformed");
+        const std::string& configured_name =
+            server_name.get_ref<const std::string&>();
+        const nlohmann::json* configured_peer = nullptr;
+        for (const auto& peer : peers) {
+          if (!peer.is_object()) continue;
+          const auto name = peer.find("name");
+          if (name != peer.end() && name->is_string() &&
+              name->get_ref<const std::string&>() == configured_name) {
+            if (configured_peer)
+              throw std::runtime_error("local peer identity is duplicated");
+            configured_peer = &peer;
+          }
+        }
+        if (!configured_peer)
+          throw std::runtime_error("local peer identity is missing");
+        const auto& role = configured_peer->at("role");
+        if (!role.is_string())
+          throw std::runtime_error("local peer role is not a string");
+        identities.push_back(
+            {mode.get_ref<const std::string&>(), configured_name,
+             role.get_ref<const std::string&>()});
+      }
+      return identities;
+    }
+    throw std::runtime_error("HA hook is missing");
+  } catch (const std::exception& exception) {
+    if (error)
+      *error = std::string("invalid accepted Kea HA configuration: ") +
+          exception.what();
+    return std::nullopt;
+  }
+}
+
+bool VerifyHaStatusIdentity(const ServerConfiguration& expected,
+                            const nlohmann::json& status,
+                            std::string* error) {
+  auto configured = ConfiguredHaRelationshipIdentities(expected, error);
+  if (!configured) return false;
+  try {
+    const nlohmann::json* answer = Answer(status);
+    if (!answer) throw std::runtime_error("ambiguous command response");
+    const auto& reported = answer->at("arguments").at("high-availability");
+    if (!reported.is_array())
+      throw std::runtime_error("high-availability is not an array");
+    if (reported.size() != configured->size())
+      throw std::runtime_error(
+          "relationship count does not match accepted configuration");
+    for (std::size_t index = 0; index < configured->size(); ++index) {
+      const auto& relationship = reported.at(index);
+      const auto& local = relationship.at("ha-servers").at("local");
+      const auto& mode = relationship.at("ha-mode");
+      const auto& server_name = local.at("server-name");
+      const auto& role = local.at("role");
+      if (!mode.is_string() || !server_name.is_string() || !role.is_string())
+        throw std::runtime_error("relationship identity is malformed");
+      const auto& identity = configured->at(index);
+      if (mode.get_ref<const std::string&>() != identity.mode)
+        throw std::runtime_error("relationship " + std::to_string(index) +
+                                 " mode does not match accepted configuration");
+      if (server_name.get_ref<const std::string&>() != identity.server_name)
+        throw std::runtime_error(
+            "relationship " + std::to_string(index) +
+            " local server-name does not match accepted configuration");
+      if (role.get_ref<const std::string&>() != identity.role)
+        throw std::runtime_error(
+            "relationship " + std::to_string(index) +
+            " local role does not match accepted configuration");
+    }
+    return true;
+  } catch (const std::exception& exception) {
+    if (error)
+      *error = std::string("Kea HA status identity mismatch: ") +
+          exception.what();
+    return false;
+  }
+}
+
 bool IsXmlText(std::string_view value) {
   for (std::size_t offset = 0; offset < value.size();) {
     const auto first = static_cast<unsigned char>(value[offset]);
@@ -2439,6 +2550,8 @@ std::optional<std::string> CollectAuthoritativeOperationalState(
       return std::nullopt;
     }
     state_items += relationships.size();
+    if (!VerifyHaStatusIdentity(expected, *status, error))
+      return std::nullopt;
     ha_state = std::move(*translated);
   }
 

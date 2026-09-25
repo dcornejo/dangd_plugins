@@ -9,6 +9,14 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Bound Kea HA operational replies to the accepted hook configuration. Before
+  publishing status, the collector now requires the native relationship count,
+  mode, local server name, and local role to match the authoritative JSON at
+  the same relationship position. Extra, missing, stale, or cross-member
+  status fails closed at the HA model path and leaves output empty. Portable
+  tests cover every identity field and relationship-count drift; native Linux
+  and FreeBSD workflows retain full hot-standby and passive-backup coverage.
+
 - Expanded `dang-kea-ha` with the stable active-peer health fields from Kea's
   native `status-get` reply: peer-information age, analyzed packets, connecting
   and unacknowledged client counts, the remaining partner-down threshold, UTC
