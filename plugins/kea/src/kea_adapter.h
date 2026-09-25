@@ -114,7 +114,11 @@ using ConfigurationCommand = std::function<bool(
     std::string* error,
     std::size_t maximum_xml_bytes = std::numeric_limits<std::size_t>::max());
 
-/** Converts a successful Kea status-get reply to dang-kea-ha list entries. */
+/**
+ * Converts a successful Kea status-get reply to dang-kea-ha list entries.
+ * Nullable clock fields are omitted until Kea has measured them; malformed
+ * fields fail the complete translation instead of producing partial state.
+ */
 [[nodiscard]] std::optional<std::string> TranslateHaOperationalState(
     std::string_view module_name, const nlohmann::json& status,
     std::string* error,

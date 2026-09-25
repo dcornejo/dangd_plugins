@@ -77,6 +77,13 @@ module dang-kea-ha {
           mandatory true;
           description "Current Kea HA state-machine state.";
         }
+        leaf system-time {
+          type string;
+          description
+            "UTC time used for the most recent clock-skew calculation, in
+             Kea's native YYYY-MM-DD HH:MM:SS representation. Absent when no
+             calculation has completed.";
+        }
         leaf-list scope {
           type string;
           description "Current HA service scopes owned by the local member.";
@@ -108,10 +115,52 @@ module dang-kea-ha {
           mandatory true;
           description "Whether Kea reports interrupted peer communication.";
         }
+        leaf age {
+          type uint64;
+          units "seconds";
+          description "Age of the last information received from the peer.";
+        }
+        leaf analyzed-packets {
+          type uint64;
+          description
+            "Packets directed to the peer that Kea has examined while
+             monitoring interrupted communication.";
+        }
+        leaf clock-skew {
+          type int64;
+          units "seconds";
+          description
+            "Remote time minus local time at the most recent calculation.
+             Absent until Kea has calculated clock skew.";
+        }
+        leaf connecting-clients {
+          type uint64;
+          description
+            "Distinct clients observed attempting to contact the peer during
+             interrupted-communication monitoring.";
+        }
         leaf last-state {
           type string;
           mandatory true;
           description "Last peer state observed by the local member.";
+        }
+        leaf system-time {
+          type string;
+          description
+            "Peer UTC time used for the most recent clock-skew calculation,
+             in Kea's native YYYY-MM-DD HH:MM:SS representation. Absent until
+             Kea has calculated clock skew.";
+        }
+        leaf unacked-clients {
+          type uint64;
+          description
+            "Distinct clients considered unacknowledged by the peer.";
+        }
+        leaf unacked-clients-left {
+          type uint64;
+          description
+            "Additional unacknowledged clients required before Kea enters
+             partner-down state.";
         }
         leaf-list last-scope {
           type string;

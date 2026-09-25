@@ -314,10 +314,15 @@ int main() {
       "ha-mode": "hot-standby",
       "ha-servers": {
         "local": {"server-name": "primary&one", "role": "primary",
-                  "state": "waiting", "scopes": ["scope<1"]},
+                  "state": "waiting", "system-time": "2026-09-24 12:00:00",
+                  "scopes": ["scope<1"]},
         "remote": {"server-name": "standby", "role": "standby",
                    "in-touch": false, "communication-interrupted": true,
-                   "last-state": "ready", "last-scopes": ["scope&2"]}
+                   "age": 10, "analyzed-packets": 8, "clock-skew": -3,
+                   "connecting-clients": 2, "last-state": "ready",
+                   "system-time": "2026-09-24 12:00:03",
+                   "unacked-clients": 1, "unacked-clients-left": 4,
+                   "last-scopes": ["scope&2"]}
       }
     }]}
   })json");
@@ -333,6 +338,19 @@ int main() {
           ha_state->find("<scope>scope&lt;1</scope>") != std::string::npos &&
           ha_state->find("<communication-interrupted>true"
                          "</communication-interrupted>") != std::string::npos &&
+          ha_state->find("<age>10</age>") != std::string::npos &&
+          ha_state->find("<analyzed-packets>8</analyzed-packets>") !=
+              std::string::npos &&
+          ha_state->find("<clock-skew>-3</clock-skew>") !=
+              std::string::npos &&
+          ha_state->find("<connecting-clients>2</connecting-clients>") !=
+              std::string::npos &&
+          ha_state->find("<system-time>2026-09-24 12:00:00</system-time>") !=
+              std::string::npos &&
+          ha_state->find("<unacked-clients>1</unacked-clients>") !=
+              std::string::npos &&
+          ha_state->find("<unacked-clients-left>4</unacked-clients-left>") !=
+              std::string::npos &&
           ha_state->find("<last-scope>scope&amp;2</last-scope>") !=
               std::string::npos,
       "portable HA status was not translated or XML-escaped");
@@ -366,6 +384,22 @@ int main() {
           "kea-dhcp4-server", missing_active_remote, &error) &&
           error.find("remote is missing") != std::string::npos,
       "active-peer HA status without its remote was accepted");
+  nlohmann::json nullable_ha_status = ha_status;
+  nullable_ha_status["arguments"]["high-availability"][0]["ha-servers"]
+                    ["local"]["system-time"] = nullptr;
+  nullable_ha_status["arguments"]["high-availability"][0]["ha-servers"]
+                    ["remote"]["system-time"] = nullptr;
+  nullable_ha_status["arguments"]["high-availability"][0]["ha-servers"]
+                    ["remote"]["clock-skew"] = nullptr;
+  error.clear();
+  auto nullable_ha_state = dang::plugins::kea::TranslateHaOperationalState(
+      "kea-dhcp4-server", nullable_ha_status, &error);
+  valid &= Check(nullable_ha_state &&
+                     nullable_ha_state->find("<system-time>") ==
+                         std::string::npos &&
+                     nullable_ha_state->find("<clock-skew>") ==
+                         std::string::npos,
+                 "unmeasured nullable HA clock values were not omitted");
   nlohmann::json malformed_ha_status = ha_status;
   malformed_ha_status["arguments"]["high-availability"][0]["ha-servers"]
                      ["remote"]["in-touch"] = "false";
@@ -375,6 +409,16 @@ int main() {
                 "kea-dhcp6-server", malformed_ha_status, &error) &&
                 error.find("in-touch is not a boolean") != std::string::npos,
             "malformed HA peer reachability was accepted");
+  malformed_ha_status = ha_status;
+  malformed_ha_status["arguments"]["high-availability"][0]["ha-servers"]
+                     ["remote"]["analyzed-packets"] = -1;
+  error.clear();
+  valid &= Check(
+      !dang::plugins::kea::TranslateHaOperationalState(
+          "kea-dhcp6-server", malformed_ha_status, &error) &&
+          error.find("analyzed-packets is not an unsigned integer") !=
+              std::string::npos,
+      "negative HA traffic counter was accepted");
   error.clear();
   valid &= Check(!dang::plugins::kea::TranslateHaOperationalState(
                      "kea-dhcp4-server", ha_status, &error, 1) &&

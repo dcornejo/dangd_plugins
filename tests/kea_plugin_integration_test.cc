@@ -586,6 +586,12 @@ int main(int argc, char** argv) {
                  : xml.find("<server-name>remote-standby</server-name>") !=
                            std::string::npos &&
                        xml.find("<in-touch>false</in-touch>") !=
+                           std::string::npos &&
+                       xml.find("<age>") != std::string::npos &&
+                       xml.find("<analyzed-packets>") != std::string::npos &&
+                       xml.find("<connecting-clients>") != std::string::npos &&
+                       xml.find("<unacked-clients>") != std::string::npos &&
+                       xml.find("<unacked-clients-left>") !=
                            std::string::npos);
     if (!valid)
       std::cerr << "HA operational XML is incomplete: " << xml << '\n';

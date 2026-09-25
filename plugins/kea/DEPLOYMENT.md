@@ -86,6 +86,10 @@ The pinned ISC modules do not expose HA relationship status. The companion
 schema. Its read-only `high-availability/relationship` list is keyed by address
 family and Kea's zero-based relationship position, and publishes mode, local
 name/role/state/scopes, and remote name/role/reachability/last-state/scopes.
+For active-peer modes it also publishes peer-information age, the native
+traffic-monitoring counters, and, once measured, both UTC samples and signed
+peer-minus-local clock skew. Nullable clock fields remain absent until Kea has
+calculated them.
 Remote status is present for load-balancing and hot-standby and absent for
 passive-backup, matching Kea's native response contract.
 The numeric relationship ID is stable only until that daemon's accepted HA

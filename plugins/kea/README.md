@@ -329,7 +329,11 @@ HA runtime status. The plugin therefore advertises its own read-only
 authoritative read that collects leases and reservations also calls
 `status-get` and publishes each DHCPv4 or DHCPv6 relationship's mode, local
 name, role, state-machine phase and service scopes, plus the peer name, role,
-reachability, interrupted-communication flag, last state, and last scopes.
+reachability, interrupted-communication flag, status age, packet/client
+monitoring counters, last state, and last scopes. When Kea has completed a
+clock comparison, the tree also carries each active member's native UTC sample
+and the signed peer-minus-local clock skew; null, not-yet-measured values are
+omitted.
 The status query is omitted when the accepted image has no HA hook. A missing,
 rejected, malformed, oversized, or late HA reply fails the complete operational
 request at `/{urn:dang:kea:ha}high-availability`; raw native JSON is never

@@ -9,6 +9,14 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Expanded `dang-kea-ha` with the stable active-peer health fields from Kea's
+  native `status-get` reply: peer-information age, analyzed packets, connecting
+  and unacknowledged client counts, the remaining partner-down threshold, UTC
+  clock samples, and signed clock skew. Counters are range-checked, malformed
+  types fail closed, and Kea's null not-yet-measured clock values are omitted.
+  Portable tests cover values, nulls, and invalid counters; native Linux and
+  FreeBSD HA workflows require the packaged daemons to publish the counters.
+
 - Completed the portable Kea HA status contract for passive-backup members.
   Kea legitimately omits the singular `remote` map in that mode because a
   primary may feed zero or several backups; the translator now publishes the

@@ -2174,6 +2174,56 @@ std::optional<std::string> TranslateHaOperationalState(
           throw std::runtime_error(std::string(key) + " is not a boolean");
         return value.get<bool>();
       };
+      const auto append_optional_string =
+          [&](const nlohmann::json& object, std::string_view key,
+              std::string_view element, std::string* destination) {
+            const auto value = object.find(std::string(key));
+            if (value == object.end() || value->is_null()) return;
+            if (!value->is_string())
+              throw std::runtime_error(std::string(key) +
+                                       " is not a string or null");
+            auto escaped = XmlText(value->get_ref<const std::string&>(), key,
+                                   error);
+            if (!escaped)
+              throw std::runtime_error("invalid " + std::string(key));
+            *destination += "<" + std::string(element) + ">" + *escaped +
+                            "</" + std::string(element) + ">";
+          };
+      const auto append_optional_uint64 =
+          [](const nlohmann::json& object, std::string_view key,
+             std::string_view element, std::string* destination) {
+            const auto value = object.find(std::string(key));
+            if (value == object.end()) return;
+            if (!value->is_number_unsigned())
+              throw std::runtime_error(std::string(key) +
+                                       " is not an unsigned integer");
+            *destination += "<" + std::string(element) + ">" +
+                            std::to_string(value->get<std::uint64_t>()) +
+                            "</" + std::string(element) + ">";
+          };
+      const auto append_optional_int64 =
+          [](const nlohmann::json& object, std::string_view key,
+             std::string_view element, std::string* destination) {
+            const auto value = object.find(std::string(key));
+            if (value == object.end() || value->is_null()) return;
+            std::int64_t number;
+            if (value->is_number_unsigned()) {
+              const auto unsigned_number = value->get<std::uint64_t>();
+              if (unsigned_number > static_cast<std::uint64_t>(
+                                        std::numeric_limits<std::int64_t>::max()))
+                throw std::runtime_error(std::string(key) +
+                                         " exceeds int64");
+              number = static_cast<std::int64_t>(unsigned_number);
+            } else if (value->is_number_integer()) {
+              number = value->get<std::int64_t>();
+            } else {
+              throw std::runtime_error(std::string(key) +
+                                       " is not an int64 or null");
+            }
+            *destination += "<" + std::string(element) + ">" +
+                            std::to_string(number) + "</" +
+                            std::string(element) + ">";
+          };
       const auto append_scopes =
           [&](const nlohmann::json& object, std::string_view key,
               std::string_view element, std::string* destination) {
@@ -2215,6 +2265,7 @@ std::optional<std::string> TranslateHaOperationalState(
           string_value(local, "server-name") + "</server-name><role>" +
           string_value(local, "role") + "</role><state>" +
           string_value(local, "state") + "</state>";
+      append_optional_string(local, "system-time", "system-time", &entry);
       append_scopes(local, "scopes", "scope", &entry);
       entry += "</local>";
       if (remote != servers.end()) {
@@ -2226,8 +2277,20 @@ std::optional<std::string> TranslateHaOperationalState(
                  "</in-touch><communication-interrupted>" +
                  (bool_value(*remote, "communication-interrupted") ? "true"
                                                                     : "false") +
-                 "</communication-interrupted><last-state>" +
-                 string_value(*remote, "last-state") + "</last-state>";
+                 "</communication-interrupted>";
+        append_optional_uint64(*remote, "age", "age", &entry);
+        append_optional_uint64(*remote, "analyzed-packets",
+                               "analyzed-packets", &entry);
+        append_optional_int64(*remote, "clock-skew", "clock-skew", &entry);
+        append_optional_uint64(*remote, "connecting-clients",
+                               "connecting-clients", &entry);
+        entry += "<last-state>" + string_value(*remote, "last-state") +
+                 "</last-state>";
+        append_optional_string(*remote, "system-time", "system-time", &entry);
+        append_optional_uint64(*remote, "unacked-clients", "unacked-clients",
+                               &entry);
+        append_optional_uint64(*remote, "unacked-clients-left",
+                               "unacked-clients-left", &entry);
         append_scopes(*remote, "last-scopes", "last-scope", &entry);
         entry += "</remote>";
       }
