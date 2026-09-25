@@ -57,10 +57,31 @@ positions or socket names as durable instance identity.
 
 There are two distinct HA support levels.
 
-The first is local-member support: one dangd manages one local Kea daemon whose
-ordinary Kea configuration includes the HA hook and peer parameters. This can
-use the current local UNIX control path, but each peer has its own dangd and no
+The first is local-member support, which is implemented: one dangd manages one
+local Kea daemon whose ordinary Kea configuration includes the HA hook and peer
+parameters. The official model represents the hook `parameters` as a JSON-valued
+leaf. The plugin parses that leaf as JSON, preserves the complete relationship
+and peer structures during translation and reconciliation, and lets Kea's
+native `config-test` enforce HA-specific semantics. The local member continues
+to use the plugin's UNIX control path. Each peer has its own dangd and no
 pair-wide atomicity is claimed.
+
+The platform package must provide both `libdhcp_lease_cmds.so` and
+`libdhcp_ha.so`. The peer URLs, certificates, roles, and each member's
+`this-server-name` remain part of authoritative Kea configuration. Follow the
+[Kea 3.2 HA hook documentation](https://kea.readthedocs.io/en/kea-3.2.0/arm/hooks.html)
+when constructing that JSON.
+
+Native Linux and FreeBSD tests load the packaged HA hook for DHCPv4 and DHCPv6,
+apply and read back a hot-standby local-member image, call `ha-heartbeat` through
+the managed UNIX socket, and restore the non-HA image. The remote peer is
+deliberately absent, so this proves local hook lifecycle and command support,
+not replication or failover.
+
+The pinned YANG modules do not expose HA relationship status. Peer liveness,
+state-machine phase, service scopes, and synchronization progress are therefore
+not yet available as modeled operational data. Adding that state requires a
+documented augmentation rather than placing unmodeled JSON in NETCONF replies.
 
 The second is pair-wide management: one logical commit controls both peers.
 That is not implemented. It requires authenticated remote control, stable peer

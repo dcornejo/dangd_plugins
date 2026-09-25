@@ -50,6 +50,9 @@ sudo cmake --install build --component kea
 The plugin does not require Kea Control Agent or a database lease backend.
 See [DEPLOYMENT.md](DEPLOYMENT.md) for the supported single-stack and
 dual-stack layouts and the explicit multiple-instance and HA design boundary.
+When the local daemon participates in Kea HA, the operating-system Kea package
+must also provide `libdhcp_ha.so`; pair communication and any TLS files remain
+ordinary Kea runtime dependencies.
 
 ## Transaction behavior
 
@@ -320,6 +323,10 @@ therefore blocks operational publication instead of silently blessing intent
 as applied state.
 The pinned modules declare no
 RPC or notification surface.
+They also do not model HA runtime status. A configured local HA member is
+validated, applied, and reconciled through its native hook configuration, but
+the plugin does not currently publish the relationship state, peer liveness,
+service scopes, or synchronization progress as YANG operational data.
 
 The plugin deliberately exposes one ABI-v4 hardware action for the entire Kea
 transaction. This preserves atomic compensation across Kea's own
@@ -463,6 +470,11 @@ The same native workflow also runs real IPv4-only and IPv6-only transactions.
 Each enabled daemon must complete validation, mutation, readback, operational
 collection, and rollback while the other family has no configured target or
 datastore tree.
+It additionally loads the packaged HA hook into both daemons, applies a local
+hot-standby member configuration, verifies native `ha-heartbeat` command
+registration after reconciliation, and rolls the transaction back. The peer
+endpoint stays unreachable on the isolated documentation subnet, deliberately
+testing local-member management without implying pair-wide success.
 Before that transaction matrix, each script exercises dangd's real startup
 shape with an empty before-image and the persisted Kea datastore as the
 candidate. Success proves that both native boot configurations were captured,

@@ -9,6 +9,16 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added explicit local-member Kea HA support and validation. HA hook parameters
+  remain authoritative JSON in the pinned Kea model and are preserved exactly
+  in native configuration. Portable tests verify nested relationship and peer
+  translation. The Linux and FreeBSD workflows now load each platform's real
+  `libdhcp_ha.so`, apply and reconcile DHCPv4 and DHCPv6 hot-standby member
+  configurations, invoke the registered `ha-heartbeat` command, and roll back
+  both daemons. Documentation distinguishes this supported one-dangd-per-member
+  layout from unimplemented pair-wide atomic management and records the
+  remaining HA state-modeling gap.
+
 - Added real single-stack Kea support. The plugin now captures a stable target
   inventory containing DHCPv4, DHCPv6, or both, and all accepted state,
   mutation, reconciliation, operational, compensation, and rollback paths

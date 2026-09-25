@@ -702,6 +702,12 @@ if(BUILD_TESTING)
       $<TARGET_FILE:dangd_kea_plugin>
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-before4-only.xml"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-proposed4-only.xml")
+  add_test(NAME kea_ha_member_noop_translation
+    COMMAND kea_plugin_integration_test $<TARGET_FILE:dangd_kea_plugin>
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-proposed-ha.xml"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-proposed-ha.xml")
+  set_tests_properties(kea_ha_member_noop_translation PROPERTIES ENVIRONMENT
+    "DANG_KEA_DHCP4_SOCKET=/var/run/kea/kea4-ctrl-socket;DANG_KEA_DHCP6_SOCKET=/var/run/kea/kea6-ctrl-socket;DANG_KEA_TEST_NOOP_SEED=1")
 endif()
 
 include(GNUInstallDirs)

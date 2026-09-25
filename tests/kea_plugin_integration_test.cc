@@ -232,6 +232,7 @@ int main(int argc, char** argv) {
       std::getenv("DANG_KEA_TEST_NOOP_SEED") != nullptr;
   const bool empty_startup =
       std::getenv("DANG_KEA_EMPTY_STARTUP") != nullptr;
+  const bool ha_member = std::getenv("DANG_KEA_HA_MEMBER") != nullptr;
   const bool expect_prepared_mismatch =
       std::getenv("DANG_KEA_EXPECT_PREPARED_MISMATCH") != nullptr;
   const bool expect_unapplied_reconcile =
@@ -548,6 +549,14 @@ int main(int argc, char** argv) {
           applied.outcomes == nullptr && applied.outcome_count == 0;
     }
   }
+  if (valid && ha_member && dhcp4_enabled)
+    valid = NativeCommand(std::getenv("DANG_KEA_DHCP4_SOCKET"),
+                          "ha-heartbeat",
+                          {{"server-name", "local-primary"}});
+  if (valid && ha_member && dhcp6_enabled)
+    valid = NativeCommand(std::getenv("DANG_KEA_DHCP6_SOCKET"),
+                          "ha-heartbeat",
+                          {{"server-name", "local-primary"}});
   if (valid && !expected_validate_failure && expected_rollback_failure) {
     const char* socket = SocketForModule(expected_rollback_failure);
     valid = socket && *socket && ::unlink(socket) == 0;
@@ -702,6 +711,8 @@ int main(int argc, char** argv) {
         ? "Kea empty-datastore startup apply and rollback passed\n"
         : no_op
         ? "Kea no-op validate, apply, and rollback passed\n"
+        : ha_member
+        ? "Kea local HA member validate, apply, reconcile, and rollback passed\n"
         : skip_operational
             ? "Kea selective validate, apply, and rollback passed\n"
         : dhcp4_enabled && dhcp6_enabled

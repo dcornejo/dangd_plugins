@@ -279,6 +279,35 @@ int main() {
                      error.find("invalid JSON in parameters") !=
                          std::string::npos,
                  "malformed JSON-valued leaf fell back to a string");
+  constexpr char ha_member_xml[] = R"xml(
+    <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+      <control-sockets><socket-type>unix</socket-type>
+        <socket-name>/tmp/kea4.sock</socket-name></control-sockets>
+      <hook-library><library>/opt/kea/libdhcp_lease_cmds.so</library></hook-library>
+      <hook-library><library>/opt/kea/libdhcp_stat_cmds.so</library></hook-library>
+      <hook-library><library>/opt/kea/libdhcp_host_cmds.so</library></hook-library>
+      <hook-library><library>/opt/kea/libdhcp_ha.so</library>
+        <parameters>{"high-availability":[{"this-server-name":"primary",
+          "mode":"hot-standby","peers":[
+          {"name":"primary","url":"http://127.0.0.1:18124/","role":"primary"},
+          {"name":"standby","url":"http://127.0.0.1:18125/","role":"standby"}]}]}</parameters>
+      </hook-library>
+    </config>)xml";
+  error.clear();
+  auto ha_member = dang::plugins::kea::TranslateConfiguration(
+      ha_member_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  const auto* ha_relationship = ha_member
+      ? &ha_member->arguments["Dhcp4"]["hooks-libraries"][3]["parameters"]
+            ["high-availability"][0]
+      : nullptr;
+  valid &= Check(ha_relationship &&
+                     ha_relationship->at("this-server-name") == "primary" &&
+                     ha_relationship->at("mode") == "hot-standby" &&
+                     ha_relationship->at("peers").is_array() &&
+                     ha_relationship->at("peers").size() == 2 &&
+                     ha_relationship->at("peers").at(1).at("role") ==
+                         "standby",
+                 "HA member parameters were not preserved as native JSON");
   constexpr char scalar_context_xml[] = R"xml(
     <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
       <user-context>"not-a-map"</user-context>

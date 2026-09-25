@@ -29,6 +29,7 @@ cleanup() {
     /tmp/kea-before6-freebsd.xml /tmp/kea-proposed6-freebsd.xml \
     /tmp/kea-before4-only-freebsd.xml /tmp/kea-proposed4-only-freebsd.xml \
     /tmp/kea-before6-only-freebsd.xml /tmp/kea-proposed6-only-freebsd.xml \
+    /tmp/kea-proposed-ha-freebsd.xml \
     /tmp/kea-proposed6-state-freebsd.xml \
     /tmp/kea-before-validation-freebsd.xml \
     /tmp/kea-proposed-validation-freebsd.xml
@@ -97,6 +98,10 @@ sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
 sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
   -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
   "$root/tests/kea-proposed6-only.xml" > /tmp/kea-proposed6-only-freebsd.xml
+sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
+  -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
+  -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
+  "$root/tests/kea-proposed-ha.xml" > /tmp/kea-proposed-ha-freebsd.xml
 sed "s#$socket6#$unavailable6#g" /tmp/kea-before6-freebsd.xml \
   > /tmp/kea-before-validation-freebsd.xml
 sed "s#$socket6#$unavailable6#g" /tmp/kea-proposed6-freebsd.xml \
@@ -259,6 +264,18 @@ jexec -l -U root "$jail_name" env \
   "$root/build/kea_plugin_integration_test" \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-before-freebsd.xml \
   /tmp/kea-proposed-freebsd.xml
+
+# Prove local-member HA support with the packaged hook. The remote peer is
+# deliberately absent: this validates only the local dangd transaction and HA
+# command registration, not pair-wide commit atomicity.
+jexec -l -U root "$jail_name" env \
+  DANG_KEA_HA_MEMBER=1 \
+  DANG_KEA_SKIP_OPERATIONAL=1 \
+  DANG_KEA_DHCP4_SOCKET="$socket4" \
+  DANG_KEA_DHCP6_SOCKET="$socket6" \
+  "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before-freebsd.xml \
+  /tmp/kea-proposed-ha-freebsd.xml
 
 # Exercise each one-target inventory independently. The disabled family is
 # absent from both the environment and datastore, while the enabled packaged
