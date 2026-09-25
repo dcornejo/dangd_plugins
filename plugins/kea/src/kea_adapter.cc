@@ -529,6 +529,21 @@ std::optional<std::string> MissingRequiredHook(const nlohmann::json& body) {
   return std::nullopt;
 }
 
+bool HasHaHook(const ServerConfiguration& server) {
+  const auto service = server.arguments.find(server.service_name);
+  if (service == server.arguments.end() || !service->is_object()) return false;
+  const auto hooks = service->find("hooks-libraries");
+  if (hooks == service->end() || !hooks->is_array()) return false;
+  for (const auto& hook : *hooks) {
+    if (!hook.is_object()) continue;
+    const auto library = hook.find("library");
+    if (library != hook.end() && library->is_string() &&
+        BaseName(library->get_ref<const std::string&>()) == "libdhcp_ha.so")
+      return true;
+  }
+  return false;
+}
+
 bool IsXmlText(std::string_view value) {
   for (std::size_t offset = 0; offset < value.size();) {
     const auto first = static_cast<unsigned char>(value[offset]);
@@ -2100,14 +2115,133 @@ std::optional<std::string> TranslateOperationalState(
   return state;
 }
 
+std::optional<std::string> TranslateHaOperationalState(
+    std::string_view module_name, const nlohmann::json& status,
+    std::string* error, std::size_t maximum_xml_bytes) {
+  if (error) error->clear();
+  std::string_view family;
+  if (module_name == "kea-dhcp4-server")
+    family = "dhcpv4";
+  else if (module_name == "kea-dhcp6-server")
+    family = "dhcpv6";
+  if (family.empty()) {
+    if (error) *error = "unsupported Kea module";
+    return std::nullopt;
+  }
+  std::string reason;
+  if (!CommandSucceeded(status, &reason)) {
+    if (error) *error = "Kea status-get failed: " + reason;
+    return std::nullopt;
+  }
+  const nlohmann::json* answer = Answer(status);
+  try {
+    if (!answer) throw std::runtime_error("ambiguous command response");
+    const auto& arguments = answer->at("arguments");
+    if (!arguments.is_object())
+      throw std::runtime_error("arguments is not an object");
+    // This translator is called only for an accepted image containing the HA
+    // hook. The corresponding status member is therefore required, as is its
+    // complete portable shape, so missing or partial state cannot look valid.
+    const auto found = arguments.find("high-availability");
+    if (found == arguments.end())
+      throw std::runtime_error("high-availability is missing");
+    if (!found->is_array())
+      throw std::runtime_error("high-availability is not an array");
+    std::string xml;
+    for (std::size_t index = 0; index < found->size(); ++index) {
+      if (index > std::numeric_limits<std::uint32_t>::max())
+        throw std::runtime_error("relationship index exceeds uint32");
+      const auto& relationship = found->at(index);
+      const auto& servers = relationship.at("ha-servers");
+      const auto& local = servers.at("local");
+      const auto& remote = servers.at("remote");
+      if (!relationship.is_object() || !servers.is_object() ||
+          !local.is_object() || !remote.is_object())
+        throw std::runtime_error("relationship members are not objects");
+      const auto string_value = [&](const nlohmann::json& object,
+                                    std::string_view key) -> std::string {
+        const auto& value = object.at(std::string(key));
+        if (!value.is_string())
+          throw std::runtime_error(std::string(key) + " is not a string");
+        auto escaped = XmlText(value.get_ref<const std::string&>(), key, error);
+        if (!escaped) throw std::runtime_error("invalid " + std::string(key));
+        return *escaped;
+      };
+      const auto bool_value = [](const nlohmann::json& object,
+                                 std::string_view key) {
+        const auto& value = object.at(std::string(key));
+        if (!value.is_boolean())
+          throw std::runtime_error(std::string(key) + " is not a boolean");
+        return value.get<bool>();
+      };
+      const auto append_scopes =
+          [&](const nlohmann::json& object, std::string_view key,
+              std::string_view element, std::string* destination) {
+            const auto scopes = object.find(std::string(key));
+            if (scopes == object.end()) return;
+            if (!scopes->is_array())
+              throw std::runtime_error(std::string(key) + " is not an array");
+            for (const auto& scope : *scopes) {
+              if (!scope.is_string())
+                throw std::runtime_error(std::string(key) +
+                                         " contains a non-string scope");
+              auto escaped =
+                  XmlText(scope.get_ref<const std::string&>(), key, error);
+              if (!escaped)
+                throw std::runtime_error("invalid " + std::string(key));
+              *destination += "<" + std::string(element) + ">" + *escaped +
+                              "</" + std::string(element) + ">";
+            }
+          };
+      // Keep Kea's relationship position only as a key within one accepted
+      // daemon image. Server names remain visible as the operator-facing
+      // identity because reordering HA configuration can change this index.
+      std::string entry =
+          "<relationship><address-family>" + std::string(family) +
+          "</address-family><relationship-id>" + std::to_string(index) +
+          "</relationship-id><mode>" + string_value(relationship, "ha-mode") +
+          "</mode><local>" + "<server-name>" +
+          string_value(local, "server-name") + "</server-name><role>" +
+          string_value(local, "role") + "</role><state>" +
+          string_value(local, "state") + "</state>";
+      append_scopes(local, "scopes", "scope", &entry);
+      entry +=
+          "</local><remote><server-name>" +
+          string_value(remote, "server-name") + "</server-name><role>" +
+          string_value(remote, "role") + "</role><in-touch>" +
+          (bool_value(remote, "in-touch") ? "true" : "false") +
+          "</in-touch><communication-interrupted>" +
+          (bool_value(remote, "communication-interrupted") ? "true" : "false") +
+          "</communication-interrupted><last-state>" +
+          string_value(remote, "last-state") + "</last-state>";
+      append_scopes(remote, "last-scopes", "last-scope", &entry);
+      entry += "</remote></relationship>";
+      // Enforce the host's allowance incrementally. A malicious or malformed
+      // daemon cannot force construction of an oversized intermediate tree.
+      if (entry.size() > maximum_xml_bytes - xml.size()) {
+        if (error) *error = "Kea HA operational XML exceeds the byte limit";
+        return std::nullopt;
+      }
+      xml += entry;
+    }
+    return xml;
+  } catch (const std::exception& exception) {
+    if (error && error->empty())
+      *error = std::string("invalid Kea HA status reply: ") + exception.what();
+    return std::nullopt;
+  }
+}
+
 std::optional<std::string> CollectAuthoritativeOperationalState(
     const ServerConfiguration& expected, bool dhcp6,
     const std::vector<std::uint32_t>& subnet_ids, const ControlQuery& query,
-    std::string* failure_path, std::string* error, const PageLimits& limits) {
+    std::string* failure_path, std::string* error, const PageLimits& limits,
+    std::string* ha_operational_xml) {
   const auto at = [failure_path](std::string_view path) {
     if (failure_path) *failure_path = path;
   };
 
+  if (ha_operational_xml) ha_operational_xml->clear();
   if (!query || limits.page_size == 0 || limits.maximum_pages == 0 ||
       limits.maximum_items == 0 || limits.maximum_bytes == 0 ||
       limits.maximum_xml_bytes == 0 ||
@@ -2195,10 +2329,45 @@ std::optional<std::string> CollectAuthoritativeOperationalState(
   if (!account(hosts->at("arguments").at("hosts"), "reservation entry"))
     return std::nullopt;
 
+  std::string ha_state;
+  if (HasHaHook(expected)) {
+    at("ha-state");
+    auto status = bounded_query(expected.socket_path, "status-get",
+                                nlohmann::json::object(), error);
+    if (!status) return std::nullopt;
+    std::string encoded;
+    try {
+      encoded = status->dump();
+    } catch (const std::exception& exception) {
+      if (error)
+        *error =
+            std::string("invalid Kea HA status reply: ") + exception.what();
+      return std::nullopt;
+    }
+    if (encoded.size() > limits.maximum_bytes - state_bytes) {
+      if (error) *error = "Kea operational collection exceeds the byte limit";
+      return std::nullopt;
+    }
+    state_bytes += encoded.size();
+    auto translated = TranslateHaOperationalState(
+        expected.module_name, *status, error, limits.maximum_xml_bytes);
+    if (!translated) return std::nullopt;
+    const nlohmann::json* status_answer = Answer(*status);
+    const auto& relationships =
+        status_answer->at("arguments").at("high-availability");
+    if (relationships.size() > limits.maximum_items - state_items) {
+      if (error) *error = "Kea operational collection exceeds the item limit";
+      return std::nullopt;
+    }
+    state_items += relationships.size();
+    ha_state = std::move(*translated);
+  }
+
   at("state");
   auto state = TranslateOperationalState(expected.module_name, *leases,
                                          *statistics, *hosts, error,
-                                         limits.maximum_xml_bytes);
+                                         limits.maximum_xml_bytes -
+                                             ha_state.size());
   if (!state) return std::nullopt;
   if (state->size() > limits.maximum_xml_bytes) {
     if (error) *error = "Kea operational XML exceeds the byte limit";
@@ -2211,6 +2380,7 @@ std::optional<std::string> CollectAuthoritativeOperationalState(
   at("config");
   if (!VerifyLiveConfiguration(expected, bounded_query, error))
     return std::nullopt;
+  if (ha_operational_xml) *ha_operational_xml = std::move(ha_state);
   if (failure_path) failure_path->clear();
   return state;
 }

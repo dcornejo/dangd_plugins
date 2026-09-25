@@ -4,10 +4,11 @@
 #ifndef DANG_PLUGINS_KEA_MODEL_SOURCES_H_
 #define DANG_PLUGINS_KEA_MODEL_SOURCES_H_
 
-/** Official Kea model sources embedded to make plugin loading deterministic. */
+/** Kea and companion model sources embedded for deterministic loading. */
 inline constexpr char kKeaTypesYang[] = R"kea_yang(@KEA_TYPES_YANG@)kea_yang";
 inline constexpr char kKeaDhcpTypesYang[] = R"kea_yang(@KEA_DHCP_TYPES_YANG@)kea_yang";
 inline constexpr char kKeaDhcp4Yang[] = R"kea_yang(@KEA_DHCP4_YANG@)kea_yang";
 inline constexpr char kKeaDhcp6Yang[] = R"kea_yang(@KEA_DHCP6_YANG@)kea_yang";
+inline constexpr char kDangKeaHaYang[] = R"kea_yang(@DANG_KEA_HA_YANG@)kea_yang";
 
 #endif  // DANG_PLUGINS_KEA_MODEL_SOURCES_H_

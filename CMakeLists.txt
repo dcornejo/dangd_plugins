@@ -83,6 +83,7 @@ file(READ plugins/kea/models/kea-types@2025-06-25.yang KEA_TYPES_YANG)
 file(READ plugins/kea/models/kea-dhcp-types@2026-06-24.yang KEA_DHCP_TYPES_YANG)
 file(READ plugins/kea/models/kea-dhcp4-server@2026-06-24.yang KEA_DHCP4_YANG)
 file(READ plugins/kea/models/kea-dhcp6-server@2026-06-24.yang KEA_DHCP6_YANG)
+file(READ plugins/kea/models/dang-kea-ha@2026-09-24.yang DANG_KEA_HA_YANG)
 configure_file(plugins/kea/src/kea_model_sources.h.in
   generated/kea_model_sources.h @ONLY)
 
@@ -334,6 +335,9 @@ if(BUILD_TESTING)
   add_test(NAME kea_plugin_discovery
     COMMAND plugin_loader_smoke_test $<TARGET_FILE:dangd_kea_plugin>
       dang-kea kea-types)
+  add_test(NAME kea_ha_plugin_discovery
+    COMMAND plugin_loader_smoke_test $<TARGET_FILE:dangd_kea_plugin>
+      dang-kea dang-kea-ha)
   add_test(NAME ip_management_plugin_discovery
     COMMAND plugin_loader_smoke_test $<TARGET_FILE:dangd_ip_management_plugin>
       dangd-ip-management ietf-ip)
@@ -400,6 +404,9 @@ if(BUILD_TESTING)
 
   find_program(DANG_YANGLINT_EXECUTABLE yanglint)
   if(DANG_YANGLINT_EXECUTABLE)
+    add_test(NAME kea_ha_operational_schema
+      COMMAND "${DANG_YANGLINT_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/plugins/kea/models/dang-kea-ha@2026-09-24.yang")
     add_test(NAME vpp_ownership_schema
       COMMAND "${DANG_YANGLINT_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/plugins/vpp/models/dang-vpp-interface-ownership@2026-09-06.yang")
@@ -740,6 +747,7 @@ install(FILES
   plugins/kea/models/kea-dhcp-types@2026-06-24.yang
   plugins/kea/models/kea-dhcp4-server@2026-06-24.yang
   plugins/kea/models/kea-dhcp6-server@2026-06-24.yang
+  plugins/kea/models/dang-kea-ha@2026-09-24.yang
   DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules"
   COMPONENT kea)
 install(FILES

@@ -557,6 +557,30 @@ int main(int argc, char** argv) {
     valid = NativeCommand(std::getenv("DANG_KEA_DHCP6_SOCKET"),
                           "ha-heartbeat",
                           {{"server-name", "local-primary"}});
+  if (valid && ha_member) {
+    DangOperationalDataV2 state{};
+    valid = plugin5->get_operational_data_v2(plugin->context, &state, &error) ||
+            Report("HA operational", error);
+    const std::string xml = valid && state.data_xml ? state.data_xml : "";
+    valid = valid && state.complete == 1 &&
+            xml.find("<high-availability xmlns=\"urn:dang:kea:ha\">") !=
+                std::string::npos &&
+            (!dhcp4_enabled ||
+             xml.find("<address-family>dhcpv4</address-family>") !=
+                 std::string::npos) &&
+            (!dhcp6_enabled ||
+             xml.find("<address-family>dhcpv6</address-family>") !=
+                 std::string::npos) &&
+            xml.find("<mode>hot-standby</mode>") != std::string::npos &&
+            xml.find("<server-name>local-primary</server-name>") !=
+                std::string::npos &&
+            xml.find("<state>waiting</state>") != std::string::npos &&
+            xml.find("<server-name>remote-standby</server-name>") !=
+                std::string::npos &&
+            xml.find("<in-touch>false</in-touch>") != std::string::npos;
+    if (!valid)
+      std::cerr << "HA operational XML is incomplete: " << xml << '\n';
+  }
   if (valid && !expected_validate_failure && expected_rollback_failure) {
     const char* socket = SocketForModule(expected_rollback_failure);
     valid = socket && *socket && ::unlink(socket) == 0;

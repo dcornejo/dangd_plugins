@@ -7,8 +7,9 @@
 one of either family through local UNIX control sockets. It embeds the official
 Kea 3.2.0
 `kea-dhcp4-server` and `kea-dhcp6-server` modules at revision 2026-06-24 plus
-their pinned Kea type modules. The original model files retain ISC's MPL-2.0
-license notices; the adapter code is Apache-2.0.
+their pinned Kea type modules. It also provides the read-only `dang-kea-ha`
+module for local-member HA status. The original model files retain ISC's
+MPL-2.0 license notices; the companion model and adapter code are Apache-2.0.
 
 ## Dependencies and installation
 
@@ -250,18 +251,19 @@ continuation cursor. It rejects malformed counts, oversized pages, repeated
 cursors including non-adjacent cycles, and oversized inventories. One
 production daemon-state read has shared limits of 512 state control queries,
 65,536 state entries, 8 MiB of encoded native entry data, and 30 seconds across
-lease pages, per-subnet statistics, and reservation pages; the two authority
-checks are also inside that deadline. The deadline is checked both before and
-after every control call, so a slow final reply cannot be accepted after the
-budget. Each individual control exchange retains its five-second and 16 MiB
-limits. The final modeled document is independently limited to 16 MiB to match
-dangd's operational callback boundary. DHCPv4 and DHCPv6 consume one shared
+lease pages, per-subnet statistics, reservation pages, and HA status; the two
+authority checks are also inside that deadline. The deadline is checked both
+before and after every control call, so a slow final reply cannot be accepted
+after the budget. Each individual control exchange retains its five-second and
+16 MiB limits. The final modeled document is independently limited to 16 MiB
+to match dangd's operational callback boundary. DHCPv4 and DHCPv6 consume one shared
 XML allowance, including the NETCONF data wrapper, so escaping and base64
 expansion cannot multiply the accepted native-data budget into an oversized
 provider result. Translation checks the remaining allowance after every lease,
-statistics row, and reservation. It assembles the already-bounded fragments
-directly into the final state string, avoiding an unbounded complete document
-or chained concatenation temporaries before rejection.
+statistics row, reservation, and HA relationship. It assembles the
+already-bounded fragments directly into the final state string, avoiding an
+unbounded complete document or chained concatenation temporaries before
+rejection.
 Unexpected exceptions from the control-query implementation are contained as
 retrieval failures and cannot cross the plugin callback boundary.
 The portable adapter test holds a synthetic peer open until the client reports
@@ -321,12 +323,19 @@ requires their managed values to match dangd's persisted snapshot before
 rebuilding the subnet inventories. Unavailable or drifted startup state
 therefore blocks operational publication instead of silently blessing intent
 as applied state.
-The pinned modules declare no
-RPC or notification surface.
-They also do not model HA runtime status. A configured local HA member is
-validated, applied, and reconciled through its native hook configuration, but
-the plugin does not currently publish the relationship state, peer liveness,
-service scopes, or synchronization progress as YANG operational data.
+The pinned ISC modules declare no RPC or notification surface and do not model
+HA runtime status. The plugin therefore advertises its own read-only
+`dang-kea-ha` module. When the accepted image loads `libdhcp_ha.so`, the same
+authoritative read that collects leases and reservations also calls
+`status-get` and publishes each DHCPv4 or DHCPv6 relationship's mode, local
+name, role, state-machine phase and service scopes, plus the peer name, role,
+reachability, interrupted-communication flag, last state, and last scopes.
+The status query is omitted when the accepted image has no HA hook. A missing,
+rejected, malformed, oversized, or late HA reply fails the complete operational
+request at `/{urn:dang:kea:ha}high-availability`; raw native JSON is never
+inserted into NETCONF data. Kea does not report a portable synchronization
+percentage in this response, so synchronization progress beyond these states
+and scopes remains unmodeled.
 
 The plugin deliberately exposes one ABI-v4 hardware action for the entire Kea
 transaction. This preserves atomic compensation across Kea's own
@@ -472,9 +481,11 @@ collection, and rollback while the other family has no configured target or
 datastore tree.
 It additionally loads the packaged HA hook into both daemons, applies a local
 hot-standby member configuration, verifies native `ha-heartbeat` command
-registration after reconciliation, and rolls the transaction back. The peer
-endpoint stays unreachable on the isolated documentation subnet, deliberately
-testing local-member management without implying pair-wide success.
+registration after reconciliation, retrieves both relationships through the
+modeled `dang-kea-ha` operational tree, and rolls the transaction back. The
+peer endpoint stays unreachable on the isolated documentation subnet, so the
+test requires `in-touch=false`; this deliberately tests local-member management
+without implying pair-wide success.
 Before that transaction matrix, each script exercises dangd's real startup
 shape with an empty before-image and the persisted Kea datastore as the
 candidate. Success proves that both native boot configurations were captured,

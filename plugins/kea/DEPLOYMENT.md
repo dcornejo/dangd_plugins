@@ -74,14 +74,22 @@ when constructing that JSON.
 
 Native Linux and FreeBSD tests load the packaged HA hook for DHCPv4 and DHCPv6,
 apply and read back a hot-standby local-member image, call `ha-heartbeat` through
-the managed UNIX socket, and restore the non-HA image. The remote peer is
-deliberately absent, so this proves local hook lifecycle and command support,
-not replication or failover.
+the managed UNIX socket, retrieve modeled status, and restore the non-HA image.
+The remote peer is deliberately absent, so the test requires native and
+modeled peer reachability to be false. This proves local hook lifecycle,
+command support, and status translation, not replication or failover.
 
-The pinned YANG modules do not expose HA relationship status. Peer liveness,
-state-machine phase, service scopes, and synchronization progress are therefore
-not yet available as modeled operational data. Adding that state requires a
-documented augmentation rather than placing unmodeled JSON in NETCONF replies.
+The pinned ISC modules do not expose HA relationship status. The companion
+`dang-kea-ha` module fills that model gap without changing their configuration
+schema. Its read-only `high-availability/relationship` list is keyed by address
+family and Kea's zero-based relationship position, and publishes mode, local
+name/role/state/scopes, and remote name/role/reachability/last-state/scopes.
+The numeric relationship ID is stable only until that daemon's accepted HA
+configuration changes; use the reported server names for operator-facing
+identity. Collection occurs between the same two complete configuration checks
+as lease state and fails closed if the native status is missing or malformed.
+Kea's portable status reply does not contain a synchronization percentage, so
+that detail remains unavailable.
 
 The second is pair-wide management: one logical commit controls both peers.
 That is not implemented. It requires authenticated remote control, stable peer

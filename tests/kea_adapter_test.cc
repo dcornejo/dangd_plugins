@@ -308,6 +308,115 @@ int main() {
                      ha_relationship->at("peers").at(1).at("role") ==
                          "standby",
                  "HA member parameters were not preserved as native JSON");
+  const nlohmann::json ha_status = nlohmann::json::parse(R"json({
+    "result": 0,
+    "arguments": {"high-availability": [{
+      "ha-mode": "hot-standby",
+      "ha-servers": {
+        "local": {"server-name": "primary&one", "role": "primary",
+                  "state": "waiting", "scopes": ["scope<1"]},
+        "remote": {"server-name": "standby", "role": "standby",
+                   "in-touch": false, "communication-interrupted": true,
+                   "last-state": "ready", "last-scopes": ["scope&2"]}
+      }
+    }]}
+  })json");
+  error.clear();
+  auto ha_state = dang::plugins::kea::TranslateHaOperationalState(
+      "kea-dhcp4-server", ha_status, &error);
+  valid &= Check(
+      ha_state &&
+          ha_state->find("<address-family>dhcpv4</address-family>") !=
+              std::string::npos &&
+          ha_state->find("<server-name>primary&amp;one</server-name>") !=
+              std::string::npos &&
+          ha_state->find("<scope>scope&lt;1</scope>") != std::string::npos &&
+          ha_state->find("<communication-interrupted>true"
+                         "</communication-interrupted>") != std::string::npos &&
+          ha_state->find("<last-scope>scope&amp;2</last-scope>") !=
+              std::string::npos,
+      "portable HA status was not translated or XML-escaped");
+  nlohmann::json malformed_ha_status = ha_status;
+  malformed_ha_status["arguments"]["high-availability"][0]["ha-servers"]
+                     ["remote"]["in-touch"] = "false";
+  error.clear();
+  valid &=
+      Check(!dang::plugins::kea::TranslateHaOperationalState(
+                "kea-dhcp6-server", malformed_ha_status, &error) &&
+                error.find("in-touch is not a boolean") != std::string::npos,
+            "malformed HA peer reachability was accepted");
+  error.clear();
+  valid &= Check(!dang::plugins::kea::TranslateHaOperationalState(
+                     "kea-dhcp4-server", ha_status, &error, 1) &&
+                     error.find("exceeds the byte limit") != std::string::npos,
+                 "oversized HA operational XML was accepted");
+  error.clear();
+  valid &= Check(!dang::plugins::kea::TranslateHaOperationalState(
+                      "kea-dhcp4-server",
+                      nlohmann::json{{"result", 0},
+                                     {"arguments", nlohmann::json::object()}},
+                      &error) &&
+                     error.find("high-availability is missing") !=
+                         std::string::npos,
+                 "missing HA status was accepted for an HA relationship");
+  const dang::plugins::kea::ControlQuery ha_operational_read =
+      [&](std::string_view, std::string_view command, const nlohmann::json&,
+          std::string*) -> std::optional<nlohmann::json> {
+    if (command == "config-get")
+      return OptionalJson(
+          nlohmann::json{{"result", 0}, {"arguments", ha_member->arguments}});
+    if (command == "lease4-get-page" || command == "reservation-get-page")
+      return OptionalJson(nlohmann::json{{"result", 3}});
+    if (command == "status-get") return OptionalJson(ha_status);
+    return std::nullopt;
+  };
+  std::string ha_failure_path;
+  std::string collected_ha_state;
+  error.clear();
+  auto authoritative_ha_state =
+      dang::plugins::kea::CollectAuthoritativeOperationalState(
+          *ha_member, false, {}, ha_operational_read, &ha_failure_path, &error,
+          {}, &collected_ha_state);
+  valid &= Check(authoritative_ha_state && !collected_ha_state.empty() &&
+                     ha_failure_path.empty(),
+                 "HA status was not collected inside the authority checks");
+  nlohmann::json two_ha_relationships = ha_status;
+  two_ha_relationships["arguments"]["high-availability"].push_back(
+      two_ha_relationships["arguments"]["high-availability"].front());
+  const dang::plugins::kea::ControlQuery item_limited_ha_read =
+      [&](std::string_view socket, std::string_view command,
+          const nlohmann::json& arguments,
+          std::string* query_error) -> std::optional<nlohmann::json> {
+    if (command == "status-get") return OptionalJson(two_ha_relationships);
+    return ha_operational_read(socket, command, arguments, query_error);
+  };
+  ha_failure_path.clear();
+  collected_ha_state = "stale";
+  error.clear();
+  valid &= Check(
+      !dang::plugins::kea::CollectAuthoritativeOperationalState(
+          *ha_member, false, {}, item_limited_ha_read, &ha_failure_path,
+          &error,
+          {.maximum_items = 1}, &collected_ha_state) &&
+          ha_failure_path == "ha-state" && collected_ha_state.empty() &&
+          error.find("exceeds the item limit") != std::string::npos,
+      "HA relationships bypassed the shared operational item limit");
+  const dang::plugins::kea::ControlQuery malformed_ha_operational_read =
+      [&](std::string_view, std::string_view command,
+          const nlohmann::json& arguments,
+          std::string* query_error) -> std::optional<nlohmann::json> {
+    if (command == "status-get") return OptionalJson(malformed_ha_status);
+    return ha_operational_read({}, command, arguments, query_error);
+  };
+  ha_failure_path.clear();
+  collected_ha_state = "stale";
+  error.clear();
+  valid &=
+      Check(!dang::plugins::kea::CollectAuthoritativeOperationalState(
+                *ha_member, false, {}, malformed_ha_operational_read,
+                &ha_failure_path, &error, {}, &collected_ha_state) &&
+                ha_failure_path == "ha-state" && collected_ha_state.empty(),
+            "malformed HA state lost its path or left stale output");
   constexpr char scalar_context_xml[] = R"xml(
     <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
       <user-context>"not-a-map"</user-context>

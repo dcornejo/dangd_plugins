@@ -9,6 +9,17 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added modeled Kea local-member HA operational state. The new read-only
+  `dang-kea-ha` module publishes DHCP family and relationship identity, HA mode,
+  local role/state/scopes, and peer role/reachability/last-state/scopes from
+  native `status-get` replies. Collection occurs inside the existing opening
+  and closing configuration-authority checks, shares the complete query, item,
+  byte, time, and XML budgets, and fails closed with a model path for malformed
+  or unavailable status. Portable tests cover translation, XML escaping,
+  malformed types, output clearing, and limits; native Linux Kea 3.0.3 and
+  FreeBSD Kea 3.2.0 workflows verify the same schema against real hot-standby
+  members.
+
 - Added explicit local-member Kea HA support and validation. HA hook parameters
   remain authoritative JSON in the pinned Kea model and are preserved exactly
   in native configuration. Portable tests verify nested relationship and peer
@@ -17,7 +28,7 @@ All notable changes to the external dangd plugin collection are recorded here.
   configurations, invoke the registered `ha-heartbeat` command, and roll back
   both daemons. Documentation distinguishes this supported one-dangd-per-member
   layout from unimplemented pair-wide atomic management and records the
-  remaining HA state-modeling gap.
+  remaining pair-wide transaction and synchronization-progress gaps.
 
 - Added real single-stack Kea support. The plugin now captures a stable target
   inventory containing DHCPv4, DHCPv6, or both, and all accepted state,

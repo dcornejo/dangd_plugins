@@ -114,6 +114,12 @@ using ConfigurationCommand = std::function<bool(
     std::string* error,
     std::size_t maximum_xml_bytes = std::numeric_limits<std::size_t>::max());
 
+/** Converts a successful Kea status-get reply to dang-kea-ha list entries. */
+[[nodiscard]] std::optional<std::string> TranslateHaOperationalState(
+    std::string_view module_name, const nlohmann::json& status,
+    std::string* error,
+    std::size_t maximum_xml_bytes = std::numeric_limits<std::size_t>::max());
+
 /**
  * Collects one daemon's modeled state between two authority checks.
  * failure_path identifies the configuration or state subtree responsible for
@@ -121,13 +127,14 @@ using ConfigurationCommand = std::function<bool(
  * configuration changed or became unavailable during the multi-command read.
  * PageLimits bound the aggregate state entries, native bytes, modeled XML,
  * queries, and duration rather than restarting for leases, statistics, and
- * reservations.
+ * reservations and HA status. When supplied, ha_operational_xml receives the
+ * dang-kea-ha relationship entries separately from the ISC module state.
  */
 [[nodiscard]] std::optional<std::string> CollectAuthoritativeOperationalState(
     const ServerConfiguration& expected, bool dhcp6,
     const std::vector<std::uint32_t>& subnet_ids, const ControlQuery& query,
     std::string* failure_path, std::string* error,
-    const PageLimits& limits = {});
+    const PageLimits& limits = {}, std::string* ha_operational_xml = nullptr);
 
 /** Extracts Kea's result/text fields and accepts only result code zero. */
 [[nodiscard]] bool CommandSucceeded(const nlohmann::json& response,

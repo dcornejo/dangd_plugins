@@ -112,6 +112,9 @@ thread_local std::array<char, 1024> unexpected_callback_error;
 // buffer. The remaining allowance is shared by the DHCPv4 and DHCPv6 trees.
 constexpr std::size_t kMaximumOperationalXmlBytes = 16U * 1024U * 1024U;
 constexpr std::string_view kOperationalClose = "</data>";
+constexpr std::string_view kHaOperationalOpen =
+    "<high-availability xmlns=\"urn:dang:kea:ha\">";
+constexpr std::string_view kHaOperationalClose = "</high-availability>";
 
 // Operational state must describe only configuration accepted by dangd and
 // known to have reached Kea. Preparing or validating a candidate therefore
@@ -305,7 +308,7 @@ int Guard(std::string_view name, DangPluginErrorV1* error,
       });
 }
 
-size_t SourceCount(void*) { return 4; }
+size_t SourceCount(void*) { return 5; }
 
 int SourceAtImpl(void*, size_t index, DangYangSourceV1* source,
                  DangPluginErrorV1* error) {
@@ -334,6 +337,11 @@ int SourceAtImpl(void*, size_t index, DangYangSourceV1* source,
        std::strlen(kKeaDhcp6Yang),
        "https://gitlab.isc.org/isc-projects/kea/-/blob/Kea-3.2.0/"
        "src/share/yang/modules/kea-dhcp6-server%402026-06-24.yang",
+       DANG_YANG_IMPLEMENTED_V1, nullptr, 0},
+      {"dang-kea-ha", "2026-09-24", kDangKeaHaYang,
+       std::strlen(kDangKeaHaYang),
+       "https://github.com/dcornejo/dang_plugins/blob/main/plugins/kea/models/"
+       "dang-kea-ha%402026-09-24.yang",
        DANG_YANG_IMPLEMENTED_V1, nullptr, 0}};
   if (index >= std::size(sources)) {
     SetError(error, "the YANG source index is out of range");
@@ -614,6 +622,10 @@ int OperationalImpl(void* opaque_context, DangOperationalDataV1* result,
   }
   operational_xml =
       "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">";
+  // The ISC state containers and dang-owned HA companion tree have different
+  // namespaces and must be sibling top-level data nodes. Accumulate only the
+  // list entries here, then emit one companion container after all targets.
+  std::string ha_entries;
   for (std::size_t index = 0; index < accepted.configurations.size(); ++index) {
     const auto& configuration = accepted.configurations[index];
     const auto& target = context.targets[index];
@@ -626,7 +638,10 @@ int OperationalImpl(void* opaque_context, DangOperationalDataV1* result,
     }
     std::string reason;
     std::string failure_path;
-    if (operational_xml.size() + kOperationalClose.size() >=
+    const std::size_t fixed_tail = kOperationalClose.size() +
+                                   kHaOperationalOpen.size() +
+                                   kHaOperationalClose.size();
+    if (operational_xml.size() + ha_entries.size() + fixed_tail >=
         kMaximumOperationalXmlBytes) {
       SetError(error,
                module +
@@ -637,17 +652,27 @@ int OperationalImpl(void* opaque_context, DangOperationalDataV1* result,
     }
     PageLimits limits;
     limits.maximum_xml_bytes = kMaximumOperationalXmlBytes -
-        operational_xml.size() - kOperationalClose.size();
+        operational_xml.size() - ha_entries.size() - fixed_tail;
+    std::string ha_state;
     auto state = CollectAuthoritativeOperationalState(
         configuration, target.dhcp6, accepted.subnet_ids[index],
-        SendControlQuery, &failure_path, &reason, limits);
+        SendControlQuery, &failure_path, &reason, limits, &ha_state);
     if (!state) {
-      SetError(error, module + std::string(": ") + reason,
-               "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +
-                   "}" + failure_path);
+      const std::string path =
+          failure_path == "ha-state"
+              ? "/{urn:dang:kea:ha}high-availability"
+              : "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +
+                    "}" + failure_path;
+      SetError(error, module + std::string(": ") + reason, path);
       return 0;
     }
     operational_xml += *state;
+    ha_entries += ha_state;
+  }
+  if (!ha_entries.empty()) {
+    operational_xml += kHaOperationalOpen;
+    operational_xml += ha_entries;
+    operational_xml += kHaOperationalClose;
   }
   operational_xml += kOperationalClose;
   result->data_xml = operational_xml.c_str();

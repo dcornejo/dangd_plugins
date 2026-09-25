@@ -1,0 +1,120 @@
+module dang-kea-ha {
+  yang-version 1.1;
+  namespace "urn:dang:kea:ha";
+  prefix dang-kea-ha;
+
+  organization "dang project";
+  contact "https://github.com/dcornejo/dang_plugins";
+  description
+    "Read-only operational state for Kea high-availability relationships.
+
+     Kea's official DHCP server models carry HA hook configuration as an
+     opaque JSON parameters leaf.  This companion model deliberately does
+     not duplicate or replace that authoritative configuration.  It exposes
+     the portable subset of the native status-get reply that dangd can verify
+     across supported Kea installations.";
+
+  revision 2026-09-24 {
+    description
+      "Initial local-member HA operational state.";
+  }
+
+  typedef address-family {
+    type enumeration {
+      enum dhcpv4 {
+        description "The relationship belongs to a Kea DHCPv4 daemon.";
+      }
+      enum dhcpv6 {
+        description "The relationship belongs to a Kea DHCPv6 daemon.";
+      }
+    }
+    description "Kea daemon family that owns an HA relationship.";
+  }
+
+  container high-availability {
+    config false;
+    description
+      "Live status for HA relationships on locally managed Kea daemons.
+       Absence means the accepted daemon image has no HA hook relationship.";
+
+    list relationship {
+      key "address-family relationship-id";
+      description
+        "One relationship reported by a local Kea daemon.  The numeric ID is
+         its position in Kea's status reply and is stable only until that
+         daemon's accepted HA configuration changes.";
+
+      leaf address-family {
+        type address-family;
+        description "Address family served by the reporting daemon.";
+      }
+      leaf relationship-id {
+        type uint32;
+        description "Zero-based relationship index in the native reply.";
+      }
+      leaf mode {
+        type string;
+        mandatory true;
+        description
+          "Kea HA mode, retained as text so newer native modes remain
+           observable without a schema revision.";
+      }
+
+      container local {
+        description "Status of the locally managed member.";
+        leaf server-name {
+          type string;
+          mandatory true;
+          description "Kea name of the local member.";
+        }
+        leaf role {
+          type string;
+          mandatory true;
+          description "Configured HA role reported for the local member.";
+        }
+        leaf state {
+          type string;
+          mandatory true;
+          description "Current Kea HA state-machine state.";
+        }
+        leaf-list scope {
+          type string;
+          description "Current HA service scopes owned by the local member.";
+        }
+      }
+
+      container remote {
+        description "Last known status of the relationship peer.";
+        leaf server-name {
+          type string;
+          mandatory true;
+          description "Kea name of the remote member.";
+        }
+        leaf role {
+          type string;
+          mandatory true;
+          description "Configured HA role reported for the remote member.";
+        }
+        leaf in-touch {
+          type boolean;
+          mandatory true;
+          description "Whether Kea currently considers the peer reachable.";
+        }
+        leaf communication-interrupted {
+          type boolean;
+          mandatory true;
+          description "Whether Kea reports interrupted peer communication.";
+        }
+        leaf last-state {
+          type string;
+          mandatory true;
+          description "Last peer state observed by the local member.";
+        }
+        leaf-list last-scope {
+          type string;
+          description "Last HA service scopes observed for the peer.";
+        }
+      }
+    }
+  }
+}
