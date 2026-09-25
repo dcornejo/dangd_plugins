@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+  <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp4-server">
+    <interfaces-config><interfaces>dangkea0</interfaces><dhcp-socket-type>udp</dhcp-socket-type></interfaces-config>
+    <control-sockets><socket-type>unix</socket-type><socket-name>/var/run/kea/kea4-ctrl-socket</socket-name></control-sockets>
+    <lease-database><database-type>memfile</database-type><persist>false</persist></lease-database>
+    <valid-lifetime>600</valid-lifetime>
+    <hook-library><library>@KEA_HOOK_DIR@/libdhcp_lease_cmds.so</library></hook-library>
+    <hook-library><library>@KEA_HOOK_DIR@/libdhcp_stat_cmds.so</library></hook-library>
+    <hook-library><library>@KEA_HOOK_DIR@/libdhcp_host_cmds.so</library></hook-library>
+    <hook-library><library>@KEA_HOOK_DIR@/libdhcp_ha.so</library><parameters>{"high-availability":[{"this-server-name":"local-primary","mode":"passive-backup","wait-backup-ack":false,"peers":[{"name":"local-primary","url":"http://192.0.2.1:18124/","role":"primary"},{"name":"remote-backup","url":"http://192.0.2.2:18125/","role":"backup"}]}]}</parameters></hook-library>
+  </config>
+  <config xmlns="urn:ietf:params:xml:ns:yang:kea-dhcp6-server">
+    <interfaces-config><interfaces>dangkea0</interfaces></interfaces-config>
+    <control-sockets><socket-type>unix</socket-type><socket-name>/var/run/kea/kea6-ctrl-socket</socket-name></control-sockets>
+    <lease-database><database-type>memfile</database-type><persist>false</persist></lease-database>
+    <preferred-lifetime>300</preferred-lifetime><valid-lifetime>600</valid-lifetime>
+    <hook-library><library>@KEA_HOOK_DIR@/libdhcp_lease_cmds.so</library></hook-library>
+    <hook-library><library>@KEA_HOOK_DIR@/libdhcp_stat_cmds.so</library></hook-library>
+    <hook-library><library>@KEA_HOOK_DIR@/libdhcp_host_cmds.so</library></hook-library>
+    <hook-library><library>@KEA_HOOK_DIR@/libdhcp_ha.so</library><parameters>{"high-availability":[{"this-server-name":"local-primary","mode":"passive-backup","wait-backup-ack":false,"peers":[{"name":"local-primary","url":"http://192.0.2.1:18126/","role":"primary"},{"name":"remote-backup","url":"http://192.0.2.2:18127/","role":"backup"}]}]}</parameters></hook-library>
+  </config>
+</config>
+<!-- Copyright 2026 David Cornejo -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->

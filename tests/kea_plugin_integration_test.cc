@@ -233,6 +233,9 @@ int main(int argc, char** argv) {
   const bool empty_startup =
       std::getenv("DANG_KEA_EMPTY_STARTUP") != nullptr;
   const bool ha_member = std::getenv("DANG_KEA_HA_MEMBER") != nullptr;
+  const char* ha_mode_environment = std::getenv("DANG_KEA_HA_MODE");
+  const std::string_view ha_mode =
+      ha_mode_environment ? ha_mode_environment : "hot-standby";
   const bool expect_prepared_mismatch =
       std::getenv("DANG_KEA_EXPECT_PREPARED_MISMATCH") != nullptr;
   const bool expect_unapplied_reconcile =
@@ -571,13 +574,19 @@ int main(int argc, char** argv) {
             (!dhcp6_enabled ||
              xml.find("<address-family>dhcpv6</address-family>") !=
                  std::string::npos) &&
-            xml.find("<mode>hot-standby</mode>") != std::string::npos &&
+            xml.find("<mode>" + std::string(ha_mode) + "</mode>") !=
+                std::string::npos &&
             xml.find("<server-name>local-primary</server-name>") !=
                 std::string::npos &&
-            xml.find("<state>waiting</state>") != std::string::npos &&
-            xml.find("<server-name>remote-standby</server-name>") !=
-                std::string::npos &&
-            xml.find("<in-touch>false</in-touch>") != std::string::npos;
+            xml.find(ha_mode == "passive-backup"
+                         ? "<state>passive-backup</state>"
+                         : "<state>waiting</state>") != std::string::npos &&
+            (ha_mode == "passive-backup"
+                 ? xml.find("<remote>") == std::string::npos
+                 : xml.find("<server-name>remote-standby</server-name>") !=
+                           std::string::npos &&
+                       xml.find("<in-touch>false</in-touch>") !=
+                           std::string::npos);
     if (!valid)
       std::cerr << "HA operational XML is incomplete: " << xml << '\n';
   }

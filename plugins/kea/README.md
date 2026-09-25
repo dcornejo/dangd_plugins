@@ -479,13 +479,15 @@ The same native workflow also runs real IPv4-only and IPv6-only transactions.
 Each enabled daemon must complete validation, mutation, readback, operational
 collection, and rollback while the other family has no configured target or
 datastore tree.
-It additionally loads the packaged HA hook into both daemons, applies a local
-hot-standby member configuration, verifies native `ha-heartbeat` command
-registration after reconciliation, retrieves both relationships through the
-modeled `dang-kea-ha` operational tree, and rolls the transaction back. The
-peer endpoint stays unreachable on the isolated documentation subnet, so the
-test requires `in-touch=false`; this deliberately tests local-member management
-without implying pair-wide success.
+It additionally loads the packaged HA hook into both daemons, applies local
+hot-standby and passive-backup member configurations, verifies native
+`ha-heartbeat` command registration after reconciliation, retrieves both
+relationships through the modeled `dang-kea-ha` operational tree, and rolls
+each transaction back. The peer endpoint stays unreachable on the isolated
+documentation subnet, so hot-standby requires `in-touch=false`.
+Passive-backup has no singular active peer, so Kea omits its remote status map
+and the modeled relationship correspondingly omits `remote`. These cases test
+local-member management without implying pair-wide success.
 Before that transaction matrix, each script exercises dangd's real startup
 shape with an empty before-image and the persisted Kea datastore as the
 candidate. Success proves that both native boot configurations were captured,

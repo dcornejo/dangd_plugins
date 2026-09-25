@@ -26,7 +26,7 @@ cleanup() {
     /tmp/kea-before6-linux.xml /tmp/kea-proposed6-linux.xml \
     /tmp/kea-before4-only-linux.xml /tmp/kea-proposed4-only-linux.xml \
     /tmp/kea-before6-only-linux.xml /tmp/kea-proposed6-only-linux.xml \
-    /tmp/kea-proposed-ha-linux.xml \
+    /tmp/kea-proposed-ha-linux.xml /tmp/kea-proposed-ha-passive-linux.xml \
     /tmp/kea-proposed6-state-linux.xml \
     /tmp/kea-before-validation-linux.xml \
     /tmp/kea-proposed-validation-linux.xml \
@@ -118,6 +118,11 @@ sed -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
   -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
   "$root/tests/kea-proposed-ha.xml" \
   > /tmp/kea-proposed-ha-linux.xml
+sed -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
+  -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
+  -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
+  "$root/tests/kea-proposed-ha-passive.xml" \
+  > /tmp/kea-proposed-ha-passive-linux.xml
 sed "s#$socket6#$unavailable6#g" /tmp/kea-before6-linux.xml \
   > /tmp/kea-before-validation-linux.xml
 sed "s#$socket6#$unavailable6#g" /tmp/kea-proposed6-linux.xml \
@@ -279,6 +284,19 @@ DANG_KEA_DHCP6_SOCKET="$socket6" \
   ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-before-linux.xml \
   /tmp/kea-proposed-ha-linux.xml
+
+# Passive-backup has no singular active peer, so Kea intentionally omits the
+# remote status map. Prove that both daemons accept this native configuration
+# and that the modeled operational tree retains the local state without
+# inventing or requiring a remote member.
+DANG_KEA_HA_MEMBER=1 \
+DANG_KEA_HA_MODE=passive-backup \
+DANG_KEA_SKIP_OPERATIONAL=1 \
+DANG_KEA_DHCP4_SOCKET="$socket4" \
+DANG_KEA_DHCP6_SOCKET="$socket6" \
+  ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before-linux.xml \
+  /tmp/kea-proposed-ha-passive-linux.xml
 
 # Exercise a genuinely single-stack process inventory. The absent family has
 # neither an endpoint nor a datastore tree, while the enabled daemon completes

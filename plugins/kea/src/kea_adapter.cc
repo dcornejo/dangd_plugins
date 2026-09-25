@@ -2152,11 +2152,11 @@ std::optional<std::string> TranslateHaOperationalState(
       if (index > std::numeric_limits<std::uint32_t>::max())
         throw std::runtime_error("relationship index exceeds uint32");
       const auto& relationship = found->at(index);
+      if (!relationship.is_object())
+        throw std::runtime_error("relationship is not an object");
       const auto& servers = relationship.at("ha-servers");
       const auto& local = servers.at("local");
-      const auto& remote = servers.at("remote");
-      if (!relationship.is_object() || !servers.is_object() ||
-          !local.is_object() || !remote.is_object())
+      if (!servers.is_object() || !local.is_object())
         throw std::runtime_error("relationship members are not objects");
       const auto string_value = [&](const nlohmann::json& object,
                                     std::string_view key) -> std::string {
@@ -2193,29 +2193,45 @@ std::optional<std::string> TranslateHaOperationalState(
                               "</" + std::string(element) + ">";
             }
           };
+      const std::string mode = string_value(relationship, "ha-mode");
+      const auto remote = servers.find("remote");
+      // Kea intentionally omits the remote member from status-get in
+      // passive-backup mode: an active primary can have zero or several
+      // backup destinations, so there is no single peer to report. The two
+      // active-peer modes always have one remote status object and remain
+      // fail-closed if it is absent.
+      if (remote == servers.end() && mode != "passive-backup")
+        throw std::runtime_error("remote is missing");
+      if (remote != servers.end() && !remote->is_object())
+        throw std::runtime_error("remote is not an object");
       // Keep Kea's relationship position only as a key within one accepted
       // daemon image. Server names remain visible as the operator-facing
       // identity because reordering HA configuration can change this index.
       std::string entry =
           "<relationship><address-family>" + std::string(family) +
           "</address-family><relationship-id>" + std::to_string(index) +
-          "</relationship-id><mode>" + string_value(relationship, "ha-mode") +
-          "</mode><local>" + "<server-name>" +
+          "</relationship-id><mode>" + mode + "</mode><local>" +
+          "<server-name>" +
           string_value(local, "server-name") + "</server-name><role>" +
           string_value(local, "role") + "</role><state>" +
           string_value(local, "state") + "</state>";
       append_scopes(local, "scopes", "scope", &entry);
-      entry +=
-          "</local><remote><server-name>" +
-          string_value(remote, "server-name") + "</server-name><role>" +
-          string_value(remote, "role") + "</role><in-touch>" +
-          (bool_value(remote, "in-touch") ? "true" : "false") +
-          "</in-touch><communication-interrupted>" +
-          (bool_value(remote, "communication-interrupted") ? "true" : "false") +
-          "</communication-interrupted><last-state>" +
-          string_value(remote, "last-state") + "</last-state>";
-      append_scopes(remote, "last-scopes", "last-scope", &entry);
-      entry += "</remote></relationship>";
+      entry += "</local>";
+      if (remote != servers.end()) {
+        entry += "<remote><server-name>" +
+                 string_value(*remote, "server-name") +
+                 "</server-name><role>" + string_value(*remote, "role") +
+                 "</role><in-touch>" +
+                 (bool_value(*remote, "in-touch") ? "true" : "false") +
+                 "</in-touch><communication-interrupted>" +
+                 (bool_value(*remote, "communication-interrupted") ? "true"
+                                                                    : "false") +
+                 "</communication-interrupted><last-state>" +
+                 string_value(*remote, "last-state") + "</last-state>";
+        append_scopes(*remote, "last-scopes", "last-scope", &entry);
+        entry += "</remote>";
+      }
+      entry += "</relationship>";
       // Enforce the host's allowance incrementally. A malicious or malformed
       // daemon cannot force construction of an oversized intermediate tree.
       if (entry.size() > maximum_xml_bytes - xml.size()) {

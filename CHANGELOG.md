@@ -9,6 +9,15 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Completed the portable Kea HA status contract for passive-backup members.
+  Kea legitimately omits the singular `remote` map in that mode because a
+  primary may feed zero or several backups; the translator now publishes the
+  required local state without fabricating a peer while continuing to reject a
+  missing remote in load-balancing and hot-standby modes. Portable regression
+  tests cover both branches, and the native Linux and FreeBSD workflows now
+  apply, inspect, and roll back passive-backup DHCPv4 and DHCPv6 members in
+  addition to their hot-standby coverage.
+
 - Added modeled Kea local-member HA operational state. The new read-only
   `dang-kea-ha` module publishes DHCP family and relationship identity, HA mode,
   local role/state/scopes, and peer role/reachability/last-state/scopes from

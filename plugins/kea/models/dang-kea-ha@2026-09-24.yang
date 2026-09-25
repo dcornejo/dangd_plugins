@@ -84,7 +84,10 @@ module dang-kea-ha {
       }
 
       container remote {
-        description "Last known status of the relationship peer.";
+        description
+          "Last known status of the singular active relationship peer.
+           Kea omits this container in passive-backup mode because a primary
+           may have zero or multiple backup destinations.";
         leaf server-name {
           type string;
           mandatory true;

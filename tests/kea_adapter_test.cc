@@ -336,6 +336,36 @@ int main() {
           ha_state->find("<last-scope>scope&amp;2</last-scope>") !=
               std::string::npos,
       "portable HA status was not translated or XML-escaped");
+  const nlohmann::json passive_ha_status = nlohmann::json::parse(R"json({
+    "result": 0,
+    "arguments": {"high-availability": [{
+      "ha-mode": "passive-backup",
+      "ha-servers": {
+        "local": {"server-name": "primary", "role": "primary",
+                  "state": "passive-backup", "scopes": ["all"]}
+      }
+    }]}
+  })json");
+  error.clear();
+  auto passive_ha_state = dang::plugins::kea::TranslateHaOperationalState(
+      "kea-dhcp6-server", passive_ha_status, &error);
+  valid &= Check(
+      passive_ha_state &&
+          passive_ha_state->find("<mode>passive-backup</mode>") !=
+              std::string::npos &&
+          passive_ha_state->find("<state>passive-backup</state>") !=
+              std::string::npos &&
+          passive_ha_state->find("<remote>") == std::string::npos,
+      "passive-backup HA status without a singular remote was rejected");
+  nlohmann::json missing_active_remote = ha_status;
+  missing_active_remote["arguments"]["high-availability"][0]["ha-servers"]
+                       .erase("remote");
+  error.clear();
+  valid &= Check(
+      !dang::plugins::kea::TranslateHaOperationalState(
+          "kea-dhcp4-server", missing_active_remote, &error) &&
+          error.find("remote is missing") != std::string::npos,
+      "active-peer HA status without its remote was accepted");
   nlohmann::json malformed_ha_status = ha_status;
   malformed_ha_status["arguments"]["high-availability"][0]["ha-servers"]
                      ["remote"]["in-touch"] = "false";
