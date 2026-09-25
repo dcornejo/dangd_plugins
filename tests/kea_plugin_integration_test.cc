@@ -236,6 +236,10 @@ int main(int argc, char** argv) {
       std::getenv("DANG_KEA_EXPECT_PREPARED_MISMATCH") != nullptr;
   const bool expect_unapplied_reconcile =
       std::getenv("DANG_KEA_EXPECT_UNAPPLIED_RECONCILE") != nullptr;
+  const bool dhcp4_enabled = std::getenv("DANG_KEA_DHCP4_SOCKET") &&
+      *std::getenv("DANG_KEA_DHCP4_SOCKET");
+  const bool dhcp6_enabled = std::getenv("DANG_KEA_DHCP6_SOCKET") &&
+      *std::getenv("DANG_KEA_DHCP6_SOCKET");
   bool valid = !force_host_paging || AddDhcp6PagingReservations(&proposed);
   const bool no_op = before == proposed;
   const char* expected_rollback_failure =
@@ -252,6 +256,10 @@ int main(int argc, char** argv) {
       std::getenv("DANG_KEA_EXPECT_OPERATIONAL_SUBTREE");
   const char* expected_startup_failure =
       std::getenv("DANG_KEA_EXPECT_STARTUP_RECONCILE_FAILURE");
+  const char* expected_disabled_module =
+      std::getenv("DANG_KEA_EXPECT_DISABLED_MODULE");
+  const char* expected_inventory_error =
+      std::getenv("DANG_KEA_EXPECT_INVENTORY_ERROR");
   const char* remove_host_hook = std::getenv("DANG_KEA_REMOVE_HOST_HOOK");
   void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
   auto initialize = library ? reinterpret_cast<DangPluginInitV6>(
@@ -264,6 +272,53 @@ int main(int argc, char** argv) {
     return 1;
   }
   valid = valid && CheckCallbackOutputContracts(*plugin6);
+  if (expected_inventory_error) {
+    DangTransactionV1 invalid_inventory_transaction{
+        before.c_str(), proposed.c_str(), "[]"};
+    DangPluginErrorV1 inventory_error{};
+    void* invalid_prepared = nullptr;
+    const bool prepared_invalid = valid && plugin->prepare(
+        plugin->context, &invalid_inventory_transaction, &invalid_prepared,
+        &inventory_error);
+    valid = valid && !prepared_invalid && invalid_prepared == nullptr &&
+        inventory_error.message && inventory_error.instance_path &&
+        std::string_view(inventory_error.message).find(
+            expected_inventory_error) != std::string_view::npos &&
+        std::string_view(inventory_error.instance_path) == "/";
+    if (!valid)
+      Report("expected target-inventory rejection", inventory_error);
+    if (plugin->destroy) plugin->destroy(plugin->context);
+    dlclose(library);
+    if (valid) std::cout << "Kea invalid target inventory rejection passed\n";
+    return valid ? 0 : 1;
+  }
+  if (expected_disabled_module) {
+    DangTransactionV1 disabled_transaction{
+        before.c_str(), proposed.c_str(), "[]"};
+    DangPluginErrorV1 disabled_error{};
+    void* disabled_prepared = nullptr;
+    const bool prepared_disabled = valid && plugin->prepare(
+        plugin->context, &disabled_transaction, &disabled_prepared,
+        &disabled_error);
+    const std::string expected_path =
+        "/{urn:ietf:params:xml:ns:yang:" +
+        std::string(expected_disabled_module) + "}config";
+    valid = valid && !prepared_disabled && disabled_prepared == nullptr &&
+        disabled_error.message && disabled_error.instance_path &&
+        std::string_view(disabled_error.message).find(
+            "configuration is present") != std::string_view::npos &&
+        std::string_view(disabled_error.message).find(
+            expected_disabled_module) != std::string_view::npos &&
+        std::string_view(disabled_error.instance_path) == expected_path;
+    if (!valid)
+      Report("expected disabled-family configuration rejection",
+             disabled_error);
+    if (plugin->destroy) plugin->destroy(plugin->context);
+    dlclose(library);
+    if (valid)
+      std::cout << "Kea disabled-family configuration rejection passed\n";
+    return valid ? 0 : 1;
+  }
   if (valid && expected_startup_failure)
     valid = RemoveHostHook(expected_startup_failure);
   DangTransactionV1 transaction{before.c_str(), proposed.c_str(), "[]"};
@@ -499,13 +554,13 @@ int main(int argc, char** argv) {
     if (!valid) std::cerr << "cannot remove expected rollback socket\n";
   }
   if (valid && !expected_validate_failure && !expected_apply_failure &&
-      !no_op && !skip_operational)
+      !no_op && !skip_operational && dhcp4_enabled)
     valid = NativeCommand(std::getenv("DANG_KEA_DHCP4_SOCKET"), "lease4-add",
                           {{"subnet-id", 401},
                            {"ip-address", "192.0.2.80"},
                            {"hw-address", "02:00:00:00:04:01"}});
   if (valid && !expected_validate_failure && !expected_apply_failure &&
-      !no_op && !skip_operational)
+      !no_op && !skip_operational && dhcp6_enabled)
     valid = NativeCommand(std::getenv("DANG_KEA_DHCP6_SOCKET"), "lease6-add",
                           {{"subnet-id", 601},
                            {"ip-address", "2001:db8:6::180"},
@@ -521,47 +576,58 @@ int main(int argc, char** argv) {
         || Report("operational", error);
     const std::string xml = valid && state.data_xml ? state.data_xml : "";
     valid = valid && state.complete == 1 &&
-        xml.find("urn:ietf:params:xml:ns:yang:kea-dhcp4-server") !=
-            std::string::npos &&
-        xml.find("urn:ietf:params:xml:ns:yang:kea-dhcp6-server") !=
-            std::string::npos &&
+        (dhcp4_enabled ==
+         (xml.find("urn:ietf:params:xml:ns:yang:kea-dhcp4-server") !=
+          std::string::npos)) &&
+        (dhcp6_enabled ==
+         (xml.find("urn:ietf:params:xml:ns:yang:kea-dhcp6-server") !=
+          std::string::npos)) &&
         xml.find("<leases") != std::string::npos &&
-        xml.find("<ip-address>192.0.2.80</ip-address>") !=
-            std::string::npos &&
-        xml.find("<hw-address>AgAAAAQB</hw-address>") !=
-            std::string::npos &&
-        xml.find("<ip-address>2001:db8:6::180</ip-address>") !=
-            std::string::npos &&
-        xml.find("<duid>AAEAAQIDBAUGBwgJ</duid>") !=
-            std::string::npos &&
-        xml.find("<iaid>1234</iaid>") != std::string::npos &&
+        (!dhcp4_enabled ||
+         (xml.find("<ip-address>192.0.2.80</ip-address>") !=
+              std::string::npos &&
+          xml.find("<hw-address>AgAAAAQB</hw-address>") !=
+              std::string::npos)) &&
+        (!dhcp6_enabled ||
+         (xml.find("<ip-address>2001:db8:6::180</ip-address>") !=
+              std::string::npos &&
+          xml.find("<duid>AAEAAQIDBAUGBwgJ</duid>") !=
+              std::string::npos &&
+          xml.find("<iaid>1234</iaid>") != std::string::npos)) &&
         (!force_lease_paging ||
          (xml.find("<ip-address>2001:db8:6::10ff</ip-address>") !=
               std::string::npos &&
           xml.find("<iaid>2255</iaid>") != std::string::npos)) &&
         xml.find("<lease-stats") != std::string::npos &&
-        xml.find("<assigned-addresses>1</assigned-addresses>") !=
-            std::string::npos &&
-        xml.find(force_lease_paging ? "<assigned-nas>257</assigned-nas>"
-                                    : "<assigned-nas>1</assigned-nas>") !=
-            std::string::npos &&
+        (!dhcp4_enabled ||
+         xml.find("<assigned-addresses>1</assigned-addresses>") !=
+             std::string::npos) &&
+        (!dhcp6_enabled ||
+         xml.find(force_lease_paging ? "<assigned-nas>257</assigned-nas>"
+                                     : "<assigned-nas>1</assigned-nas>") !=
+             std::string::npos) &&
         xml.find("<hosts") != std::string::npos &&
-        xml.find("<subnet-id>401</subnet-id>") != std::string::npos &&
-        xml.find("<subnet-id>601</subnet-id>") != std::string::npos &&
-        xml.find("<identifier>00:01:02:03:04:05</identifier>") !=
-            std::string::npos &&
-        xml.find("<identifier>00:01:02:03</identifier>") != std::string::npos &&
+        (!dhcp4_enabled ||
+         (xml.find("<subnet-id>401</subnet-id>") != std::string::npos &&
+          xml.find("<identifier>00:01:02:03:04:05</identifier>") !=
+              std::string::npos)) &&
+        (!dhcp6_enabled ||
+         (xml.find("<subnet-id>601</subnet-id>") != std::string::npos &&
+          xml.find("<identifier>00:01:02:03</identifier>") !=
+              std::string::npos)) &&
         (!force_host_paging ||
          (xml.find("<identifier>00:01:00:01:02:03:04:05:06:07:08:ff"
                    "</identifier>") != std::string::npos &&
           xml.find("<hostname>paging-host-255</hostname>") !=
               std::string::npos)) &&
-        xml.find("<space>dhcp4</space>") != std::string::npos &&
-        xml.find("<data>printer.example</data>") !=
-            std::string::npos &&
-        xml.find("<space>dhcp6</space>") != std::string::npos &&
-        xml.find("<data>2001:db8:6::53</data>") !=
-            std::string::npos;
+        (!dhcp4_enabled ||
+         (xml.find("<space>dhcp4</space>") != std::string::npos &&
+          xml.find("<data>printer.example</data>") !=
+              std::string::npos)) &&
+        (!dhcp6_enabled ||
+         (xml.find("<space>dhcp6</space>") != std::string::npos &&
+          xml.find("<data>2001:db8:6::53</data>") !=
+              std::string::npos));
     if (!valid) std::cerr << "operational XML is incomplete: " << xml << '\n';
   }
   if (valid && remove_host_hook)
@@ -638,6 +704,10 @@ int main(int argc, char** argv) {
         ? "Kea no-op validate, apply, and rollback passed\n"
         : skip_operational
             ? "Kea selective validate, apply, and rollback passed\n"
-            : "Kea DHCPv4 and DHCPv6 validate, apply, and rollback passed\n");
+        : dhcp4_enabled && dhcp6_enabled
+            ? "Kea DHCPv4 and DHCPv6 validate, apply, and rollback passed\n"
+        : dhcp4_enabled
+            ? "Kea DHCPv4-only validate, apply, and rollback passed\n"
+            : "Kea DHCPv6-only validate, apply, and rollback passed\n");
   return valid ? 0 : 1;
 }

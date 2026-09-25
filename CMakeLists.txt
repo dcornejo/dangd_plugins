@@ -667,6 +667,41 @@ if(BUILD_TESTING)
   set_tests_properties(kea_unapplied_reconciliation_rejected PROPERTIES
     ENVIRONMENT
       "DANG_KEA_DHCP4_SOCKET=/var/run/kea/kea4-ctrl-socket;DANG_KEA_DHCP6_SOCKET=/var/run/kea/kea6-ctrl-socket;DANG_KEA_EXPECT_UNAPPLIED_RECONCILE=1")
+  add_test(NAME kea_ipv4_only_noop_transaction
+    COMMAND kea_plugin_integration_test $<TARGET_FILE:dangd_kea_plugin>
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-before4-only.xml"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-before4-only.xml")
+  set_tests_properties(kea_ipv4_only_noop_transaction PROPERTIES ENVIRONMENT
+    "DANG_KEA_DHCP4_SOCKET=/var/run/kea/kea4-ctrl-socket;DANG_KEA_TEST_NOOP_SEED=1")
+  add_test(NAME kea_ipv6_only_noop_transaction
+    COMMAND kea_plugin_integration_test $<TARGET_FILE:dangd_kea_plugin>
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-before6-only.xml"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-before6-only.xml")
+  set_tests_properties(kea_ipv6_only_noop_transaction PROPERTIES ENVIRONMENT
+    "DANG_KEA_DHCP6_SOCKET=/var/run/kea/kea6-ctrl-socket;DANG_KEA_TEST_NOOP_SEED=1")
+  add_test(NAME kea_disabled_family_configuration_rejected
+    COMMAND kea_plugin_integration_test $<TARGET_FILE:dangd_kea_plugin>
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-before.xml"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-proposed.xml")
+  set_tests_properties(kea_disabled_family_configuration_rejected PROPERTIES
+    ENVIRONMENT
+      "DANG_KEA_DHCP4_SOCKET=/var/run/kea/kea4-ctrl-socket;DANG_KEA_EXPECT_DISABLED_MODULE=kea-dhcp6-server")
+  add_test(NAME kea_empty_target_inventory_rejected
+    COMMAND "${CMAKE_COMMAND}" -E env
+      --unset=DANG_KEA_DHCP4_SOCKET --unset=DANG_KEA_DHCP6_SOCKET
+      DANG_KEA_EXPECT_INVENTORY_ERROR=at\ least\ one
+      $<TARGET_FILE:kea_plugin_integration_test>
+      $<TARGET_FILE:dangd_kea_plugin>
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-before.xml"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-proposed.xml")
+  add_test(NAME kea_empty_target_endpoint_rejected
+    COMMAND "${CMAKE_COMMAND}" -E env --unset=DANG_KEA_DHCP6_SOCKET
+      DANG_KEA_DHCP4_SOCKET=
+      DANG_KEA_EXPECT_INVENTORY_ERROR=is\ present\ but\ does\ not\ name
+      $<TARGET_FILE:kea_plugin_integration_test>
+      $<TARGET_FILE:dangd_kea_plugin>
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-before4-only.xml"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-proposed4-only.xml")
 endif()
 
 include(GNUInstallDirs)

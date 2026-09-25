@@ -45,11 +45,63 @@ using dang::plugins::kea::VerifyLiveConfiguration;
 using dang::plugins::kea::VerifyRestoredConfigurations;
 
 struct Prepared {
-  // Vector order is fixed as DHCPv4 then DHCPv6 and is shared by both images;
-  // this makes index-based compensation unambiguous after a partial apply.
+  // Target order comes from the process-stable inventory and is shared by both
+  // images. This makes index-based compensation unambiguous after a partial
+  // apply, including single-stack deployments.
   std::vector<ServerConfiguration> before;
   std::vector<ServerConfiguration> proposed;
 };
+
+/** One enabled local Kea daemon captured for this plugin process. */
+struct TargetDefinition {
+  /** YANG module that owns the daemon's configuration and state. */
+  std::string module_name;
+  /** Local UNIX control endpoint used for every native operation. */
+  std::string socket_path;
+  /** Selects DHCPv6 rather than DHCPv4 native state commands. */
+  bool dhcp6;
+};
+
+/** Immutable bootstrap result shared by every callback. */
+struct PluginContext {
+  std::vector<TargetDefinition> targets;
+  std::string configuration_error;
+};
+
+/** Mapping from one supported family to its bootstrap variable. */
+struct TargetEnvironment {
+  const char* module_name;
+  const char* variable_name;
+  bool dhcp6;
+};
+
+constexpr std::array<TargetEnvironment, 2> kTargetEnvironments{{
+    {"kea-dhcp4-server", "DANG_KEA_DHCP4_SOCKET", false},
+    {"kea-dhcp6-server", "DANG_KEA_DHCP6_SOCKET", true},
+}};
+
+/** Captures enabled families once, distinguishing unset from empty variables. */
+PluginContext BuildPluginContext() {
+  PluginContext context;
+  for (const auto& target : kTargetEnvironments) {
+    const char* socket = std::getenv(target.variable_name);
+    if (!socket) continue;
+    if (!*socket) {
+      context.configuration_error = std::string(target.variable_name) +
+          " is present but does not name a local Kea UNIX control socket";
+      return context;
+    }
+    context.targets.push_back(
+        {target.module_name, socket, target.dhcp6});
+  }
+  if (context.targets.empty())
+    context.configuration_error =
+        "at least one of DANG_KEA_DHCP4_SOCKET or DANG_KEA_DHCP6_SOCKET "
+        "must name a local Kea UNIX control socket";
+  return context;
+}
+
+PluginContext plugin_context = BuildPluginContext();
 
 thread_local std::string callback_error;
 thread_local std::string callback_path;
@@ -67,7 +119,7 @@ constexpr std::string_view kOperationalClose = "</data>";
 // reconciliation accepts readback; reconciliation and rollback are its only
 // writers.
 struct AcceptedConfigurationSnapshot {
-  std::array<std::vector<std::uint32_t>, 2> subnet_ids;
+  std::vector<std::vector<std::uint32_t>> subnet_ids;
   std::vector<ServerConfiguration> configurations;
   // Nonempty from the start of a changing hardware apply until verified
   // reconciliation or complete compensation. Operational reads fail closed
@@ -87,9 +139,9 @@ void RememberAcceptedState(
   // fails, readers retain the previous internally consistent snapshot.
   AcceptedConfigurationSnapshot next;
   next.configurations = configurations;
-  for (std::size_t index = 0;
-       index < configurations.size() && index < next.subnet_ids.size(); ++index)
-    next.subnet_ids[index] = ExtractSubnetIds(configurations[index]);
+  next.subnet_ids.reserve(configurations.size());
+  for (const auto& configuration : configurations)
+    next.subnet_ids.push_back(ExtractSubnetIds(configuration));
   std::lock_guard lock(accepted_state_mutex);
   accepted_state = std::move(next);
 }
@@ -295,36 +347,56 @@ size_t DependencyCount(void*) { return 0; }
 
 const char* DependencyAt(void*, size_t) { return nullptr; }
 
-std::optional<std::vector<ServerConfiguration>> TranslateBoth(
-    const char* xml, DangPluginErrorV1* error,
+std::optional<std::vector<ServerConfiguration>> TranslateTargets(
+    const PluginContext& context, const char* xml, DangPluginErrorV1* error,
     bool capture_missing_from_live = false) {
   if (!xml) {
     SetError(error, "the configuration snapshot is missing");
     return std::nullopt;
   }
-  const char* socket4 = std::getenv("DANG_KEA_DHCP4_SOCKET");
-  const char* socket6 = std::getenv("DANG_KEA_DHCP6_SOCKET");
-  if (!socket4 || !*socket4 || !socket6 || !*socket6) {
+  if (!context.configuration_error.empty()) {
+    SetError(error, context.configuration_error, "/");
+    return std::nullopt;
+  }
+  // A disabled family must also be absent from authoritative configuration.
+  // This keeps deployment intent explicit: omitting a socket disables a
+  // family, while retaining its YANG tree cannot silently discard it.
+  for (const auto& environment : kTargetEnvironments) {
+    const bool enabled = std::any_of(
+        context.targets.begin(), context.targets.end(),
+        [&](const TargetDefinition& target) {
+          return target.module_name == environment.module_name;
+        });
+    if (enabled) continue;
+    std::string ignored_reason;
+    bool missing = false;
+    (void)TranslateConfiguration(xml, environment.module_name,
+                                 "/disabled-kea-target", &ignored_reason,
+                                 &missing);
+    if (missing) continue;
+    const std::string module = environment.module_name;
     SetError(error,
-             "DANG_KEA_DHCP4_SOCKET and DANG_KEA_DHCP6_SOCKET must name "
-             "local Kea UNIX control sockets");
+             module + ": configuration is present while " +
+                 environment.variable_name + " is disabled",
+             "/{urn:ietf:params:xml:ns:yang:" + module + "}config");
     return std::nullopt;
   }
   std::vector<ServerConfiguration> configurations;
-  for (const auto& [module, socket] :
-       {std::pair{"kea-dhcp4-server", socket4},
-        std::pair{"kea-dhcp6-server", socket6}}) {
+  configurations.reserve(context.targets.size());
+  for (const auto& target : context.targets) {
     std::string reason;
     bool missing = false;
-    auto translated =
-        TranslateConfiguration(xml, module, socket, &reason, &missing);
+    auto translated = TranslateConfiguration(xml, target.module_name,
+                                              target.socket_path, &reason,
+                                              &missing);
     if (!translated && missing && capture_missing_from_live)
-      translated =
-          ReadLiveConfiguration(module, socket, SendControlQuery, &reason);
+      translated = ReadLiveConfiguration(target.module_name,
+                                          target.socket_path,
+                                          SendControlQuery, &reason);
     if (!translated) {
-      SetError(error, module + std::string(": ") + reason,
+      SetError(error, target.module_name + std::string(": ") + reason,
                "/{" + std::string("urn:ietf:params:xml:ns:yang:") +
-                   module + "}config");
+                   target.module_name + "}config");
       return std::nullopt;
     }
     configurations.push_back(std::move(*translated));
@@ -332,7 +404,8 @@ std::optional<std::vector<ServerConfiguration>> TranslateBoth(
   return configurations;
 }
 
-int PrepareConfigurationImpl(void*, const DangTransactionV1* transaction,
+int PrepareConfigurationImpl(void* opaque_context,
+                             const DangTransactionV1* transaction,
                              void** result, DangPluginErrorV1* error) {
   if (!result) {
     SetError(error, "the transaction input is incomplete");
@@ -346,9 +419,11 @@ int PrepareConfigurationImpl(void*, const DangTransactionV1* transaction,
   // Dangd activates startup configuration as an empty-to-running transaction.
   // Capture any absent module's live image so failed startup can restore the
   // daemon state that existed before dangd asserted its persisted authority.
-  auto before = TranslateBoth(transaction->before_xml, error, true);
+  const auto& context = *static_cast<const PluginContext*>(opaque_context);
+  auto before =
+      TranslateTargets(context, transaction->before_xml, error, true);
   if (!before) return 0;
-  auto proposed = TranslateBoth(transaction->proposed_xml, error);
+  auto proposed = TranslateTargets(context, transaction->proposed_xml, error);
   if (!proposed) return 0;
   auto* prepared = new (std::nothrow)
       Prepared{std::move(*before), std::move(*proposed)};
@@ -506,13 +581,18 @@ int RollbackHardwareActionImpl(void* context, void* opaque,
   return RollbackConfigurationImpl(context, opaque, error);
 }
 
-int OperationalImpl(void*, DangOperationalDataV1* result,
+int OperationalImpl(void* opaque_context, DangOperationalDataV1* result,
                     DangPluginErrorV1* error) {
   if (!result) {
     SetError(error, "the operational data output is missing");
     return 0;
   }
   *result = {};
+  const auto& context = *static_cast<const PluginContext*>(opaque_context);
+  if (!context.configuration_error.empty()) {
+    SetError(error, context.configuration_error, "/");
+    return 0;
+  }
   // Retain a shared authority lock through the complete multi-command read.
   // Apply must acquire the exclusive side before its first config-set, so a
   // state collection can never overlap a hardware configuration transition.
@@ -526,27 +606,25 @@ int OperationalImpl(void*, DangOperationalDataV1* result,
                  "}config");
     return 0;
   }
-  const char* socket4 = std::getenv("DANG_KEA_DHCP4_SOCKET");
-  const char* socket6 = std::getenv("DANG_KEA_DHCP6_SOCKET");
-  if (!socket4 || !*socket4 || !socket6 || !*socket6) {
-    SetError(error, "Kea operational sockets are not configured", "/");
+  if (accepted.configurations.empty() ||
+      accepted.configurations.size() != accepted.subnet_ids.size() ||
+      accepted.configurations.size() != context.targets.size()) {
+    SetError(error, "Kea accepted configuration is unavailable", "/");
     return 0;
   }
   operational_xml =
       "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">";
-  std::size_t server_index = 0;
-  for (const auto& [module, dhcp6] : {
-           std::pair{"kea-dhcp4-server", false},
-           std::pair{"kea-dhcp6-server", true}}) {
-    std::string reason;
-    if (server_index >= accepted.configurations.size()) {
-      SetError(error,
-               module +
-                   std::string(": accepted configuration is unavailable"),
-               "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +
-                   "}config");
+  for (std::size_t index = 0; index < accepted.configurations.size(); ++index) {
+    const auto& configuration = accepted.configurations[index];
+    const auto& target = context.targets[index];
+    const std::string& module = target.module_name;
+    if (configuration.module_name != target.module_name ||
+        configuration.socket_path != target.socket_path) {
+      SetError(error, module + ": accepted target identity is inconsistent",
+               "/{urn:ietf:params:xml:ns:yang:" + module + "}config");
       return 0;
     }
+    std::string reason;
     std::string failure_path;
     if (operational_xml.size() + kOperationalClose.size() >=
         kMaximumOperationalXmlBytes) {
@@ -561,9 +639,8 @@ int OperationalImpl(void*, DangOperationalDataV1* result,
     limits.maximum_xml_bytes = kMaximumOperationalXmlBytes -
         operational_xml.size() - kOperationalClose.size();
     auto state = CollectAuthoritativeOperationalState(
-        accepted.configurations[server_index], dhcp6,
-        accepted.subnet_ids[server_index], SendControlQuery, &failure_path,
-        &reason, limits);
+        configuration, target.dhcp6, accepted.subnet_ids[index],
+        SendControlQuery, &failure_path, &reason, limits);
     if (!state) {
       SetError(error, module + std::string(": ") + reason,
                "/{" + std::string("urn:ietf:params:xml:ns:yang:") + module +
@@ -571,7 +648,6 @@ int OperationalImpl(void*, DangOperationalDataV1* result,
       return 0;
     }
     operational_xml += *state;
-    ++server_index;
   }
   operational_xml += kOperationalClose;
   result->data_xml = operational_xml.c_str();
@@ -592,7 +668,7 @@ int OperationalV2Impl(void* context, DangOperationalDataV2* result,
 }
 
 int ReconcileAppliedConfigurationImpl(
-    void*, void* opaque, const char* current_xml,
+    void* opaque_context, void* opaque, const char* current_xml,
     DangAppliedConfigurationV1* result, DangPluginErrorV1* error) {
   if (!result) {
     SetError(error, "the applied Kea configuration snapshot is missing", "/");
@@ -603,7 +679,8 @@ int ReconcileAppliedConfigurationImpl(
     SetError(error, "the applied Kea configuration snapshot is missing", "/");
     return 0;
   }
-  auto accepted = TranslateBoth(current_xml, error);
+  const auto& context = *static_cast<const PluginContext*>(opaque_context);
+  auto accepted = TranslateTargets(context, current_xml, error);
   if (!accepted) return 0;
   // Bind current_xml to the prepared proposal before using that proposal to
   // select changed daemons. Then read those daemons back before dangd makes the
@@ -772,7 +849,7 @@ int ReconcileAppliedConfiguration(
 const DangPluginV6 kPlugin{
     .v5 = {.v4 = {.v3 = {.v2 = {.v1 = {.abi_version = DANG_PLUGIN_ABI_V6,
                   .plugin_name = "dang-kea",
-                  .context = nullptr,
+                  .context = &plugin_context,
                   .yang_source_count = SourceCount,
                   .yang_source_at = SourceAt,
                   .dependency_count = DependencyCount,

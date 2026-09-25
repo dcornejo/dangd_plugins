@@ -9,6 +9,17 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added real single-stack Kea support. The plugin now captures a stable target
+  inventory containing DHCPv4, DHCPv6, or both, and all accepted state,
+  mutation, reconciliation, operational, compensation, and rollback paths
+  operate only on those targets. An unset socket variable disables its family;
+  empty endpoints, an empty inventory, or retained configuration for a disabled
+  family fail explicitly. Portable tests cover both one-family inventories and
+  disabled-family rejection, while the Linux and FreeBSD native workflows run
+  full IPv4-only and IPv6-only transactions. A deployment design documents the
+  remaining model boundary for multiple instances and the stronger distributed
+  transaction required for pair-wide Kea HA management.
+
 - Bound Kea's pending-mutation marker to the exact proposed daemon images and
   accepted before-image. Apply now rejects stale baselines and any second
   mutation while prior hardware remains unresolved. Reconciliation rejects a

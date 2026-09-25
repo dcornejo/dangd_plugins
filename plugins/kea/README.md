@@ -3,20 +3,22 @@
 
 # Kea DHCP plugin
 
-`dangd_kea_plugin` manages one Kea DHCPv4 server and one Kea DHCPv6 server
-through their local UNIX control sockets. It embeds the official Kea 3.2.0
+`dangd_kea_plugin` manages one Kea DHCPv4 server, one Kea DHCPv6 server, or
+one of either family through local UNIX control sockets. It embeds the official
+Kea 3.2.0
 `kea-dhcp4-server` and `kea-dhcp6-server` modules at revision 2026-06-24 plus
 their pinned Kea type modules. The original model files retain ISC's MPL-2.0
 license notices; the adapter code is Apache-2.0.
 
 ## Dependencies and installation
 
-The runtime requires dangd 0.1.0 or newer, Kea 3.2.x DHCPv4 and DHCPv6
-servers, the Kea lease-command, host-command, and supplemental-statistics hook
-libraries, and local UNIX control sockets accessible by the plugin worker. On
-Debian/Ubuntu install `kea-dhcp4-server` and `kea-dhcp6-server`; on FreeBSD
-install `kea`. A source build additionally needs CMake 3.24+, a C++20 compiler,
-libxml2 development files, nlohmann-json 3.11+, and GoogleTest.
+The runtime requires dangd 0.1.0 or newer, the Kea 3.2.x server package for
+every enabled address family, the Kea lease-command, host-command, and
+supplemental-statistics hook libraries, and local UNIX control sockets
+accessible by the plugin worker. On Debian/Ubuntu install `kea-dhcp4-server`,
+`kea-dhcp6-server`, or both as required; on FreeBSD install `kea`. A source
+build additionally needs CMake 3.24+, a C++20 compiler, libxml2 development
+files, nlohmann-json 3.11+, and GoogleTest.
 
 Debian/Ubuntu package installation:
 
@@ -46,10 +48,13 @@ sudo cmake --install build --component kea
 ```
 
 The plugin does not require Kea Control Agent or a database lease backend.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the supported single-stack and
+dual-stack layouts and the explicit multiple-instance and HA design boundary.
 
 ## Transaction behavior
 
-For every affected commit, the plugin:
+For every affected commit, the plugin processes its enabled targets in stable
+DHCPv4-then-DHCPv6 order and:
 
 1. converts the complete before and proposed XML snapshots to Kea's native JSON;
 2. detects which translated daemon images actually changed and sends
@@ -324,12 +329,21 @@ configuration as a unit.
 
 ## Configuration
 
-The worker process must inherit two explicit socket paths:
+The worker process must inherit a socket path for each enabled family. A
+dual-stack deployment uses both:
 
 ```sh
 export DANG_KEA_DHCP4_SOCKET=/run/kea/kea4-ctrl-socket
 export DANG_KEA_DHCP6_SOCKET=/run/kea/kea6-ctrl-socket
 ```
+
+For IPv4-only operation, set only `DANG_KEA_DHCP4_SOCKET` and omit the DHCPv6
+variable. For IPv6-only operation, do the reverse. An unset variable explicitly
+disables that family; a present but empty variable is an error. At least one
+family must be enabled. A disabled family must also be absent from the dangd
+datastore, otherwise preparation fails at that module's `config` path rather
+than silently dropping its configuration. The inventory is captured when the
+plugin library loads and does not change during the process lifetime.
 
 Use `/var/run/kea` on the tested FreeBSD package. The same paths must appear
 in each modeled `control-sockets` list so a successful `config-set` keeps the
@@ -363,7 +377,8 @@ relevant DHCPv4 fragment, not a complete Kea configuration:
 }
 ```
 
-Use the equivalent `Dhcp6` object and `kea6-ctrl-socket` in the DHCPv6 file.
+Use the equivalent `Dhcp6` object and `kea6-ctrl-socket` in the DHCPv6 file
+when DHCPv6 is enabled.
 On FreeBSD use `/var/run/kea/...` consistently and find the hooks under
 `/usr/local/lib/kea/hooks`. Distribution paths can differ; verify the installed
 locations rather than copying these examples blindly. All hook entries must
@@ -444,6 +459,10 @@ It verifies that no
 other interface entered the isolation boundary and removes the temporary
 memory-backed lease databases, unique sockets, PID storage, and namespace or
 jail afterward.
+The same native workflow also runs real IPv4-only and IPv6-only transactions.
+Each enabled daemon must complete validation, mutation, readback, operational
+collection, and rollback while the other family has no configured target or
+datastore tree.
 Before that transaction matrix, each script exercises dangd's real startup
 shape with an empty before-image and the persisted Kea datastore as the
 candidate. Success proves that both native boot configurations were captured,

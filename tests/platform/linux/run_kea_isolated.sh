@@ -24,6 +24,8 @@ cleanup() {
     /tmp/kea-empty-linux.xml \
     /tmp/kea-before4-linux.xml /tmp/kea-proposed4-linux.xml \
     /tmp/kea-before6-linux.xml /tmp/kea-proposed6-linux.xml \
+    /tmp/kea-before4-only-linux.xml /tmp/kea-proposed4-only-linux.xml \
+    /tmp/kea-before6-only-linux.xml /tmp/kea-proposed6-only-linux.xml \
     /tmp/kea-proposed6-state-linux.xml \
     /tmp/kea-before-validation-linux.xml \
     /tmp/kea-proposed-validation-linux.xml \
@@ -94,6 +96,22 @@ sed -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
   -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
   "$root/tests/kea-proposed4.xml" \
   > /tmp/kea-proposed4-linux.xml
+sed -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
+  -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
+  "$root/tests/kea-before4-only.xml" \
+  > /tmp/kea-before4-only-linux.xml
+sed -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
+  -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
+  "$root/tests/kea-proposed4-only.xml" \
+  > /tmp/kea-proposed4-only-linux.xml
+sed -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
+  -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
+  "$root/tests/kea-before6-only.xml" \
+  > /tmp/kea-before6-only-linux.xml
+sed -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
+  -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
+  "$root/tests/kea-proposed6-only.xml" \
+  > /tmp/kea-proposed6-only-linux.xml
 sed "s#$socket6#$unavailable6#g" /tmp/kea-before6-linux.xml \
   > /tmp/kea-before-validation-linux.xml
 sed "s#$socket6#$unavailable6#g" /tmp/kea-proposed6-linux.xml \
@@ -244,6 +262,19 @@ DANG_KEA_FORCE_HOST_PAGING=1 \
   ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
   "$root/build/dangd_kea_plugin.so" /tmp/kea-before-linux.xml \
   /tmp/kea-proposed-linux.xml
+
+# Exercise a genuinely single-stack process inventory. The absent family has
+# neither an endpoint nor a datastore tree, while the enabled daemon completes
+# mutation, readback, operational collection, and rollback.
+DANG_KEA_DHCP4_SOCKET="$socket4" \
+  ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before4-only-linux.xml \
+  /tmp/kea-proposed4-only-linux.xml
+
+DANG_KEA_DHCP6_SOCKET="$socket6" \
+  ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before6-only-linux.xml \
+  /tmp/kea-proposed6-only-linux.xml
 
 # DHCPv4 deliberately has no listening socket in this second transaction. It
 # can pass only when the plugin leaves that unchanged daemon untouched.
