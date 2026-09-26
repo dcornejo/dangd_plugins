@@ -87,9 +87,14 @@ Kea's restricted dedicated HA listeners, never an unauthenticated general
 management socket. Both members must reach `hot-standby`; the active primary
 must hold its service scope; and one real DHCPv4 and DHCPv6 allocation must
 appear in both local lease databases. The test then destroys the pair, reverses
-the operating-system roles, and repeats the same proof. This validates the
-peer data plane and replication in both directions, but it does not turn two
-independently managed dangd instances into one atomic transaction.
+the operating-system roles, and repeats the same proof. In each phase it also
+stops both primary daemons and proves their exit before changing scopes. The
+survivor must report communication interruption and the partner unavailable;
+only then does the test issue `ha-scopes` over the survivor's local UNIX
+socket, allocate a distinct DHCPv4 and DHCPv6 client, and require both new
+leases locally. This validates the peer data plane, replication, and guarded
+manual takeover in both directions, but it does not test automatic failover or
+turn two independently managed dangd instances into one atomic transaction.
 
 The pinned ISC modules do not expose HA relationship status. The companion
 `dang-kea-ha` module fills that model gap without changing their configuration

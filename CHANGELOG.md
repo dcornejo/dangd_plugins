@@ -9,6 +9,15 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Extended the cross-host Kea HA matrix through guarded manual takeover. After
+  proving dual-stack replication, the harness stops and reaps both primary
+  daemons, requires the survivor to report interrupted communication and the
+  partner unavailable, and only then assigns the stopped primary's scope with
+  local `ha-scopes` commands. Distinct second-client DHCPv4 and DHCPv6 leases
+  must appear on the survivor before the operating-system roles are reversed.
+  Automatic failover remains deliberately disabled, and the documentation
+  preserves the split-brain and pair-wide transaction boundaries.
+
 - Added a real cross-host Kea HA integration test on the guarded sterile VLAN.
   Packaged Linux and FreeBSD Kea servers establish restricted dedicated
   hot-standby listeners for DHCPv4 and DHCPv6, complete initial synchronization,

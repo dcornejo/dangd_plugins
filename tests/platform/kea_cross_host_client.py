@@ -49,13 +49,14 @@ def packet4(message_type: int, xid: int, client: bytes,
     return header + options + b"\xff"
 
 
-def dhcp4(server: str, source: str, client: bytes) -> None:
+def dhcp4(server: str, source: str, client: bytes,
+          fallback_address: str) -> None:
     xid = int.from_bytes(os.urandom(4), "big")
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(1)
     sock.bind((source, 1068))
     sock.sendto(packet4(1, xid, client), (server, 1067))
-    offered = ipaddress.ip_address("192.0.2.100").packed
+    offered = ipaddress.ip_address(fallback_address).packed
     server_id = ipaddress.ip_address(server).packed
     try:
         offer, peer = sock.recvfrom(4096)
@@ -108,7 +109,8 @@ def options6(packet: bytes) -> dict[int, bytes]:
     return result
 
 
-def dhcp6(interface: str, source: str, client: bytes) -> None:
+def dhcp6(interface: str, source: str, client: bytes,
+          expected_address: str = "") -> None:
     xid = os.urandom(3)
     duid = b"\x00\x03\x00\x01" + client
     iaid = 9601
@@ -131,9 +133,12 @@ def dhcp6(interface: str, source: str, client: bytes) -> None:
             raise RuntimeError("expected a matching rapid-commit DHCPv6 reply")
         ia_options = options6(b"\0\0\0\0" + ia_na_reply[12:])
         ia_address = ia_options.get(5, b"")
-        if (len(ia_address) < 24 or
-                ipaddress.ip_address(ia_address[:16]) not in
-                ipaddress.ip_network("2001:db8:6::100/120")):
+        allocated = (ipaddress.ip_address(ia_address[:16])
+                     if len(ia_address) >= 24 else None)
+        if (allocated is None or
+                allocated not in ipaddress.ip_network("2001:db8:6::100/120") or
+                (expected_address and
+                 allocated != ipaddress.ip_address(expected_address))):
             raise RuntimeError("DHCPv6 reply omits an address from the pool")
         print("DHCPv6 rapid-commit reply received")
     except TimeoutError:
@@ -141,17 +146,19 @@ def dhcp6(interface: str, source: str, client: bytes) -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) not in (5, 7):
+    if len(sys.argv) not in (5, 7, 9):
         raise SystemExit(
             f"usage: {sys.argv[0]} SERVER4 SERVER6 INTERFACE CLIENT_MAC "
-            "[SOURCE4 SOURCE6]")
+            "[SOURCE4 SOURCE6 [REQUEST4 EXPECTED6]]")
     client = bytes.fromhex(sys.argv[4].replace(":", ""))
     if len(client) != 6:
         raise SystemExit("CLIENT_MAC must contain exactly six octets")
     # The original two-host server/client test always uses the .2 endpoint as
     # its client. HA testing keeps both servers running and reverses their
     # roles, so it supplies the already configured source addresses explicitly.
-    source4 = sys.argv[5] if len(sys.argv) == 7 else "192.0.2.2"
-    source6 = sys.argv[6] if len(sys.argv) == 7 else "2001:db8:6::2"
-    dhcp4(sys.argv[1], source4, client)
-    dhcp6(sys.argv[3], source6, client)
+    source4 = sys.argv[5] if len(sys.argv) >= 7 else "192.0.2.2"
+    source6 = sys.argv[6] if len(sys.argv) >= 7 else "2001:db8:6::2"
+    request4 = sys.argv[7] if len(sys.argv) == 9 else "192.0.2.100"
+    expected6 = sys.argv[8] if len(sys.argv) == 9 else ""
+    dhcp4(sys.argv[1], source4, client, request4)
+    dhcp6(sys.argv[3], source6, client, expected6)

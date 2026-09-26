@@ -115,6 +115,28 @@ stop_server() {
   rm -rf "$runtime"
 }
 
+halt_server() {
+  # Keep the test aliases and runtime files so this host can act as the second
+  # client after its primary daemons have been proven fully stopped.
+  for pid_file in "$runtime/pid4" "$runtime/pid6"; do
+    if [ -f "$pid_file" ]; then
+      pid=$(cat "$pid_file")
+      kill "$pid" 2>/dev/null || true
+      attempt=0
+      while kill -0 "$pid" 2>/dev/null; do
+        attempt=$((attempt + 1))
+        [ "$attempt" -lt 50 ] || fail "Kea process $pid did not stop"
+        sleep 0.1
+      done
+      if kill -0 "$pid" 2>/dev/null; then
+        fail "Kea process $pid did not stop"
+      fi
+      rm -f "$pid_file"
+    fi
+  done
+  rm -f "$socket4" "$socket6"
+}
+
 case "$action" in
   start)
     # start IFACE LOCAL4 LOCAL6 LOCAL_NAME LOCAL_ROLE REMOTE4 REMOTE6
@@ -180,7 +202,7 @@ case "$action" in
     {"library":"$hook_dir/libdhcp_ha.so","parameters":{
       "high-availability":[{
         "this-server-name":"$local_name","mode":"hot-standby",
-        "heartbeat-delay":1000,
+        "heartbeat-delay":1000,"max-response-delay":3000,
         "multi-threading":{"enable-multi-threading":true,
                            "http-dedicated-listener":true,
                            "http-listener-threads":1,
@@ -213,7 +235,7 @@ EOF
     {"library":"$hook_dir/libdhcp_ha.so","parameters":{
       "high-availability":[{
         "this-server-name":"$local_name","mode":"hot-standby",
-        "heartbeat-delay":1000,
+        "heartbeat-delay":1000,"max-response-delay":3000,
         "multi-threading":{"enable-multi-threading":true,
                            "http-dedicated-listener":true,
                            "http-listener-threads":1,
@@ -262,16 +284,32 @@ EOF
     echo "$3 reaches $4 for DHCPv4 and DHCPv6"
     ;;
   client)
-    # client IFACE LOCAL4 LOCAL6 PRIMARY4 PRIMARY6 CLIENT
-    [ "$#" -eq 7 ] || fail "invalid client arguments"
-    "$python" "$7" "$5" "$6" "$interface" "$client_mac" "$3" "$4"
+    # client IFACE LOCAL4 LOCAL6 SERVER4 SERVER6 CLIENT [REQUEST4 EXPECTED6]
+    [ "$#" -eq 7 ] || [ "$#" -eq 9 ] || fail "invalid client arguments"
+    if [ "$#" -eq 9 ]; then
+      "$python" "$7" "$5" "$6" "$interface" "$client_mac" "$3" "$4" \
+        "$8" "$9"
+    else
+      "$python" "$7" "$5" "$6" "$interface" "$client_mac" "$3" "$4"
+    fi
     echo "HA client exchanges were sent from $interface"
     ;;
   verify)
-    # verify IFACE PROBE
-    [ "$#" -eq 3 ] || fail "invalid verify arguments"
-    "$python" "$3" leases "$socket4" "$socket6"
+    # verify IFACE PROBE ADDRESS4 ADDRESS6
+    [ "$#" -eq 5 ] || fail "invalid verify arguments"
+    "$python" "$3" leases "$socket4" "$socket6" "$4" "$5"
     echo "local DHCPv4 and DHCPv6 lease databases contain the HA leases"
+    ;;
+  takeover)
+    # takeover IFACE LOCAL_NAME PRIMARY_NAME PROBE
+    [ "$#" -eq 5 ] || fail "invalid takeover arguments"
+    "$python" "$5" takeover "$socket4" "$3" "$4"
+    "$python" "$5" takeover "$socket6" "$3" "$4"
+    echo "$3 now serves the stopped primary $4 scope"
+    ;;
+  halt)
+    halt_server
+    echo "Kea primary daemons stopped; test interface retained"
     ;;
   logs)
     grep -E 'HA_STATE_TRANSITION|HA_LOCAL_DHCP|HA_LEASE|LEASE_ALLOC|DROP|ERROR' \
@@ -280,5 +318,5 @@ EOF
   stop)
     stop_server
     ;;
-  *) fail "usage: $0 {start|ready|client|verify|logs|stop} INTERFACE ..." ;;
+  *) fail "usage: $0 {start|ready|client|verify|takeover|halt|logs|stop} IFACE ..." ;;
 esac

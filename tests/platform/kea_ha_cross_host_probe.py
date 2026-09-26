@@ -67,8 +67,9 @@ def ha_ready(path: str, local_name: str, remote_name: str,
             remote.get("in-touch") is True)
 
 
-def leases_present(socket4: str, socket6: str) -> bool:
-    """Require the deterministic first lease in both local databases."""
+def leases_present(socket4: str, socket6: str, address4: str,
+                   address6: str) -> bool:
+    """Require the selected leases in both local databases."""
     def lease_page(path: str, command: str) -> list[dict[str, Any]]:
         reply = query(path, command, {"from": "start", "limit": 16})
         if reply.get("result") == 3:
@@ -79,9 +80,43 @@ def leases_present(socket4: str, socket6: str) -> bool:
     # this command has one portable shape across the tested Kea releases.
     leases4 = lease_page(socket4, "lease4-get-page")
     leases6 = lease_page(socket6, "lease6-get-page")
-    return (any(lease.get("ip-address") == "192.0.2.100" for lease in leases4)
-            and any(lease.get("ip-address") == "2001:db8:6::100"
-                    for lease in leases6))
+    return (any(lease.get("ip-address") == address4 for lease in leases4)
+            and any(lease.get("ip-address") == address6 for lease in leases6))
+
+
+def activate_takeover(path: str, local_name: str,
+                      primary_name: str) -> None:
+    """Assign the stopped primary's only hot-standby scope locally."""
+    successful(query(path, "ha-scopes", {
+        "server-name": local_name,
+        "scopes": [primary_name],
+    }), "ha-scopes")
+
+
+def peer_is_down(path: str, local_name: str, primary_name: str) -> bool:
+    """Return whether the survivor reports its stopped partner unavailable."""
+    arguments = successful(query(path, "status-get", {}), "status-get")
+    relationships = arguments.get("high-availability")
+    if not isinstance(relationships, list) or len(relationships) != 1:
+        return False
+    servers = relationships[0].get("ha-servers", {})
+    local = servers.get("local", {})
+    remote = servers.get("remote", {})
+    return (local.get("server-name") == local_name and
+            remote.get("server-name") == primary_name and
+            remote.get("communication-interrupted") is True and
+            remote.get("last-state") == "unavailable")
+
+
+def takeover_ready(path: str, local_name: str, primary_name: str) -> bool:
+    """Return whether the survivor now owns the primary service scope."""
+    arguments = successful(query(path, "status-get", {}), "status-get")
+    relationships = arguments.get("high-availability")
+    if not isinstance(relationships, list) or len(relationships) != 1:
+        return False
+    local = relationships[0].get("ha-servers", {}).get("local", {})
+    return (local.get("server-name") == local_name and
+            local.get("scopes") == [primary_name])
 
 
 def wait_for(predicate: Callable[[], bool], description: str) -> None:
@@ -103,7 +138,8 @@ def main() -> None:
     if len(sys.argv) < 4:
         raise SystemExit(
             f"usage: {sys.argv[0]} ready SOCKET NAME PEER ROLE | "
-            "leases SOCKET4 SOCKET6"
+            "takeover SOCKET NAME PRIMARY | "
+            "leases SOCKET4 SOCKET6 ADDRESS4 ADDRESS6"
         )
     if sys.argv[1] == "ready" and len(sys.argv) == 6:
         try:
@@ -114,9 +150,22 @@ def main() -> None:
             print(json.dumps(query(sys.argv[2], "status-get", {}), indent=2),
                   file=sys.stderr)
             raise
-    elif sys.argv[1] == "leases" and len(sys.argv) == 4:
-        wait_for(lambda: leases_present(sys.argv[2], sys.argv[3]),
-                 "replicated DHCPv4 and DHCPv6 leases")
+    elif sys.argv[1] == "takeover" and len(sys.argv) == 5:
+        try:
+            wait_for(
+                lambda: peer_is_down(sys.argv[2], sys.argv[3], sys.argv[4]),
+                f"{sys.argv[3]} to observe {sys.argv[4]} down")
+        except RuntimeError:
+            print(json.dumps(query(sys.argv[2], "status-get", {}), indent=2),
+                  file=sys.stderr)
+            raise
+        activate_takeover(sys.argv[2], sys.argv[3], sys.argv[4])
+        wait_for(lambda: takeover_ready(sys.argv[2], sys.argv[3], sys.argv[4]),
+                 f"{sys.argv[3]} to activate the {sys.argv[4]} scope")
+    elif sys.argv[1] == "leases" and len(sys.argv) == 6:
+        wait_for(lambda: leases_present(sys.argv[2], sys.argv[3], sys.argv[4],
+                                        sys.argv[5]),
+                 f"DHCPv4 {sys.argv[4]} and DHCPv6 {sys.argv[5]} leases")
     else:
         raise SystemExit("invalid HA probe arguments")
 

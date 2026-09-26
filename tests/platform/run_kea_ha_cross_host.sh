@@ -58,6 +58,14 @@ run_phase() {
     client6=$freebsd6
     primary4=$linux4
     primary6=$linux6
+    primary_host=$linux_host
+    primary_interface=$linux_interface
+    primary_name=linux
+    standby_host=$freebsd_host
+    standby_interface=$freebsd_interface
+    standby_name=freebsd
+    standby4=$freebsd4
+    standby6=$freebsd6
   else
     linux_role=standby
     freebsd_role=primary
@@ -67,6 +75,14 @@ run_phase() {
     client6=$linux6
     primary4=$freebsd4
     primary6=$freebsd6
+    primary_host=$freebsd_host
+    primary_interface=$freebsd_interface
+    primary_name=freebsd
+    standby_host=$linux_host
+    standby_interface=$linux_interface
+    standby_name=linux
+    standby4=$linux4
+    standby6=$linux6
   fi
 
   # Bring up the standby first so the primary can immediately establish both
@@ -132,23 +148,38 @@ run_phase() {
   remote "$client_host" sudo "$endpoint" client "$client_interface" \
     "$client4" "$client6" "$primary4" "$primary6" "$client"
   if ! remote "$linux_host" sudo "$endpoint" verify "$linux_interface" \
-       "$probe"; then
+       "$probe" 192.0.2.100 2001:db8:6::100; then
     remote "$linux_host" sudo "$endpoint" logs "$linux_interface" || true
     remote "$freebsd_host" sudo "$endpoint" logs "$freebsd_interface" || true
     return 1
   fi
   if ! remote "$freebsd_host" sudo "$endpoint" verify \
-       "$freebsd_interface" "$probe"; then
+       "$freebsd_interface" "$probe" 192.0.2.100 2001:db8:6::100; then
     remote "$linux_host" sudo "$endpoint" logs "$linux_interface" || true
     remote "$freebsd_host" sudo "$endpoint" logs "$freebsd_interface" || true
     return 1
   fi
 
+  # The documented ha-scopes command can cause split-brain if the primary can
+  # still answer. Prove both primary daemons have exited before activating the
+  # one hot-standby scope on the survivor, then allocate a distinct client.
+  remote "$primary_host" sudo "$endpoint" halt "$primary_interface"
+  remote "$standby_host" sudo "$endpoint" takeover "$standby_interface" \
+    "$standby_name" "$primary_name" "$probe"
+  remote "$primary_host" sudo "$endpoint" client "$primary_interface" \
+    "$primary4" "$primary6" "$standby4" "$standby6" "$client" \
+    192.0.2.101 2001:db8:6::101
+  if ! remote "$standby_host" sudo "$endpoint" verify \
+       "$standby_interface" "$probe" 192.0.2.101 2001:db8:6::101; then
+    remote "$standby_host" sudo "$endpoint" logs "$standby_interface" || true
+    return 1
+  fi
+
   remote "$linux_host" sudo "$endpoint" stop "$linux_interface"
   remote "$freebsd_host" sudo "$endpoint" stop "$freebsd_interface"
-  echo "$primary primary replicated DHCPv4 and DHCPv6 leases to its standby"
+  echo "$primary primary replicated leases and its standby completed takeover"
 }
 
 run_phase linux
 run_phase freebsd
-echo "Bidirectional Linux/FreeBSD Kea HA replication passed"
+echo "Bidirectional Linux/FreeBSD Kea HA replication and takeover passed"

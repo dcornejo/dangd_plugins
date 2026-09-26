@@ -586,16 +586,24 @@ only the hook's restricted dedicated HTTP listener for peer traffic. The
 orchestrator waits for both DHCPv4 and DHCPv6 relationships to enter
 `hot-standby`, sends one allocation of each family to the primary, and requires
 the same deterministic leases in both members' local databases. It then stops
-both memory-only pairs, reverses the Linux and FreeBSD roles, and repeats:
+both primary daemons while retaining only the disposable interface aliases.
+The standby must report interrupted communication and the partner unavailable
+before the harness uses the local `ha-scopes` command to activate the stopped
+primary's scope. A second client must then create distinct IPv4 and IPv6 leases
+on the survivor. The harness destroys the memory-only pair, reverses the Linux
+and FreeBSD roles, and repeats:
 
 ```sh
 tests/platform/run_kea_ha_cross_host.sh \
   dev-linux-1 dev-freebsd-1 ens19 vtnet1
 ```
 
-This proves cross-version peer communication, initial synchronization, service
-scope activation, and bidirectional lease replication. It does not exercise a
-pair-wide dangd commit or claim distributed transaction atomicity. As with the
-basic VLAN interaction, the cleanup trap removes the documentation-prefix
-aliases, sockets, processes, configurations, and copied helpers after success
-or failure.
+This proves cross-version peer communication, initial synchronization, normal
+service scope activation, bidirectional lease replication, outage recognition,
+and guarded manual takeover. It deliberately keeps automatic failover disabled
+and never changes scopes until the primary processes have exited, avoiding the
+split-brain risk documented for `ha-scopes`. It does not exercise a pair-wide
+dangd commit or claim distributed transaction atomicity. As with the basic VLAN
+interaction, the cleanup trap removes the documentation-prefix aliases,
+sockets, processes, configurations, and copied helpers after success or
+failure.
