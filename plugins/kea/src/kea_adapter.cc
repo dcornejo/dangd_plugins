@@ -2363,14 +2363,14 @@ std::optional<std::string> TranslateHaOperationalState(
             *destination += "<" + std::string(element) + ">" + *escaped +
                             "</" + std::string(element) + ">";
           };
-      const auto append_optional_uint64 =
+      const auto append_required_uint64 =
           [](const nlohmann::json& object, std::string_view key,
              std::string_view element, std::string* destination) {
             const auto value = object.find(std::string(key));
-            if (value == object.end()) return;
-            if (!value->is_number_unsigned())
-              throw std::runtime_error(std::string(key) +
-                                       " is not an unsigned integer");
+            if (value == object.end() || !value->is_number_unsigned())
+              throw std::runtime_error(
+                  std::string(key) +
+                  " is missing or not an unsigned integer");
             *destination += "<" + std::string(element) + ">" +
                             std::to_string(value->get<std::uint64_t>()) +
                             "</" + std::string(element) + ">";
@@ -2443,6 +2443,24 @@ std::optional<std::string> TranslateHaOperationalState(
       append_scopes(local, "scopes", "scope", &entry);
       entry += "</local>";
       if (remote != servers.end()) {
+        const auto clock_value_is_present = [](const nlohmann::json& object,
+                                               std::string_view key,
+                                               std::string_view label) {
+          const auto value = object.find(std::string(key));
+          if (value == object.end())
+            throw std::runtime_error(std::string(label) + " is missing");
+          return !value->is_null();
+        };
+        const bool local_time =
+            clock_value_is_present(local, "system-time", "local system-time");
+        const bool remote_time = clock_value_is_present(
+            *remote, "system-time", "remote system-time");
+        const bool clock_skew =
+            clock_value_is_present(*remote, "clock-skew", "clock-skew");
+        if (local_time != remote_time || local_time != clock_skew)
+          throw std::runtime_error(
+              "local system-time, remote system-time, and clock-skew must "
+              "be present or null together");
         entry += "<remote><server-name>" +
                  string_value(*remote, "server-name") +
                  "</server-name><role>" + string_value(*remote, "role") +
@@ -2452,18 +2470,18 @@ std::optional<std::string> TranslateHaOperationalState(
                  (bool_value(*remote, "communication-interrupted") ? "true"
                                                                     : "false") +
                  "</communication-interrupted>";
-        append_optional_uint64(*remote, "age", "age", &entry);
-        append_optional_uint64(*remote, "analyzed-packets",
+        append_required_uint64(*remote, "age", "age", &entry);
+        append_required_uint64(*remote, "analyzed-packets",
                                "analyzed-packets", &entry);
         append_optional_int64(*remote, "clock-skew", "clock-skew", &entry);
-        append_optional_uint64(*remote, "connecting-clients",
+        append_required_uint64(*remote, "connecting-clients",
                                "connecting-clients", &entry);
         entry += "<last-state>" + string_value(*remote, "last-state") +
                  "</last-state>";
         append_optional_string(*remote, "system-time", "system-time", &entry);
-        append_optional_uint64(*remote, "unacked-clients", "unacked-clients",
+        append_required_uint64(*remote, "unacked-clients", "unacked-clients",
                                &entry);
-        append_optional_uint64(*remote, "unacked-clients-left",
+        append_required_uint64(*remote, "unacked-clients-left",
                                "unacked-clients-left", &entry);
         append_scopes(*remote, "last-scopes", "last-scope", &entry);
         entry += "</remote>";

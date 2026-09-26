@@ -89,7 +89,10 @@ name/role/state/scopes, and remote name/role/reachability/last-state/scopes.
 For active-peer modes it also publishes peer-information age, the native
 traffic-monitoring counters, and, once measured, both UTC samples and signed
 peer-minus-local clock skew. Nullable clock fields remain absent until Kea has
-calculated them.
+calculated them. Age and the four traffic-monitoring counters are one required
+sample. The local UTC sample, remote UTC sample, and signed skew must likewise
+be all measured or all null. Any partial set fails closed rather than exposing
+an internally inconsistent relationship.
 Remote status is present for load-balancing and hot-standby and absent for
 passive-backup, matching Kea's native response contract.
 The collector also requires the reported relationship count and mode plus the

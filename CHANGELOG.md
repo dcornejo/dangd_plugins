@@ -9,6 +9,14 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Required coherent Kea HA active-peer health samples. The peer-information
+  age and four traffic-monitoring counters must all be present as unsigned
+  values, while the local time, remote time, and signed clock skew must be
+  either all measured or all null. Partial native samples now fail closed
+  instead of publishing misleading relationship state. The YANG contract,
+  source documentation, deployment guidance, and portable regressions describe
+  and enforce the same invariant; passive-backup remains unaffected.
+
 - Extended Kea HA authority binding to the active partner. For hot-standby and
   load-balancing relationships managed by an active local member, native remote
   server name and role must match the singular configured active peer.

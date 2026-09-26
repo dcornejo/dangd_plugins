@@ -333,7 +333,10 @@ reachability, interrupted-communication flag, status age, packet/client
 monitoring counters, last state, and last scopes. When Kea has completed a
 clock comparison, the tree also carries each active member's native UTC sample
 and the signed peer-minus-local clock skew; null, not-yet-measured values are
-omitted.
+omitted. The age and four traffic-monitoring counters form one required native
+sample, while the two UTC samples and signed skew are published together or
+omitted together. A partial sample fails the complete operational request
+instead of presenting incomplete peer health as authoritative state.
 Before publishing those entries, the collector binds every native relationship
 to the accepted HA hook configuration by position and mode, then binds both the
 local and singular active-remote server names and roles to the configured peer

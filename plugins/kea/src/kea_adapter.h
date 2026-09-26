@@ -116,8 +116,10 @@ using ConfigurationCommand = std::function<bool(
 
 /**
  * Converts a successful Kea status-get reply to dang-kea-ha list entries.
- * Nullable clock fields are omitted until Kea has measured them; malformed
- * fields fail the complete translation instead of producing partial state.
+ * Active-peer traffic counters must form one complete sample. The local and
+ * remote UTC samples and their skew are published together or omitted together
+ * until Kea has measured them. Malformed or partial samples fail the complete
+ * translation instead of producing misleading state.
  */
 [[nodiscard]] std::optional<std::string> TranslateHaOperationalState(
     std::string_view module_name, const nlohmann::json& status,

@@ -117,11 +117,13 @@ module dang-kea-ha {
         }
         leaf age {
           type uint64;
+          mandatory true;
           units "seconds";
           description "Age of the last information received from the peer.";
         }
         leaf analyzed-packets {
           type uint64;
+          mandatory true;
           description
             "Packets directed to the peer that Kea has examined while
              monitoring interrupted communication.";
@@ -135,6 +137,7 @@ module dang-kea-ha {
         }
         leaf connecting-clients {
           type uint64;
+          mandatory true;
           description
             "Distinct clients observed attempting to contact the peer during
              interrupted-communication monitoring.";
@@ -153,11 +156,13 @@ module dang-kea-ha {
         }
         leaf unacked-clients {
           type uint64;
+          mandatory true;
           description
             "Distinct clients considered unacknowledged by the peer.";
         }
         leaf unacked-clients-left {
           type uint64;
+          mandatory true;
           description
             "Additional unacknowledged clients required before Kea enters
              partner-down state.";

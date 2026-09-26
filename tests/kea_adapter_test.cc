@@ -400,6 +400,36 @@ int main() {
                      nullable_ha_state->find("<clock-skew>") ==
                          std::string::npos,
                  "unmeasured nullable HA clock values were not omitted");
+  nlohmann::json partial_clock_status = ha_status;
+  partial_clock_status["arguments"]["high-availability"][0]["ha-servers"]
+                      ["remote"]["clock-skew"] = nullptr;
+  error.clear();
+  valid &= Check(
+      !dang::plugins::kea::TranslateHaOperationalState(
+          "kea-dhcp4-server", partial_clock_status, &error) &&
+          error.find("must be present or null together") != std::string::npos,
+      "partial HA clock sample was accepted");
+  nlohmann::json missing_clock_status = nullable_ha_status;
+  missing_clock_status["arguments"]["high-availability"][0]["ha-servers"]
+                      ["local"]
+                          .erase("system-time");
+  error.clear();
+  valid &= Check(
+      !dang::plugins::kea::TranslateHaOperationalState(
+          "kea-dhcp4-server", missing_clock_status, &error) &&
+          error.find("local system-time is missing") != std::string::npos,
+      "missing HA clock field was accepted as an unmeasured value");
+  nlohmann::json missing_counter_status = ha_status;
+  missing_counter_status["arguments"]["high-availability"][0]["ha-servers"]
+                        ["remote"]
+                            .erase("age");
+  error.clear();
+  valid &= Check(
+      !dang::plugins::kea::TranslateHaOperationalState(
+          "kea-dhcp6-server", missing_counter_status, &error) &&
+          error.find("age is missing or not an unsigned integer") !=
+              std::string::npos,
+      "partial HA traffic-monitoring counter set was accepted");
   nlohmann::json malformed_ha_status = ha_status;
   malformed_ha_status["arguments"]["high-availability"][0]["ha-servers"]
                      ["remote"]["in-touch"] = "false";
@@ -416,7 +446,8 @@ int main() {
   valid &= Check(
       !dang::plugins::kea::TranslateHaOperationalState(
           "kea-dhcp6-server", malformed_ha_status, &error) &&
-          error.find("analyzed-packets is not an unsigned integer") !=
+          error.find(
+              "analyzed-packets is missing or not an unsigned integer") !=
               std::string::npos,
       "negative HA traffic counter was accepted");
   error.clear();
@@ -523,6 +554,12 @@ int main() {
                             ["ha-servers"]["remote"] =
       authoritative_ha_status["arguments"]["high-availability"][0]
                              ["ha-servers"]["remote"];
+  // Keep this deliberately fabricated active-peer sample internally coherent
+  // so authority binding, rather than the translator's clock-set validation,
+  // proves that passive-backup rejects a singular remote member.
+  passive_status_with_remote["arguments"]["high-availability"][0]
+                            ["ha-servers"]["local"]["system-time"] =
+      "2026-09-24 12:00:00";
   const dang::plugins::kea::ControlQuery passive_remote_read =
       [&](std::string_view, std::string_view command, const nlohmann::json&,
           std::string*) -> std::optional<nlohmann::json> {
