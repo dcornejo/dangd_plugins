@@ -548,6 +548,9 @@ struct HaRelationshipIdentity {
   std::string mode;
   std::string server_name;
   std::string role;
+  std::optional<std::string> remote_server_name;
+  std::optional<std::string> remote_role;
+  bool remote_must_be_absent = false;
 };
 
 std::optional<std::vector<HaRelationshipIdentity>>
@@ -581,11 +584,24 @@ ConfiguredHaRelationshipIdentities(const ServerConfiguration& server,
         const std::string& configured_name =
             server_name.get_ref<const std::string&>();
         const nlohmann::json* configured_peer = nullptr;
+        const nlohmann::json* active_remote = nullptr;
+        const std::string& configured_mode =
+            mode.get_ref<const std::string&>();
+        const auto active_role = [&configured_mode](std::string_view role) {
+          if (configured_mode == "hot-standby")
+            return role == "primary" || role == "standby";
+          if (configured_mode == "load-balancing")
+            return role == "primary" || role == "secondary";
+          return false;
+        };
         for (const auto& peer : peers) {
-          if (!peer.is_object()) continue;
-          const auto name = peer.find("name");
-          if (name != peer.end() && name->is_string() &&
-              name->get_ref<const std::string&>() == configured_name) {
+          if (!peer.is_object())
+            throw std::runtime_error("peer identity is not an object");
+          const auto& name = peer.at("name");
+          const auto& peer_role = peer.at("role");
+          if (!name.is_string() || !peer_role.is_string())
+            throw std::runtime_error("peer name or role is not a string");
+          if (name.get_ref<const std::string&>() == configured_name) {
             if (configured_peer)
               throw std::runtime_error("local peer identity is duplicated");
             configured_peer = &peer;
@@ -596,9 +612,32 @@ ConfiguredHaRelationshipIdentities(const ServerConfiguration& server,
         const auto& role = configured_peer->at("role");
         if (!role.is_string())
           throw std::runtime_error("local peer role is not a string");
-        identities.push_back(
-            {mode.get_ref<const std::string&>(), configured_name,
-             role.get_ref<const std::string&>()});
+        HaRelationshipIdentity identity{
+            configured_mode, configured_name,
+            role.get_ref<const std::string&>(), std::nullopt, std::nullopt,
+            false};
+        if (configured_mode == "passive-backup") {
+          identity.remote_must_be_absent = true;
+        } else if (active_role(identity.role)) {
+          for (const auto& peer : peers) {
+            const std::string& peer_name =
+                peer.at("name").get_ref<const std::string&>();
+            const std::string& peer_role =
+                peer.at("role").get_ref<const std::string&>();
+            if (peer_name == configured_name || !active_role(peer_role))
+              continue;
+            if (active_remote)
+              throw std::runtime_error("active remote identity is ambiguous");
+            active_remote = &peer;
+          }
+          if (!active_remote)
+            throw std::runtime_error("active remote identity is missing");
+          identity.remote_server_name =
+              active_remote->at("name").get_ref<const std::string&>();
+          identity.remote_role =
+              active_remote->at("role").get_ref<const std::string&>();
+        }
+        identities.push_back(std::move(identity));
       }
       return identities;
     }
@@ -628,6 +667,7 @@ bool VerifyHaStatusIdentity(const ServerConfiguration& expected,
     for (std::size_t index = 0; index < configured->size(); ++index) {
       const auto& relationship = reported.at(index);
       const auto& local = relationship.at("ha-servers").at("local");
+      const auto& servers = relationship.at("ha-servers");
       const auto& mode = relationship.at("ha-mode");
       const auto& server_name = local.at("server-name");
       const auto& role = local.at("role");
@@ -645,6 +685,29 @@ bool VerifyHaStatusIdentity(const ServerConfiguration& expected,
         throw std::runtime_error(
             "relationship " + std::to_string(index) +
             " local role does not match accepted configuration");
+      const auto remote = servers.find("remote");
+      if (identity.remote_must_be_absent && remote != servers.end())
+        throw std::runtime_error(
+            "relationship " + std::to_string(index) +
+            " unexpectedly reports a passive-backup remote");
+      if (identity.remote_server_name) {
+        if (remote == servers.end() || !remote->is_object())
+          throw std::runtime_error("relationship " + std::to_string(index) +
+                                   " active remote is missing");
+        const auto& remote_name = remote->at("server-name");
+        const auto& remote_role = remote->at("role");
+        if (!remote_name.is_string() || !remote_role.is_string())
+          throw std::runtime_error("remote relationship identity is malformed");
+        if (remote_name.get_ref<const std::string&>() !=
+            *identity.remote_server_name)
+          throw std::runtime_error(
+              "relationship " + std::to_string(index) +
+              " remote server-name does not match accepted configuration");
+        if (remote_role.get_ref<const std::string&>() != *identity.remote_role)
+          throw std::runtime_error(
+              "relationship " + std::to_string(index) +
+              " remote role does not match accepted configuration");
+      }
     }
     return true;
   } catch (const std::exception& exception) {

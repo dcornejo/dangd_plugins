@@ -9,6 +9,14 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Extended Kea HA authority binding to the active partner. For hot-standby and
+  load-balancing relationships managed by an active local member, native remote
+  server name and role must match the singular configured active peer.
+  Passive-backup status must omit the remote map as Kea specifies. Mismatched
+  partner identity and fabricated passive-backup peers fail closed with empty
+  output; portable tests cover each case and both native platform workflows
+  retain their complete HA matrix.
+
 - Bound Kea HA operational replies to the accepted hook configuration. Before
   publishing status, the collector now requires the native relationship count,
   mode, local server name, and local role to match the authoritative JSON at

@@ -133,8 +133,8 @@ using ConfigurationCommand = std::function<bool(
  * queries, and duration rather than restarting for leases, statistics, and
  * reservations and HA status. When supplied, ha_operational_xml receives the
  * dang-kea-ha relationship entries separately from the ISC module state only
- * after their count, mode, local name, and local role match the accepted HA
- * configuration.
+ * after their count, mode, and local and active-remote identities match the
+ * accepted HA configuration.
  */
 [[nodiscard]] std::optional<std::string> CollectAuthoritativeOperationalState(
     const ServerConfiguration& expected, bool dhcp6,

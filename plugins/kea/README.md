@@ -335,10 +335,11 @@ clock comparison, the tree also carries each active member's native UTC sample
 and the signed peer-minus-local clock skew; null, not-yet-measured values are
 omitted.
 Before publishing those entries, the collector binds every native relationship
-to the accepted HA hook configuration by position, mode, local server name, and
-local role. A missing, extra, stale, or cross-member response therefore fails
-at the HA operational path instead of being labeled with the current datastore
-identity.
+to the accepted HA hook configuration by position and mode, then binds both the
+local and singular active-remote server names and roles to the configured peer
+list. Passive-backup must not report a remote member. A missing, extra, stale,
+or cross-member response therefore fails at the HA operational path instead of
+being labeled with the current datastore identity.
 The status query is omitted when the accepted image has no HA hook. A missing,
 rejected, malformed, oversized, or late HA reply fails the complete operational
 request at `/{urn:dang:kea:ha}high-availability`; raw native JSON is never

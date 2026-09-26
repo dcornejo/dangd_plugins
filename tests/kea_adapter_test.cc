@@ -498,6 +498,53 @@ int main() {
   valid &= rejects_mismatched_ha_identity(
       mismatched_ha_identity, "local role does not match accepted configuration",
       "HA status with a stale local role was published");
+  mismatched_ha_identity = authoritative_ha_status;
+  mismatched_ha_identity["arguments"]["high-availability"][0]["ha-servers"]
+                        ["remote"]["server-name"] = "other-standby";
+  valid &= rejects_mismatched_ha_identity(
+      mismatched_ha_identity,
+      "remote server-name does not match accepted configuration",
+      "HA status from a different active partner was published");
+  mismatched_ha_identity = authoritative_ha_status;
+  mismatched_ha_identity["arguments"]["high-availability"][0]["ha-servers"]
+                        ["remote"]["role"] = "secondary";
+  valid &= rejects_mismatched_ha_identity(
+      mismatched_ha_identity,
+      "remote role does not match accepted configuration",
+      "HA status with a stale active-partner role was published");
+  auto passive_member = *ha_member;
+  auto& passive_parameters =
+      passive_member.arguments["Dhcp4"]["hooks-libraries"][3]["parameters"]
+                                ["high-availability"][0];
+  passive_parameters["mode"] = "passive-backup";
+  passive_parameters["peers"][1]["role"] = "backup";
+  nlohmann::json passive_status_with_remote = passive_ha_status;
+  passive_status_with_remote["arguments"]["high-availability"][0]
+                            ["ha-servers"]["remote"] =
+      authoritative_ha_status["arguments"]["high-availability"][0]
+                             ["ha-servers"]["remote"];
+  const dang::plugins::kea::ControlQuery passive_remote_read =
+      [&](std::string_view, std::string_view command, const nlohmann::json&,
+          std::string*) -> std::optional<nlohmann::json> {
+    if (command == "config-get")
+      return OptionalJson(nlohmann::json{
+          {"result", 0}, {"arguments", passive_member.arguments}});
+    if (command == "lease4-get-page" || command == "reservation-get-page")
+      return OptionalJson(nlohmann::json{{"result", 3}});
+    if (command == "status-get") return OptionalJson(passive_status_with_remote);
+    return std::nullopt;
+  };
+  ha_failure_path.clear();
+  collected_ha_state = "stale";
+  error.clear();
+  valid &= Check(
+      !dang::plugins::kea::CollectAuthoritativeOperationalState(
+          passive_member, false, {}, passive_remote_read, &ha_failure_path,
+          &error, {}, &collected_ha_state) &&
+          ha_failure_path == "ha-state" && collected_ha_state.empty() &&
+          error.find("unexpectedly reports a passive-backup remote") !=
+              std::string::npos,
+      "passive-backup status fabricated a singular remote member");
   nlohmann::json two_ha_relationships = authoritative_ha_status;
   two_ha_relationships["arguments"]["high-availability"].push_back(
       two_ha_relationships["arguments"]["high-availability"].front());
