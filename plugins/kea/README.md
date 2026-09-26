@@ -579,3 +579,23 @@ tests/platform/run_kea_cross_host.sh \
 The orchestrator copies its two endpoint helpers to unique `/tmp` paths, runs
 Linux-server/FreeBSD-client and FreeBSD-server/Linux-client phases, and removes
 all remote helpers and runtime state through its exit trap.
+
+The HA interaction uses those same guarded interfaces for a real hot-standby
+pair. Each Kea daemon keeps its management API on a local UNIX socket and uses
+only the hook's restricted dedicated HTTP listener for peer traffic. The
+orchestrator waits for both DHCPv4 and DHCPv6 relationships to enter
+`hot-standby`, sends one allocation of each family to the primary, and requires
+the same deterministic leases in both members' local databases. It then stops
+both memory-only pairs, reverses the Linux and FreeBSD roles, and repeats:
+
+```sh
+tests/platform/run_kea_ha_cross_host.sh \
+  dev-linux-1 dev-freebsd-1 ens19 vtnet1
+```
+
+This proves cross-version peer communication, initial synchronization, service
+scope activation, and bidirectional lease replication. It does not exercise a
+pair-wide dangd commit or claim distributed transaction atomicity. As with the
+basic VLAN interaction, the cleanup trap removes the documentation-prefix
+aliases, sockets, processes, configurations, and copied helpers after success
+or failure.

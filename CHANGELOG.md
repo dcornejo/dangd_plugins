@@ -9,6 +9,16 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added a real cross-host Kea HA integration test on the guarded sterile VLAN.
+  Packaged Linux and FreeBSD Kea servers establish restricted dedicated
+  hot-standby listeners for DHCPv4 and DHCPv6, complete initial synchronization,
+  activate the primary service scopes, and replicate real client leases into
+  both memory-only databases. The workflow reverses the operating-system roles
+  and repeats the proof, rejects management interfaces, bounds every wait, and
+  removes all aliases, processes, sockets, and helpers through its cleanup trap.
+  Documentation distinguishes this native replication proof from the still
+  unimplemented pair-wide dangd transaction.
+
 - Required coherent Kea HA active-peer health samples. The peer-information
   age and four traffic-monitoring counters must all be present as unsigned
   values, while the local time, remote time, and signed clock skew must be

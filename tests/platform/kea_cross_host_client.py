@@ -49,11 +49,11 @@ def packet4(message_type: int, xid: int, client: bytes,
     return header + options + b"\xff"
 
 
-def dhcp4(server: str, client: bytes) -> None:
+def dhcp4(server: str, source: str, client: bytes) -> None:
     xid = int.from_bytes(os.urandom(4), "big")
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(1)
-    sock.bind(("192.0.2.2", 1068))
+    sock.bind((source, 1068))
     sock.sendto(packet4(1, xid, client), (server, 1067))
     offered = ipaddress.ip_address("192.0.2.100").packed
     server_id = ipaddress.ip_address(server).packed
@@ -108,7 +108,7 @@ def options6(packet: bytes) -> dict[int, bytes]:
     return result
 
 
-def dhcp6(interface: str, client: bytes) -> None:
+def dhcp6(interface: str, source: str, client: bytes) -> None:
     xid = os.urandom(3)
     duid = b"\x00\x03\x00\x01" + client
     iaid = 9601
@@ -118,7 +118,7 @@ def dhcp6(interface: str, client: bytes) -> None:
                encode6(14, b""))
     sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
     sock.settimeout(1)
-    sock.bind(("2001:db8:6::2", 1546))
+    sock.bind((source, 1546))
     sock.sendto(solicit, ("ff02::1:2", 1547, 0, socket.if_nametoindex(interface)))
     try:
         reply, peer = sock.recvfrom(8192)
@@ -141,11 +141,17 @@ def dhcp6(interface: str, client: bytes) -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 5:
+    if len(sys.argv) not in (5, 7):
         raise SystemExit(
-            f"usage: {sys.argv[0]} SERVER4 SERVER6 INTERFACE CLIENT_MAC")
+            f"usage: {sys.argv[0]} SERVER4 SERVER6 INTERFACE CLIENT_MAC "
+            "[SOURCE4 SOURCE6]")
     client = bytes.fromhex(sys.argv[4].replace(":", ""))
     if len(client) != 6:
         raise SystemExit("CLIENT_MAC must contain exactly six octets")
-    dhcp4(sys.argv[1], client)
-    dhcp6(sys.argv[3], client)
+    # The original two-host server/client test always uses the .2 endpoint as
+    # its client. HA testing keeps both servers running and reverses their
+    # roles, so it supplies the already configured source addresses explicitly.
+    source4 = sys.argv[5] if len(sys.argv) == 7 else "192.0.2.2"
+    source6 = sys.argv[6] if len(sys.argv) == 7 else "2001:db8:6::2"
+    dhcp4(sys.argv[1], source4, client)
+    dhcp6(sys.argv[3], source6, client)
