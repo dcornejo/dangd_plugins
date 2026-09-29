@@ -26,7 +26,10 @@ freebsd6=2001:db8:6::2
 case "$failover_mode" in
   manual) auto_failover=false ;;
   automatic) auto_failover=true ;;
-  *) echo "failover mode must be manual or automatic" >&2; exit 2 ;;
+  # Kea clears the survivor's scope when it reaches partner-down with
+  # auto-failover disabled, even after a successful maintenance handshake.
+  maintenance) auto_failover=true ;;
+  *) echo "failover mode must be manual, automatic, or maintenance" >&2; exit 2 ;;
 esac
 
 remote() {
@@ -167,12 +170,24 @@ run_phase() {
     return 1
   fi
 
-  # Manual ha-scopes can cause split-brain if the primary can still answer, and
+  # Planned maintenance first coordinates both live peers: the survivor must
+  # serve the primary scope and the primary must stop serving before shutdown.
+  if [ "$failover_mode" = maintenance ]; then
+    remote "$standby_host" sudo "$endpoint" maintenance \
+      "$standby_interface" "$standby_name" "$primary_name" "$probe"
+    remote "$primary_host" sudo "$endpoint" maintenance-target \
+      "$primary_interface" "$primary_name" "$standby_name" "$probe"
+  fi
+
+  # Manual scopes can cause split-brain if the primary can still answer, and
   # automatic failure detection must not race an incompletely stopped peer.
-  # Prove both primary daemons have exited before either takeover path proceeds.
+  # Prove both primary daemons have exited before the outage phase proceeds.
   remote "$primary_host" sudo "$endpoint" halt "$primary_interface"
   if [ "$failover_mode" = automatic ]; then
     remote "$standby_host" sudo "$endpoint" automatic \
+      "$standby_interface" "$standby_name" "$primary_name" "$probe"
+  elif [ "$failover_mode" = maintenance ]; then
+    remote "$standby_host" sudo "$endpoint" maintenance-down \
       "$standby_interface" "$standby_name" "$primary_name" "$probe"
   else
     remote "$standby_host" sudo "$endpoint" takeover "$standby_interface" \

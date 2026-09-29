@@ -353,6 +353,27 @@ EOF
     "$python" "$5" automatic "$socket6" "$3" "$4"
     echo "$3 automatically entered partner-down for $4"
     ;;
+  maintenance)
+    # maintenance IFACE LOCAL_NAME PRIMARY_NAME PROBE
+    [ "$#" -eq 5 ] || fail "invalid maintenance arguments"
+    "$python" "$5" maintenance-start "$socket4" "$3" "$4"
+    "$python" "$5" maintenance-start "$socket6" "$3" "$4"
+    echo "$3 entered partner-in-maintenance for $4"
+    ;;
+  maintenance-target)
+    # maintenance-target IFACE LOCAL_NAME SURVIVOR_NAME PROBE
+    [ "$#" -eq 5 ] || fail "invalid maintenance-target arguments"
+    "$python" "$5" maintenance-target "$socket4" "$3" "$4"
+    "$python" "$5" maintenance-target "$socket6" "$3" "$4"
+    echo "$3 is safely in-maintenance behind $4"
+    ;;
+  maintenance-down)
+    # maintenance-down IFACE LOCAL_NAME PRIMARY_NAME PROBE
+    [ "$#" -eq 5 ] || fail "invalid maintenance-down arguments"
+    "$python" "$5" maintenance-down "$socket4" "$3" "$4"
+    "$python" "$5" maintenance-down "$socket6" "$3" "$4"
+    echo "$3 entered partner-down after $4 stopped for maintenance"
+    ;;
   relinquish)
     # relinquish IFACE LOCAL_NAME PROBE
     [ "$#" -eq 4 ] || fail "invalid relinquish arguments"

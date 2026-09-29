@@ -119,6 +119,24 @@ The automatic proof removes the previous native-failover test gap. It still
 does not turn two independently managed dangd instances into one atomic
 transaction.
 
+For planned work, the harness also provides a `maintenance` mode. It sends
+`ha-maintenance-start` to the member that will stay online and does not stop
+the other member until both address families report the coordinated states:
+the survivor is `partner-in-maintenance` with the primary scope, while the
+maintained primary is `in-maintenance` with no scope. After shutdown, the
+survivor must enter `partner-down`, retain the primary scope, and serve the
+second client. Restart, resynchronization, normal hot-standby, and third-client
+replication use the same requirements as the failure tests.
+
+The tested Linux and FreeBSD packages clear the survivor's service scope after
+the maintained peer exits if `auto-failover` is disabled, despite completing
+the maintenance handshake. The harness therefore enables `auto-failover` for
+the continuous-service maintenance profile. This is a recorded interoperability
+constraint of the tested versions, not a claim that the handshake failed: both
+peers reached the expected pre-shutdown maintenance states. Operators should
+validate their exact Kea versions and failure thresholds before relying on a
+maintenance procedure.
+
 The pinned ISC modules do not expose HA relationship status. The companion
 `dang-kea-ha` module fills that model gap without changing their configuration
 schema. Its read-only `high-availability/relationship` list is keyed by address

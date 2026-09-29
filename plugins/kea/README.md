@@ -631,3 +631,19 @@ zero threshold is not a general production recommendation: deployments where
 the peer channel can partition while both servers remain alive must select
 traffic-aware failure thresholds to prevent both members entering
 `partner-down`.
+
+Planned maintenance uses the same harness with a third mode:
+
+```sh
+tests/platform/run_kea_ha_cross_host.sh \
+  dev-linux-1 dev-freebsd-1 ens19 vtnet1 maintenance
+```
+
+Before stopping anything, this mode requires the survivor to enter
+`partner-in-maintenance` with the primary scope and the maintained primary to
+enter `in-maintenance` with no scope. It then proves survivor service,
+restart-time lease synchronization, and restored replication in both operating
+system role assignments. The tested package pair completed the handshake but
+cleared the survivor scope after shutdown when `auto-failover` was disabled;
+the continuous-service profile therefore enables it. Validate the chosen Kea
+versions and production failure thresholds before adopting this procedure.

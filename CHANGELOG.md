@@ -9,6 +9,15 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added a planned-maintenance mode to the real Kea HA matrix. The survivor must
+  accept `ha-maintenance-start`, enter `partner-in-maintenance`, and own the
+  primary scope while the primary must enter `in-maintenance` with no scope
+  before its processes may stop. The survivor must then enter `partner-down`,
+  serve outage traffic, synchronize the restarted primary, and resume normal
+  replication. The tested Linux/FreeBSD package pair clears the survivor scope
+  after shutdown when `auto-failover` is false, so the continuous-service
+  maintenance profile explicitly enables it and documents that requirement.
+
 - Added bidirectional automatic-failover coverage to the cross-host Kea HA
   matrix. The isolated test enables native `auto-failover`, uses a zero
   unacknowledged-client threshold so bounded peer-channel loss immediately

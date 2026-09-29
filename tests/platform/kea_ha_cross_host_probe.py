@@ -119,9 +119,9 @@ def takeover_ready(path: str, local_name: str, primary_name: str) -> bool:
             local.get("scopes") == [primary_name])
 
 
-def automatic_takeover_ready(path: str, local_name: str,
-                             primary_name: str) -> bool:
-    """Return whether native failure detection completed automatic takeover."""
+def partner_down_ready(path: str, local_name: str,
+                       primary_name: str) -> bool:
+    """Return whether native HA state handling completed takeover."""
     arguments = successful(query(path, "status-get", {}), "status-get")
     relationships = arguments.get("high-availability")
     if not isinstance(relationships, list) or len(relationships) != 1:
@@ -135,6 +135,37 @@ def automatic_takeover_ready(path: str, local_name: str,
             remote.get("server-name") == primary_name and
             remote.get("communication-interrupted") is True and
             remote.get("last-state") == "unavailable")
+
+
+def begin_maintenance(path: str, local_name: str,
+                      primary_name: str) -> None:
+    """Request controlled maintenance and wait for the survivor state."""
+    successful(query(path, "ha-maintenance-start", {}),
+               "ha-maintenance-start")
+    wait_for(lambda: maintenance_ready(path, local_name, primary_name,
+                                       survivor=True),
+             f"{local_name} to enter partner-in-maintenance")
+
+
+def maintenance_ready(path: str, local_name: str, remote_name: str,
+                      survivor: bool) -> bool:
+    """Return whether both peers report their coordinated maintenance roles."""
+    arguments = successful(query(path, "status-get", {}), "status-get")
+    relationships = arguments.get("high-availability")
+    if not isinstance(relationships, list) or len(relationships) != 1:
+        return False
+    servers = relationships[0].get("ha-servers", {})
+    local = servers.get("local", {})
+    remote = servers.get("remote", {})
+    local_state = "partner-in-maintenance" if survivor else "in-maintenance"
+    remote_state = "in-maintenance" if survivor else "partner-in-maintenance"
+    expected_scopes = [remote_name] if survivor else []
+    return (local.get("server-name") == local_name and
+            local.get("state") == local_state and
+            local.get("scopes") == expected_scopes and
+            remote.get("server-name") == remote_name and
+            remote.get("last-state") == remote_state and
+            remote.get("in-touch") is True)
 
 
 def relinquish_takeover(path: str, local_name: str) -> None:
@@ -177,6 +208,9 @@ def main() -> None:
             f"usage: {sys.argv[0]} ready SOCKET NAME PEER ROLE | "
             "takeover SOCKET NAME PRIMARY | "
             "automatic SOCKET NAME PRIMARY | "
+            "maintenance-start SOCKET NAME PRIMARY | "
+            "maintenance-target SOCKET NAME SURVIVOR | "
+            "maintenance-down SOCKET NAME PRIMARY | "
             "relinquish SOCKET NAME | "
             "leases SOCKET4 SOCKET6 ADDRESS4 ADDRESS6"
         )
@@ -207,9 +241,29 @@ def main() -> None:
                  f"{sys.argv[3]} to relinquish its manual scopes")
     elif sys.argv[1] == "automatic" and len(sys.argv) == 5:
         try:
-            wait_for(lambda: automatic_takeover_ready(
+            wait_for(lambda: partner_down_ready(
                 sys.argv[2], sys.argv[3], sys.argv[4]),
                      f"{sys.argv[3]} to enter partner-down")
+        except RuntimeError:
+            print(json.dumps(query(sys.argv[2], "status-get", {}), indent=2),
+                  file=sys.stderr)
+            raise
+    elif sys.argv[1] == "maintenance-start" and len(sys.argv) == 5:
+        try:
+            begin_maintenance(sys.argv[2], sys.argv[3], sys.argv[4])
+        except RuntimeError:
+            print(json.dumps(query(sys.argv[2], "status-get", {}), indent=2),
+                  file=sys.stderr)
+            raise
+    elif sys.argv[1] == "maintenance-target" and len(sys.argv) == 5:
+        wait_for(lambda: maintenance_ready(
+            sys.argv[2], sys.argv[3], sys.argv[4], survivor=False),
+                 f"{sys.argv[3]} to enter in-maintenance")
+    elif sys.argv[1] == "maintenance-down" and len(sys.argv) == 5:
+        try:
+            wait_for(lambda: partner_down_ready(
+                sys.argv[2], sys.argv[3], sys.argv[4]),
+                     f"{sys.argv[3]} to enter partner-down after maintenance")
         except RuntimeError:
             print(json.dumps(query(sys.argv[2], "status-get", {}), indent=2),
                   file=sys.stderr)
