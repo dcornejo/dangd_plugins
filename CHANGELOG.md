@@ -19,6 +19,13 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Expanded Linux rtnetlink `RTA_MULTIPATH` observations into one RFC 8431
+  route entry per native base nexthop. Operational state now preserves both
+  gateway/interface path identity and dead-path installed state instead of
+  emitting one route with an empty, schema-invalid nexthop. The isolated Linux
+  workflow creates a real two-interface ECMP route and requires both paths;
+  unresolved nexthop-object IDs are omitted until they can be expanded safely.
+
 - Preserved empty RFC 8431 RIB registrations in operational state. A durable
   successful `rib-add` now remains visible before any native route or reusable
   nexthop exists and after plugin restart. Operational route observation and

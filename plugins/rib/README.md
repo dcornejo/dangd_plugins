@@ -40,6 +40,13 @@ This covers Linux `RTN_LOCAL`, `RTN_BLACKHOLE`, `RTN_UNREACHABLE`, and
 These kernel-owned special routes are read-only in this portable provider.
 Route delete/update returns reserved error code 0 for them, and `rib-delete`
 fails before changing anything if the selected RIB contains one.
+Linux `RTA_MULTIPATH` routes are expanded into one stable route entry per
+native base nexthop, preserving each gateway/interface path and its installed
+state. This representation avoids publishing an empty nexthop and keeps path
+identity available without advertising RFC 8431's optional load-balance
+feature. Native ECMP weights are therefore not represented yet. Routes backed
+only by an unresolved Linux nexthop-object ID are omitted until that object can
+be expanded into a schema-valid base nexthop.
 
 ## Installation status and dependencies
 
@@ -104,7 +111,8 @@ disposable VNET jail and epair, assigns only documentation-prefix addresses,
 and destroys both afterward. Each interaction installs the test route, verifies
 it in the plugin's operational XML and through the native kernel route
 inventory, deletes it, and verifies absence. No host LAN interface or host
-default route is used.
+default route is used. The Linux workflow also creates a two-interface ECMP
+route in another private table and requires both paths in operational XML.
 
 `route-add` accepts the same destination-prefix/base-nexthop subset as
 configuration commits. Each member is attempted independently, as required by

@@ -17,12 +17,19 @@ trap cleanup EXIT INT TERM
 sudo ip netns add "$namespace"
 sudo ip -n "$namespace" link add dummy0 type dummy
 sudo ip -n "$namespace" link set dummy0 up
+sudo ip -n "$namespace" link add dummy1 type dummy
+sudo ip -n "$namespace" link set dummy1 up
 if [ -n "$plugin_test" ] && [ -n "$plugin" ]; then
   sudo ip netns exec "$namespace" env DANG_RIB_REGISTRY_FILE="$registry" \
     "$plugin_test" "$plugin" \
     100 198.18.1.0/24 dummy0
   test -z "$(sudo ip -n "$namespace" route show table 100)"
 fi
+sudo ip -n "$namespace" route replace 198.18.2.0/24 table 101 \
+  proto static metric 20 \
+  nexthop dev dummy0 weight 1 nexthop dev dummy1 weight 1
+sudo ip netns exec "$namespace" "$binary" \
+  linux observe-multipath 101 198.18.2.0/24 dummy0 dummy1
 sudo ip netns exec "$namespace" "$binary" \
   linux install 100 198.18.0.0/24 dummy0
 sudo ip -n "$namespace" route show table 100 |

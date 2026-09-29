@@ -19,10 +19,20 @@
 #include <array>
 #include <cerrno>
 #include <cstring>
+#include <set>
 #endif
 
 namespace dang::rib {
 namespace {
+
+#if defined(__linux__)
+/** One path nested in Linux's RTA_MULTIPATH route attribute. */
+struct LinuxNexthop {
+  std::optional<std::string> gateway;
+  unsigned interface_index = 0;
+  bool installed = true;
+};
+#endif
 
 bool SafeTableAndInterface(const Route& route, std::string* error,
                            std::string* path) {
@@ -140,6 +150,7 @@ bool ObserveLinuxRoutes(std::vector<ObservedRoute>* routes,
       unsigned table = info->rtm_table;
       unsigned interface_index = 0;
       std::uint32_t metric = 0;
+      std::vector<LinuxNexthop> multipath;
       int attributes_length = static_cast<int>(RTM_PAYLOAD(header));
       for (rtattr* attribute = RTM_RTA(info); RTA_OK(attribute, attributes_length);
            attribute = RTA_NEXT(attribute, attributes_length)) {
@@ -156,33 +167,87 @@ bool ObserveLinuxRoutes(std::vector<ObservedRoute>* routes,
           std::memcpy(&metric, RTA_DATA(attribute), sizeof(metric));
         else if (attribute->rta_type == RTA_TABLE)
           std::memcpy(&table, RTA_DATA(attribute), sizeof(table));
+        else if (attribute->rta_type == RTA_MULTIPATH) {
+          int nexthops_length = static_cast<int>(RTA_PAYLOAD(attribute));
+          for (rtnexthop* nexthop =
+                   reinterpret_cast<rtnexthop*>(RTA_DATA(attribute));
+               RTNH_OK(nexthop, nexthops_length);
+               nexthops_length -= RTNH_ALIGN(nexthop->rtnh_len),
+                          nexthop = RTNH_NEXT(nexthop)) {
+            LinuxNexthop path;
+            path.interface_index =
+                static_cast<unsigned>(nexthop->rtnh_ifindex);
+            path.installed = (nexthop->rtnh_flags & RTNH_F_DEAD) == 0;
+            int nested_length = static_cast<int>(nexthop->rtnh_len) -
+                                static_cast<int>(sizeof(*nexthop));
+            for (rtattr* nested = RTNH_DATA(nexthop);
+                 RTA_OK(nested, nested_length);
+                 nested = RTA_NEXT(nested, nested_length)) {
+              if (nested->rta_type != RTA_GATEWAY) continue;
+              char gateway[INET6_ADDRSTRLEN]{};
+              if (inet_ntop(info->rtm_family, RTA_DATA(nested), gateway,
+                            sizeof(gateway)))
+                path.gateway = gateway;
+            }
+            multipath.push_back(std::move(path));
+          }
+        }
       }
       char address[INET6_ADDRSTRLEN]{};
       if (!inet_ntop(info->rtm_family, destination.data(), address, sizeof(address))) continue;
       route.destination = std::string(address) + "/" + std::to_string(info->rtm_dst_len);
       route.rib = std::to_string(table);
       route.preference = metric;
-      if (interface_index != 0) {
-        char interface_name[IF_NAMESIZE]{};
-        if (if_indextoname(interface_index, interface_name)) route.interface = interface_name;
-      }
+      const auto resolve_interface_name =
+          [](unsigned index) -> std::optional<std::string> {
+        if (index == 0) return std::nullopt;
+        char name[IF_NAMESIZE]{};
+        if (!if_indextoname(index, name)) return std::nullopt;
+        return name;
+      };
+      route.interface = resolve_interface_name(interface_index);
       if (route.special) {
         route.gateway.reset();
         route.interface.reset();
       }
-      // FNV-1a gives a stable RFC 8431 list key without claiming that the
-      // kernel supplies a native route identifier.
-      const std::string key = route.rib + "|" + route.address_family + "|" +
-                              route.destination + "|" + route.gateway.value_or("") +
-                              "|" + route.interface.value_or("") + "|" +
-                              route.special.value_or("");
-      std::uint64_t hash = 1469598103934665603ULL;
-      for (const char byte : key) {
-        hash ^= static_cast<unsigned char>(byte);
-        hash *= 1099511628211ULL;
+      const auto append = [&](ObservedRoute value) {
+        // FNV-1a gives a stable RFC 8431 list key without claiming that the
+        // kernel supplies a native route identifier. Including each native
+        // path keeps parallel ECMP members distinct.
+        Route& candidate = value.route;
+        const std::string key = candidate.rib + "|" + candidate.address_family +
+            "|" + candidate.destination + "|" +
+            candidate.gateway.value_or("") + "|" +
+            candidate.interface.value_or("") + "|" +
+            candidate.special.value_or("");
+        std::uint64_t hash = 1469598103934665603ULL;
+        for (const char byte : key) {
+          hash ^= static_cast<unsigned char>(byte);
+          hash *= 1099511628211ULL;
+        }
+        candidate.index = hash;
+        routes->push_back(std::move(value));
+      };
+      if (!multipath.empty() && !route.special) {
+        std::set<std::pair<std::optional<std::string>,
+                           std::optional<std::string>>> emitted_paths;
+        for (const LinuxNexthop& path : multipath) {
+          ObservedRoute member = observed;
+          member.installed = path.installed;
+          member.route.gateway = path.gateway;
+          member.route.interface = resolve_interface_name(path.interface_index);
+          // A kernel nexthop object referenced only by ID cannot yet be
+          // expanded into the RFC base-nexthop choice. Never emit an empty,
+          // schema-invalid nexthop while that support remains absent.
+          if (!member.route.gateway && !member.route.interface) continue;
+          if (!emitted_paths.emplace(member.route.gateway,
+                                     member.route.interface).second)
+            continue;
+          append(std::move(member));
+        }
+      } else if (route.special || route.gateway || route.interface) {
+        append(std::move(observed));
       }
-      route.index = hash;
-      routes->push_back(std::move(observed));
     }
   }
   close(socket_fd);
