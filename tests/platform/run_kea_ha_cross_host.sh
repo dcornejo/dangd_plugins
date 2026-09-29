@@ -12,9 +12,12 @@ freebsd_host=${2:-dev-freebsd-1}
 linux_interface=${3:-ens19}
 freebsd_interface=${4:-vtnet1}
 failover_mode=${5:-manual}
+transport=${6:-plain}
 endpoint=/tmp/dang-kea-ha-cross-endpoint-$$.sh
 client=/tmp/dang-kea-ha-cross-client-$$.py
 probe=/tmp/dang-kea-ha-cross-probe-$$.py
+remote_cert_dir=/tmp/dang-kea-ha-cross-tls-$$
+local_cert_dir=
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ssh_command=${DANG_TEST_SSH:-ssh}
 scp_command=${DANG_TEST_SCP:-scp}
@@ -32,6 +35,12 @@ case "$failover_mode" in
   *) echo "failover mode must be manual, automatic, or maintenance" >&2; exit 2 ;;
 esac
 
+case "$transport" in
+  plain) ;;
+  tls) ;;
+  *) echo "transport must be plain or tls" >&2; exit 2 ;;
+esac
+
 remote() {
   host=$1
   shift
@@ -47,8 +56,81 @@ cleanup() {
     >/dev/null 2>&1 || true
   remote "$freebsd_host" rm -f "$endpoint" "$client" "$probe" \
     >/dev/null 2>&1 || true
+  remote "$linux_host" rm -rf "$remote_cert_dir" >/dev/null 2>&1 || true
+  remote "$freebsd_host" rm -rf "$remote_cert_dir" >/dev/null 2>&1 || true
+  if [ -n "$local_cert_dir" ]; then
+    rm -rf "$local_cert_dir"
+  fi
 }
 trap cleanup EXIT INT TERM
+
+write_certificate_config() {
+  name=$1
+  address=$2
+  cat >"$local_cert_dir/$name.cnf" <<EOF
+[req]
+prompt = no
+distinguished_name = subject
+req_extensions = extensions
+[subject]
+CN = $name
+[extensions]
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature,keyEncipherment
+extendedKeyUsage = serverAuth,clientAuth
+subjectAltName = IP:$address
+EOF
+}
+
+if [ "$transport" = tls ]; then
+  local_cert_dir=$(mktemp -d /tmp/dang-kea-ha-certificates.XXXXXX)
+  cat >"$local_cert_dir/ca.cnf" <<EOF
+[req]
+prompt = no
+distinguished_name = subject
+x509_extensions = extensions
+[subject]
+CN = dang-kea-test-ca
+[extensions]
+basicConstraints = critical,CA:TRUE
+keyUsage = critical,keyCertSign,cRLSign
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always
+EOF
+  write_certificate_config linux "$linux4"
+  write_certificate_config freebsd "$freebsd4"
+  for host in "$linux_host" "$freebsd_host"; do
+    remote "$host" mkdir -m 700 "$remote_cert_dir"
+  done
+  # Issue from the FreeBSD endpoint so its slightly slower clock cannot see a
+  # freshly created certificate as not-yet-valid. All material is disposable.
+  "$scp_command" "$local_cert_dir/ca.cnf" "$local_cert_dir/linux.cnf" \
+    "$local_cert_dir/freebsd.cnf" "$freebsd_host:$remote_cert_dir/"
+  remote "$freebsd_host" openssl req -quiet -new -x509 -newkey rsa:2048 -nodes \
+    -days 1 -keyout "$remote_cert_dir/ca.key" \
+    -out "$remote_cert_dir/ca.pem" -config "$remote_cert_dir/ca.cnf"
+  for name in linux freebsd; do
+    remote "$freebsd_host" openssl req -quiet -new -newkey rsa:2048 -nodes \
+      -keyout "$remote_cert_dir/$name.key" \
+      -out "$remote_cert_dir/$name.csr" \
+      -config "$remote_cert_dir/$name.cnf"
+    remote "$freebsd_host" openssl x509 -req \
+      -in "$remote_cert_dir/$name.csr" -CA "$remote_cert_dir/ca.pem" \
+      -CAkey "$remote_cert_dir/ca.key" -CAcreateserial -days 1 \
+      -out "$remote_cert_dir/$name.pem" \
+      -extfile "$remote_cert_dir/$name.cnf" -extensions extensions
+  done
+  "$scp_command" "$freebsd_host:$remote_cert_dir/ca.pem" \
+    "$local_cert_dir/ca.pem"
+  "$scp_command" "$freebsd_host:$remote_cert_dir/linux.pem" \
+    "$local_cert_dir/linux.pem"
+  "$scp_command" "$freebsd_host:$remote_cert_dir/linux.key" \
+    "$local_cert_dir/linux.key"
+  "$scp_command" "$local_cert_dir/ca.pem" "$local_cert_dir/linux.pem" \
+    "$local_cert_dir/linux.key" "$linux_host:$remote_cert_dir/"
+  remote "$linux_host" chmod 600 "$remote_cert_dir/linux.key"
+  remote "$freebsd_host" chmod 600 "$remote_cert_dir/freebsd.key"
+fi
 
 for host in "$linux_host" "$freebsd_host"; do
   "$scp_command" "$script_dir/kea_ha_cross_host_endpoint.sh" "$host:$endpoint"
@@ -145,16 +227,30 @@ run_phase() {
   remote "$first_host" sudo "$endpoint" start "$first_interface" \
     "$first4" "$first6" "$first_name" "$first_role" \
     "$first_remote4" "$first_remote6" "$first_remote_name" \
-    "$first_remote_role" "$auto_failover"
+    "$first_remote_role" "$auto_failover" "$transport" "$remote_cert_dir"
   remote "$second_host" sudo "$endpoint" start "$second_interface" \
     "$second4" "$second6" "$second_name" "$second_role" \
     "$second_remote4" "$second_remote6" "$second_remote_name" \
-    "$second_remote_role" "$auto_failover"
+    "$second_remote_role" "$auto_failover" "$transport" "$remote_cert_dir"
 
-  remote "$linux_host" sudo "$endpoint" ready "$linux_interface" linux \
-    freebsd "$linux_role" "$probe"
-  remote "$freebsd_host" sudo "$endpoint" ready "$freebsd_interface" \
-    freebsd linux "$freebsd_role" "$probe"
+  if ! remote "$linux_host" sudo "$endpoint" ready "$linux_interface" \
+       linux freebsd "$linux_role" "$probe"; then
+    remote "$linux_host" sudo "$endpoint" logs "$linux_interface" || true
+    remote "$freebsd_host" sudo "$endpoint" logs "$freebsd_interface" || true
+    return 1
+  fi
+  if ! remote "$freebsd_host" sudo "$endpoint" ready \
+       "$freebsd_interface" freebsd linux "$freebsd_role" "$probe"; then
+    remote "$linux_host" sudo "$endpoint" logs "$linux_interface" || true
+    remote "$freebsd_host" sudo "$endpoint" logs "$freebsd_interface" || true
+    return 1
+  fi
+  if [ "$transport" = tls ]; then
+    remote "$linux_host" sudo "$endpoint" tls-guard "$linux_interface" \
+      "$freebsd4" "$probe" "$remote_cert_dir"
+    remote "$freebsd_host" sudo "$endpoint" tls-guard "$freebsd_interface" \
+      "$linux4" "$probe" "$remote_cert_dir"
+  fi
   remote "$client_host" sudo "$endpoint" client "$client_interface" \
     "$client4" "$client6" "$primary4" "$primary6" "$client"
   if ! remote "$linux_host" sudo "$endpoint" verify "$linux_interface" \
@@ -232,9 +328,9 @@ run_phase() {
 
   remote "$linux_host" sudo "$endpoint" stop "$linux_interface"
   remote "$freebsd_host" sudo "$endpoint" stop "$freebsd_interface"
-  echo "$primary primary completed $failover_mode failover and safe recovery"
+  echo "$primary primary completed $transport $failover_mode and recovery"
 }
 
 run_phase linux
 run_phase freebsd
-echo "Bidirectional Linux/FreeBSD Kea HA $failover_mode failover passed"
+echo "Bidirectional Linux/FreeBSD Kea HA $transport $failover_mode passed"

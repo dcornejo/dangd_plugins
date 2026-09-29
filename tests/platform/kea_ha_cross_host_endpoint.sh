@@ -158,8 +158,8 @@ start_daemons() {
 case "$action" in
   start)
     # start IFACE LOCAL4 LOCAL6 LOCAL_NAME LOCAL_ROLE REMOTE4 REMOTE6
-    #       REMOTE_NAME REMOTE_ROLE AUTO_FAILOVER
-    [ "$#" -eq 11 ] || fail "invalid start arguments"
+    #       REMOTE_NAME REMOTE_ROLE AUTO_FAILOVER TRANSPORT CERT_DIR
+    [ "$#" -eq 13 ] || fail "invalid start arguments"
     local4=$3
     local6=$4
     local_name=$5
@@ -169,6 +169,8 @@ case "$action" in
     remote_name=$9
     remote_role=${10}
     auto_failover=${11}
+    transport=${12}
+    cert_dir=${13}
     case "$local4:$remote4:$local6:$remote6" in
       192.0.2.1:192.0.2.2:2001:db8:6::1:2001:db8:6::2 | \
       192.0.2.2:192.0.2.1:2001:db8:6::2:2001:db8:6::1) ;;
@@ -202,6 +204,24 @@ case "$action" in
       false) failure_detection= ;;
       *) fail "AUTO_FAILOVER must be true or false" ;;
     esac
+    case "$transport" in
+      plain)
+        peer_scheme=http
+        tls_configuration=
+        ;;
+      tls)
+        peer_scheme=https
+        for certificate in ca.pem "$local_name.pem" "$local_name.key"; do
+          [ -r "$cert_dir/$certificate" ] ||
+            fail "missing TLS file $cert_dir/$certificate"
+        done
+        tls_configuration="\"trust-anchor\":\"$cert_dir/ca.pem\",\
+        \"cert-file\":\"$cert_dir/$local_name.pem\",\
+        \"key-file\":\"$cert_dir/$local_name.key\",\
+        \"require-client-certs\":true,"
+        ;;
+      *) fail "TRANSPORT must be plain or tls" ;;
+    esac
     [ ! -e "$runtime" ] || fail "stale runtime exists at $runtime"
     [ ! -e "$socket4" ] && [ ! -e "$socket6" ] ||
       fail "a test control socket already exists"
@@ -230,6 +250,7 @@ case "$action" in
     {"library":"$hook_dir/libdhcp_ha.so","parameters":{
       "high-availability":[{
         "this-server-name":"$local_name","mode":"hot-standby",
+        $tls_configuration
         "heartbeat-delay":1000,"max-response-delay":3000,
         $failure_detection
         "multi-threading":{"enable-multi-threading":true,
@@ -237,9 +258,9 @@ case "$action" in
                            "http-listener-threads":1,
                            "http-client-threads":1},
         "peers":[
-          {"name":"$primary_name","url":"http://$primary4:$control_port4/",
+          {"name":"$primary_name","url":"$peer_scheme://$primary4:$control_port4/",
            "role":"primary","auto-failover":$auto_failover},
-          {"name":"$standby_name","url":"http://$standby4:$control_port4/",
+          {"name":"$standby_name","url":"$peer_scheme://$standby4:$control_port4/",
            "role":"standby","auto-failover":$auto_failover}
         ]
       }]
@@ -264,6 +285,7 @@ EOF
     {"library":"$hook_dir/libdhcp_ha.so","parameters":{
       "high-availability":[{
         "this-server-name":"$local_name","mode":"hot-standby",
+        $tls_configuration
         "heartbeat-delay":1000,"max-response-delay":3000,
         $failure_detection
         "multi-threading":{"enable-multi-threading":true,
@@ -271,9 +293,9 @@ EOF
                            "http-listener-threads":1,
                            "http-client-threads":1},
         "peers":[
-          {"name":"$primary_name","url":"http://$primary4:$control_port6/",
+          {"name":"$primary_name","url":"$peer_scheme://$primary4:$control_port6/",
            "role":"primary","auto-failover":$auto_failover},
-          {"name":"$standby_name","url":"http://$standby4:$control_port6/",
+          {"name":"$standby_name","url":"$peer_scheme://$standby4:$control_port6/",
            "role":"standby","auto-failover":$auto_failover}
         ]
       }]
@@ -374,6 +396,13 @@ EOF
     "$python" "$5" maintenance-down "$socket6" "$3" "$4"
     echo "$3 entered partner-down after $4 stopped for maintenance"
     ;;
+  tls-guard)
+    # tls-guard IFACE REMOTE4 PROBE CERT_DIR
+    [ "$#" -eq 5 ] || fail "invalid tls-guard arguments"
+    "$python" "$4" tls-reject "$3" "$control_port4" "$5/ca.pem"
+    "$python" "$4" tls-reject "$3" "$control_port6" "$5/ca.pem"
+    echo "both HA listeners reject clients without certificates"
+    ;;
   relinquish)
     # relinquish IFACE LOCAL_NAME PROBE
     [ "$#" -eq 4 ] || fail "invalid relinquish arguments"
@@ -386,8 +415,10 @@ EOF
     echo "Kea primary daemons stopped; test interface retained"
     ;;
   logs)
-    grep -E 'HA_STATE_TRANSITION|HA_LOCAL_DHCP|HA_LEASE|LEASE_ALLOC|DROP|ERROR' \
-      "$runtime/kea4.stdout" "$runtime/kea6.stdout" 2>/dev/null | tail -100 || true
+    # Transport failures are emitted under several library-specific message
+    # identifiers, so retain the bounded native tail instead of filtering out
+    # diagnostics the harness does not yet know by name.
+    tail -100 "$runtime/kea4.stdout" "$runtime/kea6.stdout" 2>/dev/null || true
     ;;
   stop)
     stop_server

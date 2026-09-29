@@ -647,3 +647,21 @@ system role assignments. The tested package pair completed the handshake but
 cleared the survivor scope after shutdown when `auto-failover` was disabled;
 the continuous-service profile therefore enables it. Validate the chosen Kea
 versions and production failure thresholds before adopting this procedure.
+
+Append `tls` after the HA mode to run peer communication over mutually
+authenticated HTTPS:
+
+```sh
+tests/platform/run_kea_ha_cross_host.sh \
+  dev-linux-1 dev-freebsd-1 ens19 vtnet1 automatic tls
+```
+
+The harness generates a disposable CA and IP-bound certificate for each host,
+requires client certificates on the dedicated HA listeners, and applies the
+same replication, failover, resynchronization, and role-reversal assertions.
+Each DHCPv4 and DHCPv6 listener must additionally reject a CA-validating client
+that presents no certificate. Issuance occurs on the slower test-host clock to
+avoid a transient not-yet-valid failure. Temporary keys and certificates are
+removed from the orchestrator and both hosts on success or failure. These
+credentials are only test fixtures; production installations need synchronized
+clocks and their normal protected PKI lifecycle.

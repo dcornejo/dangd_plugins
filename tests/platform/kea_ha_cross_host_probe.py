@@ -6,6 +6,7 @@
 
 import json
 import socket
+import ssl
 import sys
 import time
 from typing import Any, Callable, Optional
@@ -36,6 +37,26 @@ def query(path: str, command: str, arguments: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(reply, dict):
         raise RuntimeError(f"{command} returned no single answer object")
     return reply
+
+
+def reject_unauthenticated_tls(host: str, port: int, ca_file: str) -> None:
+    """Require a dedicated HA listener to reject a client without a cert."""
+    context = ssl.create_default_context(cafile=ca_file)
+    try:
+        with socket.create_connection((host, port), timeout=2) as connection:
+            with context.wrap_socket(connection, server_hostname=host) as tls:
+                body = b'{"command":"ha-heartbeat","arguments":{}}'
+                request = (b"POST / HTTP/1.1\r\nHost: " + host.encode() +
+                           b"\r\nContent-Type: application/json\r\n" +
+                           f"Content-Length: {len(body)}\r\n\r\n".encode() +
+                           body)
+                tls.sendall(request)
+                if not tls.recv(4096):
+                    return
+                raise RuntimeError(
+                    "HA TLS listener accepted a client without a certificate")
+    except (ssl.SSLError, ConnectionResetError, BrokenPipeError):
+        return
 
 
 def successful(reply: dict[str, Any], command: str) -> dict[str, Any]:
@@ -212,6 +233,7 @@ def main() -> None:
             "maintenance-target SOCKET NAME SURVIVOR | "
             "maintenance-down SOCKET NAME PRIMARY | "
             "relinquish SOCKET NAME | "
+            "tls-reject HOST PORT CA_FILE | "
             "leases SOCKET4 SOCKET6 ADDRESS4 ADDRESS6"
         )
     if sys.argv[1] == "ready" and len(sys.argv) == 6:
@@ -268,6 +290,8 @@ def main() -> None:
             print(json.dumps(query(sys.argv[2], "status-get", {}), indent=2),
                   file=sys.stderr)
             raise
+    elif sys.argv[1] == "tls-reject" and len(sys.argv) == 5:
+        reject_unauthenticated_tls(sys.argv[2], int(sys.argv[3]), sys.argv[4])
     elif sys.argv[1] == "leases" and len(sys.argv) == 6:
         wait_for(lambda: leases_present(sys.argv[2], sys.argv[3], sys.argv[4],
                                         sys.argv[5]),

@@ -137,6 +137,27 @@ peers reached the expected pre-shutdown maintenance states. Operators should
 validate their exact Kea versions and failure thresholds before relying on a
 maintenance procedure.
 
+The HA+MT peer transport is also validated with mutual TLS. The harness creates
+a one-day disposable CA and separate Linux and FreeBSD certificates containing
+their documentation-prefix IP subject alternative names. Each peer uses HTTPS,
+validates the other certificate against that CA, presents its own certificate,
+and sets `require-client-certs` so the dedicated listener rejects an
+unauthenticated client. Before DHCP traffic begins, a CA-validating client that
+presents no certificate must fail against both address-family listeners from
+both hosts. The full automatic-failover and recovery matrix then runs over the
+authenticated channels. Certificate material is stored only in mode-0700
+temporary directories, private keys are mode 0600, and both hosts and the
+orchestrator remove all artifacts through the same cleanup trap used for
+processes and addresses.
+
+Certificate issuance intentionally runs on the slower FreeBSD test clock. A
+certificate created on a peer whose clock is tens of seconds ahead may still
+be `not yet valid` on the other host even when both clocks are within ordinary
+operational tolerance. Production deployments should use synchronized clocks,
+durable certificates from their normal PKI, protected private keys, and their
+usual rotation and revocation procedures; the disposable test CA is not a
+deployment pattern.
+
 The pinned ISC modules do not expose HA relationship status. The companion
 `dang-kea-ha` module fills that model gap without changing their configuration
 schema. Its read-only `high-availability/relationship` list is keyed by address

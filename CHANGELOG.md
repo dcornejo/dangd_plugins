@@ -9,6 +9,18 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added real mutual-TLS coverage for Kea's dedicated HA listeners. The
+  cross-host harness can issue a disposable CA plus IP-bound Linux and FreeBSD
+  server/client certificates, require client certificates, and run the full
+  automatic failover, lease synchronization, recovery, and role-reversal proof
+  over HTTPS. Both address-family listeners must also reject a CA-validating
+  client that presents no certificate. Certificate issuance occurs on the
+  slightly slower FreeBSD clock to avoid a not-yet-valid race, private keys use
+  restricted temporary directories, and all certificate material is removed
+  during cleanup. Initial convergence failures now retain bounded unfiltered
+  native logs so TLS errors are not accidentally hidden by a message-name
+  allowlist.
+
 - Added a planned-maintenance mode to the real Kea HA matrix. The survivor must
   accept `ha-maintenance-start`, enter `partner-in-maintenance`, and own the
   primary scope while the primary must enter `in-maintenance` with no scope
