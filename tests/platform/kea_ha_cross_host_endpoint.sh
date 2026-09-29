@@ -401,7 +401,13 @@ EOF
     [ "$#" -eq 5 ] || fail "invalid tls-guard arguments"
     "$python" "$4" tls-reject "$3" "$control_port4" "$5/ca.pem"
     "$python" "$4" tls-reject "$3" "$control_port6" "$5/ca.pem"
-    echo "both HA listeners reject clients without certificates"
+    "$python" "$4" tls-reject "$3" "$control_port4" "$5/ca.pem" \
+      "$5/rogue.pem" "$5/rogue.key"
+    "$python" "$4" tls-reject "$3" "$control_port6" "$5/ca.pem" \
+      "$5/rogue.pem" "$5/rogue.key"
+    "$python" "$4" tls-reject-plain "$3" "$control_port4"
+    "$python" "$4" tls-reject-plain "$3" "$control_port6"
+    echo "both HA listeners reject missing, untrusted, and plaintext identity"
     ;;
   relinquish)
     # relinquish IFACE LOCAL_NAME PROBE

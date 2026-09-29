@@ -39,9 +39,12 @@ def query(path: str, command: str, arguments: dict[str, Any]) -> dict[str, Any]:
     return reply
 
 
-def reject_unauthenticated_tls(host: str, port: int, ca_file: str) -> None:
-    """Require a dedicated HA listener to reject a client without a cert."""
+def reject_tls_client(host: str, port: int, ca_file: str,
+                      cert_file: str = "", key_file: str = "") -> None:
+    """Require a dedicated HA listener to reject an unauthorized client."""
     context = ssl.create_default_context(cafile=ca_file)
+    if cert_file:
+        context.load_cert_chain(certfile=cert_file, keyfile=key_file)
     try:
         with socket.create_connection((host, port), timeout=2) as connection:
             with context.wrap_socket(connection, server_hostname=host) as tls:
@@ -54,8 +57,22 @@ def reject_unauthenticated_tls(host: str, port: int, ca_file: str) -> None:
                 if not tls.recv(4096):
                     return
                 raise RuntimeError(
-                    "HA TLS listener accepted a client without a certificate")
+                    "HA TLS listener accepted an unauthorized client")
     except (ssl.SSLError, ConnectionResetError, BrokenPipeError):
+        return
+
+
+def reject_plaintext(host: str, port: int) -> None:
+    """Require a dedicated HTTPS listener not to answer plaintext HTTP."""
+    request = (b"POST / HTTP/1.1\r\nHost: " + host.encode() +
+               b"\r\nContent-Length: 0\r\n\r\n")
+    try:
+        with socket.create_connection((host, port), timeout=2) as connection:
+            connection.sendall(request)
+            response = connection.recv(4096)
+            if response.startswith(b"HTTP/"):
+                raise RuntimeError("HA HTTPS listener answered plaintext HTTP")
+    except (ConnectionResetError, BrokenPipeError, TimeoutError):
         return
 
 
@@ -233,7 +250,8 @@ def main() -> None:
             "maintenance-target SOCKET NAME SURVIVOR | "
             "maintenance-down SOCKET NAME PRIMARY | "
             "relinquish SOCKET NAME | "
-            "tls-reject HOST PORT CA_FILE | "
+            "tls-reject HOST PORT CA_FILE [CERT_FILE KEY_FILE] | "
+            "tls-reject-plain HOST PORT | "
             "leases SOCKET4 SOCKET6 ADDRESS4 ADDRESS6"
         )
     if sys.argv[1] == "ready" and len(sys.argv) == 6:
@@ -290,8 +308,11 @@ def main() -> None:
             print(json.dumps(query(sys.argv[2], "status-get", {}), indent=2),
                   file=sys.stderr)
             raise
-    elif sys.argv[1] == "tls-reject" and len(sys.argv) == 5:
-        reject_unauthenticated_tls(sys.argv[2], int(sys.argv[3]), sys.argv[4])
+    elif sys.argv[1] == "tls-reject" and len(sys.argv) in (5, 7):
+        reject_tls_client(sys.argv[2], int(sys.argv[3]), sys.argv[4],
+                          *(sys.argv[5:7]))
+    elif sys.argv[1] == "tls-reject-plain" and len(sys.argv) == 4:
+        reject_plaintext(sys.argv[2], int(sys.argv[3]))
     elif sys.argv[1] == "leases" and len(sys.argv) == 6:
         wait_for(lambda: leases_present(sys.argv[2], sys.argv[3], sys.argv[4],
                                         sys.argv[5]),

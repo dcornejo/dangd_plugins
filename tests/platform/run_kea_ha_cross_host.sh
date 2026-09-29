@@ -97,15 +97,31 @@ keyUsage = critical,keyCertSign,cRLSign
 subjectKeyIdentifier = hash
 authorityKeyIdentifier = keyid:always
 EOF
+  cat >"$local_cert_dir/rogue-ca.cnf" <<EOF
+[req]
+prompt = no
+distinguished_name = subject
+x509_extensions = extensions
+[subject]
+CN = dang-kea-rogue-ca
+[extensions]
+basicConstraints = critical,CA:TRUE
+keyUsage = critical,keyCertSign,cRLSign
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always
+EOF
   write_certificate_config linux "$linux4"
   write_certificate_config freebsd "$freebsd4"
+  write_certificate_config rogue 192.0.2.254
   for host in "$linux_host" "$freebsd_host"; do
     remote "$host" mkdir -m 700 "$remote_cert_dir"
   done
   # Issue from the FreeBSD endpoint so its slightly slower clock cannot see a
   # freshly created certificate as not-yet-valid. All material is disposable.
-  "$scp_command" "$local_cert_dir/ca.cnf" "$local_cert_dir/linux.cnf" \
-    "$local_cert_dir/freebsd.cnf" "$freebsd_host:$remote_cert_dir/"
+  "$scp_command" "$local_cert_dir/ca.cnf" \
+    "$local_cert_dir/rogue-ca.cnf" "$local_cert_dir/linux.cnf" \
+    "$local_cert_dir/freebsd.cnf" "$local_cert_dir/rogue.cnf" \
+    "$freebsd_host:$remote_cert_dir/"
   remote "$freebsd_host" openssl req -quiet -new -x509 -newkey rsa:2048 -nodes \
     -days 1 -keyout "$remote_cert_dir/ca.key" \
     -out "$remote_cert_dir/ca.pem" -config "$remote_cert_dir/ca.cnf"
@@ -120,16 +136,36 @@ EOF
       -out "$remote_cert_dir/$name.pem" \
       -extfile "$remote_cert_dir/$name.cnf" -extensions extensions
   done
+  remote "$freebsd_host" openssl req -quiet -new -x509 -newkey rsa:2048 \
+    -nodes -days 1 -keyout "$remote_cert_dir/rogue-ca.key" \
+    -out "$remote_cert_dir/rogue-ca.pem" \
+    -config "$remote_cert_dir/rogue-ca.cnf"
+  remote "$freebsd_host" openssl req -quiet -new -newkey rsa:2048 -nodes \
+    -keyout "$remote_cert_dir/rogue.key" \
+    -out "$remote_cert_dir/rogue.csr" \
+    -config "$remote_cert_dir/rogue.cnf"
+  remote "$freebsd_host" openssl x509 -req \
+    -in "$remote_cert_dir/rogue.csr" -CA "$remote_cert_dir/rogue-ca.pem" \
+    -CAkey "$remote_cert_dir/rogue-ca.key" -CAcreateserial -days 1 \
+    -out "$remote_cert_dir/rogue.pem" \
+    -extfile "$remote_cert_dir/rogue.cnf" -extensions extensions
   "$scp_command" "$freebsd_host:$remote_cert_dir/ca.pem" \
     "$local_cert_dir/ca.pem"
   "$scp_command" "$freebsd_host:$remote_cert_dir/linux.pem" \
     "$local_cert_dir/linux.pem"
   "$scp_command" "$freebsd_host:$remote_cert_dir/linux.key" \
     "$local_cert_dir/linux.key"
+  "$scp_command" "$freebsd_host:$remote_cert_dir/rogue.pem" \
+    "$local_cert_dir/rogue.pem"
+  "$scp_command" "$freebsd_host:$remote_cert_dir/rogue.key" \
+    "$local_cert_dir/rogue.key"
   "$scp_command" "$local_cert_dir/ca.pem" "$local_cert_dir/linux.pem" \
-    "$local_cert_dir/linux.key" "$linux_host:$remote_cert_dir/"
-  remote "$linux_host" chmod 600 "$remote_cert_dir/linux.key"
-  remote "$freebsd_host" chmod 600 "$remote_cert_dir/freebsd.key"
+    "$local_cert_dir/linux.key" "$local_cert_dir/rogue.pem" \
+    "$local_cert_dir/rogue.key" "$linux_host:$remote_cert_dir/"
+  remote "$linux_host" chmod 600 "$remote_cert_dir/linux.key" \
+    "$remote_cert_dir/rogue.key"
+  remote "$freebsd_host" chmod 600 "$remote_cert_dir/freebsd.key" \
+    "$remote_cert_dir/rogue.key"
 fi
 
 for host in "$linux_host" "$freebsd_host"; do

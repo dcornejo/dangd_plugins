@@ -9,6 +9,13 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Hardened the Kea HA TLS matrix with negative trust and downgrade tests. Each
+  dedicated DHCPv4 and DHCPv6 listener must reject three non-peer clients from
+  both hosts: a CA-validating client with no certificate, a client presenting a
+  certificate from a separately generated rogue CA, and plaintext HTTP sent to
+  the HTTPS port. The untrusted CA and key use the same restricted disposable
+  lifecycle as the valid fixtures and are included in cleanup audits.
+
 - Added real mutual-TLS coverage for Kea's dedicated HA listeners. The
   cross-host harness can issue a disposable CA plus IP-bound Linux and FreeBSD
   server/client certificates, require client certificates, and run the full

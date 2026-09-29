@@ -660,8 +660,11 @@ The harness generates a disposable CA and IP-bound certificate for each host,
 requires client certificates on the dedicated HA listeners, and applies the
 same replication, failover, resynchronization, and role-reversal assertions.
 Each DHCPv4 and DHCPv6 listener must additionally reject a CA-validating client
-that presents no certificate. Issuance occurs on the slower test-host clock to
-avoid a transient not-yet-valid failure. Temporary keys and certificates are
-removed from the orchestrator and both hosts on success or failure. These
-credentials are only test fixtures; production installations need synchronized
-clocks and their normal protected PKI lifecycle.
+that presents no certificate, a client certificate issued by a separate rogue
+CA, and plaintext HTTP. This distinguishes client-certificate presence from
+actual trust and checks that the TLS ports do not silently allow a cleartext
+downgrade. Issuance occurs on the slower test-host clock to avoid a transient
+not-yet-valid failure. Temporary keys and certificates are removed from the
+orchestrator and both hosts on success or failure. These credentials are only
+test fixtures; production installations need synchronized clocks and their
+normal protected PKI lifecycle.

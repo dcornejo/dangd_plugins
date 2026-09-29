@@ -144,11 +144,15 @@ validates the other certificate against that CA, presents its own certificate,
 and sets `require-client-certs` so the dedicated listener rejects an
 unauthenticated client. Before DHCP traffic begins, a CA-validating client that
 presents no certificate must fail against both address-family listeners from
-both hosts. The full automatic-failover and recovery matrix then runs over the
-authenticated channels. Certificate material is stored only in mode-0700
-temporary directories, private keys are mode 0600, and both hosts and the
-orchestrator remove all artifacts through the same cleanup trap used for
-processes and addresses.
+both hosts. A client presenting a validly formed certificate from an unrelated
+disposable CA must also fail, proving that merely presenting a certificate is
+insufficient. Finally, plaintext HTTP sent to each HTTPS port must not receive
+an HTTP response, guarding against an accidental cleartext listener. The full
+automatic-failover and recovery matrix then runs over the authenticated
+channels. Certificate material is stored only in mode-0700 temporary
+directories, private keys are mode 0600, and both hosts and the orchestrator
+remove all artifacts through the same cleanup trap used for processes and
+addresses.
 
 Certificate issuance intentionally runs on the slower FreeBSD test clock. A
 certificate created on a peer whose clock is tens of seconds ahead may still
