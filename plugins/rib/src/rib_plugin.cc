@@ -364,11 +364,15 @@ int Operational(void* raw_context, DangOperationalDataV2* out, DangPluginErrorV1
   std::vector<ObservedRoute> routes;
   std::string why;
   auto* owner = static_cast<Context*>(raw_context);
+  // Imperative RPCs mutate the kernel and durable registry as one operation.
+  // Hold their epoch across both observations so an operational reply cannot
+  // combine a pre-route kernel view with a post-rib-add registry snapshot.
+  std::lock_guard rpc_lock(owner->rpc_mutex);
   const bool ok = Observer(owner)(&routes, &why);
   if (!ok) return Fail(error, "cannot read host RIB: " + why,
                        "/ietf-i2rs-rib:routing-instance/rib-list");
   operational_xml = SerializeOperationalRoutes(
-      routes, owner->nexthops.Snapshot());
+      routes, owner->nexthops.PersistentState());
   *out = {operational_xml.c_str(), 0}; return 1;
 }
 int Reconcile(void* raw_context, void* raw_prepared, const char* current_xml,

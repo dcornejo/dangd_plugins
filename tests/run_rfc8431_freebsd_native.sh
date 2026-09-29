@@ -7,11 +7,13 @@ binary=$(realpath "$1")
 plugin_test=${2:+$(realpath "$2")}
 plugin=${3:+$(realpath "$3")}
 jail_name="dang_rib_$$"
+registry="/tmp/dang-rib-registry-$$.json"
 epair=$(sudo ifconfig epair create)
 peer="${epair%a}b"
 cleanup() {
   sudo jail -r "$jail_name" >/dev/null 2>&1 || true
   sudo ifconfig "$epair" destroy >/dev/null 2>&1 || true
+  sudo rm -f "$registry"
 }
 trap cleanup EXIT INT TERM
 
@@ -21,7 +23,8 @@ sudo jail -c name="$jail_name" path=/ host.hostname="$jail_name" \
 sudo jexec "$jail_name" ifconfig lo0 up
 sudo jexec "$jail_name" ifconfig "$peer" inet 192.0.2.2/24 up
 if [ -n "$plugin_test" ] && [ -n "$plugin" ]; then
-  sudo jexec "$jail_name" "$plugin_test" "$plugin" \
+  sudo jexec "$jail_name" env DANG_RIB_REGISTRY_FILE="$registry" \
+    "$plugin_test" "$plugin" \
     0 198.18.1.0/24 "$peer" 192.0.2.1
   if sudo jexec "$jail_name" netstat -rn -f inet | grep -F "198.18.1.0/24"; then
     exit 1

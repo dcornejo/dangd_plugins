@@ -7,14 +7,19 @@ binary=$1
 plugin_test=${2:-}
 plugin=${3:-}
 namespace="dang-rib-$$"
-cleanup() { sudo ip netns del "$namespace" >/dev/null 2>&1 || true; }
+registry="/tmp/dang-rib-registry-$$.json"
+cleanup() {
+  sudo ip netns del "$namespace" >/dev/null 2>&1 || true
+  sudo rm -f "$registry"
+}
 trap cleanup EXIT INT TERM
 
 sudo ip netns add "$namespace"
 sudo ip -n "$namespace" link add dummy0 type dummy
 sudo ip -n "$namespace" link set dummy0 up
 if [ -n "$plugin_test" ] && [ -n "$plugin" ]; then
-  sudo ip netns exec "$namespace" "$plugin_test" "$plugin" \
+  sudo ip netns exec "$namespace" env DANG_RIB_REGISTRY_FILE="$registry" \
+    "$plugin_test" "$plugin" \
     100 198.18.1.0/24 dummy0
   test -z "$(sudo ip -n "$namespace" route show table 100)"
 fi

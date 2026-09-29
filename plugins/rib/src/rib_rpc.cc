@@ -336,16 +336,6 @@ bool NexthopRegistry::ReplaceConfigurationRouteBindings(
   return true;
 }
 
-std::vector<std::tuple<std::string, std::string, std::uint32_t>>
-NexthopRegistry::Snapshot() {
-  std::lock_guard lock(mutex_);
-  std::vector<std::tuple<std::string, std::string, std::uint32_t>> result;
-  result.reserve(entries_.size());
-  for (const auto& [key, entry] : entries_)
-    result.emplace_back(key.first, entry.address_family.value_or(""), key.second);
-  return result;
-}
-
 bool NexthopRegistry::Resolve(const std::string& rib, std::uint32_t id,
                               std::optional<std::string>* gateway,
                               std::optional<std::string>* interface) {

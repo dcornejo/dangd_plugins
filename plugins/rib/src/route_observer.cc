@@ -148,8 +148,7 @@ std::vector<NexthopResolutionChange> NexthopResolutionTracker::Observe(
 
 std::string SerializeOperationalRoutes(
     const std::vector<ObservedRoute>& input,
-    const std::vector<std::tuple<std::string, std::string, std::uint32_t>>&
-        nexthops) {
+    const PersistentRegistry& registry) {
   std::vector<ObservedRoute> routes = input;
   std::ranges::sort(routes, {}, [](const ObservedRoute& value) {
     return std::tie(value.route.routing_instance, value.route.rib,
@@ -163,18 +162,30 @@ std::string SerializeOperationalRoutes(
   std::string current_family;
   using RibKey = std::pair<std::string, std::string>;
   std::map<RibKey, std::vector<std::uint32_t>> ids;
-  for (const auto& [rib, supplied_family, id] : nexthops) {
-    std::string family = supplied_family;
+  std::set<RibKey> registered_ribs;
+  for (const PersistentRib& rib : registry.ribs)
+    registered_ribs.emplace(rib.name, rib.address_family);
+  for (const PersistentNexthop& nexthop : registry.nexthops) {
+    std::string family = nexthop.address_family.value_or("");
+    if (family.empty()) {
+      const auto registered = std::ranges::find_if(
+          registry.ribs, [&](const PersistentRib& rib) {
+            return rib.name == nexthop.rib;
+          });
+      if (registered != registry.ribs.end())
+        family = registered->address_family;
+    }
     if (family.empty()) {
       for (const ObservedRoute& observed : routes)
-        if (observed.route.rib == rib) {
+        if (observed.route.rib == nexthop.rib) {
           if (family.empty()) family = observed.route.address_family;
           else if (family != observed.route.address_family) { family.clear(); break; }
         }
     }
     // An interface-only nexthop has no intrinsic family. Publish it only when
     // the containing native RIB supplies one unambiguous family.
-    if (!family.empty()) ids[{rib, family}].push_back(id);
+    if (!family.empty())
+      ids[{nexthop.rib, family}].push_back(nexthop.id);
   }
   std::set<RibKey> emitted;
   const auto emit_ids = [&](const RibKey& key) {
@@ -219,14 +230,17 @@ std::string SerializeOperationalRoutes(
     emit_ids({current_rib, current_family});
     xml << "</rib-list>";
   }
-  for (const auto& [key, values] : ids) {
+  std::set<RibKey> remaining_ribs = registered_ribs;
+  for (const auto& entry : ids) remaining_ribs.insert(entry.first);
+  for (const RibKey& key : remaining_ribs) {
     if (emitted.contains(key)) continue;
     xml << "<rib-list><name>" << Escape(key.first)
         << "</name><address-family>" << key.second
         << "-address-family</address-family>";
-    for (const std::uint32_t id : values)
-      xml << "<nexthop-list><nexthop-member-id>" << id
-          << "</nexthop-member-id></nexthop-list>";
+    if (const auto values = ids.find(key); values != ids.end())
+      for (const std::uint32_t id : values->second)
+        xml << "<nexthop-list><nexthop-member-id>" << id
+            << "</nexthop-member-id></nexthop-list>";
     xml << "</rib-list>";
   }
   xml << "</routing-instance></data>";

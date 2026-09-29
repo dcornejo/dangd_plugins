@@ -24,6 +24,10 @@ portable `route-add`, `route-delete`, prefix-selected `route-update`, `rib-add`,
 Operational reads enumerate host IPv4
 and IPv6 unicast routes through native kernel APIs and publish active and
 installed status as partial RFC 8431 state.
+They also publish every durable `rib-add` registration, including a RIB with
+no native routes or reusable nexthops. Native observation and the registry
+snapshot share the imperative-RPC serialization boundary, so one reply cannot
+combine kernel state from before a route RPC with registry state from after it.
 Gateway-plus-interface nexthops use the schema-defined combined IPv4 or IPv6
 container; generated examples for both address families are validated as YANG
 operational data with their interface leafrefs resolved.
@@ -179,6 +183,9 @@ plan in reverse order, restores the prior registry checkpoint, and includes
 any compensation failure in the attributed RPC error. Reusable objects and all
 imperative bindings therefore survive restart without acknowledging a split
 kernel/sidecar state.
+An otherwise empty RIB registered by `rib-add` is part of that durable state
+and reappears in operational data after restart before its first route or
+nexthop is created.
 Registry format version 2 includes the modeled `route-index` in every binding,
 allowing parallel referenced routes for the same RIB, family, and prefix to
 remain independent across reconciliation and restart. Version-1 files remain

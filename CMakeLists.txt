@@ -389,6 +389,8 @@ if(BUILD_TESTING)
       -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
     add_test(NAME rfc8431_plugin_contract COMMAND rib_plugin_contract_test
       $<TARGET_FILE:dangd_rib_plugin>)
+    set_tests_properties(rfc8431_plugin_contract PROPERTIES ENVIRONMENT
+      "DANG_RIB_REGISTRY_FILE=${CMAKE_CURRENT_BINARY_DIR}/rib-plugin-contract-registry.json")
     add_executable(rib_plugin_native_test tests/rib_plugin_native_test.cc)
     target_compile_features(rib_plugin_native_test PRIVATE cxx_std_20)
     target_include_directories(rib_plugin_native_test PRIVATE "${DANGD_INCLUDE_DIR}")

@@ -70,9 +70,36 @@ int main(int argc, char** argv) {
                                         &rib_add_result, &error) &&
       rib_add_result.output_xml &&
       std::string_view(rib_add_result.output_xml).find(">true</result>") !=
-          std::string_view::npos &&
+          std::string_view::npos;
+  if (!ok) std::cerr << "rib-add stage failed\n";
+  DangOperationalDataV2 empty_rib_state{};
+  const std::string rib_name_xml = "<name>" + rib_name + "</name>";
+  const std::string family_xml =
+      "<address-family>" +
+      std::string(ipv6 ? "ipv6-address-family" : "ipv4-address-family") +
+      "</address-family>";
+  bool registered_rib_visible = ok && v7.v6.v5.get_operational_data_v2(
+      base.context, &empty_rib_state, &error) && empty_rib_state.data_xml;
+  if (registered_rib_visible) {
+    const std::string_view xml(empty_rib_state.data_xml);
+    const std::size_t rib_start = xml.find("<rib-list>" + rib_name_xml);
+    const std::size_t rib_end = rib_start == std::string_view::npos
+        ? std::string_view::npos : xml.find("</rib-list>", rib_start);
+    const std::size_t family = rib_start == std::string_view::npos
+        ? std::string_view::npos : xml.find(family_xml, rib_start);
+    registered_rib_visible = rib_end != std::string_view::npos &&
+        family != std::string_view::npos && family < rib_end;
+  }
+  if (ok && !registered_rib_visible)
+    std::cerr << "registered RIB operational state stage failed: "
+              << (empty_rib_state.data_xml ? empty_rib_state.data_xml
+                                           : "<no operational data>")
+              << '\n';
+  ok = registered_rib_visible &&
       base.prepare(base.context, &transaction, &prepared, &error) &&
       base.validate(base.context, prepared, &error);
+  if (registered_rib_visible && !ok)
+    std::cerr << "prepare/validate stage failed\n";
   const std::string nh_add_input =
       "<nh-add xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\"><rib-name>" +
       rib_name + "</rib-name><nexthop-base><outgoing-interface>" +

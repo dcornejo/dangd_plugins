@@ -71,11 +71,15 @@ class NexthopResolutionTracker {
     std::uint32_t fib, std::vector<ObservedRoute>* routes,
     std::string* error);
 
-/** Serializes a partial RFC 8431 operational-data subtree. */
+/**
+ * Serializes a partial RFC 8431 operational-data subtree.
+ *
+ * Durable RIB registrations are supplied with the native route inventory so a
+ * successful rib-add remains visible even before its first route or nexthop.
+ */
 [[nodiscard]] std::string SerializeOperationalRoutes(
     const std::vector<ObservedRoute>& routes,
-    const std::vector<std::tuple<std::string, std::string, std::uint32_t>>&
-        nexthops = {});
+    const PersistentRegistry& registry = {});
 
 /** Serializes one RFC 8431 route-change event without an RFC 5277 wrapper. */
 [[nodiscard]] std::string SerializeRouteChange(const Route& route,

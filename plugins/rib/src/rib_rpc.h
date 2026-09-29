@@ -53,9 +53,6 @@ class NexthopRegistry {
   /** Replaces datastore route bindings used only for live resolution state. */
   [[nodiscard]] bool ReplaceConfigurationRouteBindings(
       const std::vector<Route>& routes);
-  /** Returns a consistent RIB/family/identifier view for operational output. */
-  [[nodiscard]] std::vector<std::tuple<std::string, std::string, std::uint32_t>>
-  Snapshot();
   [[nodiscard]] bool Resolve(const std::string& rib, std::uint32_t id,
                              std::optional<std::string>* gateway,
                              std::optional<std::string>* interface);

@@ -3,11 +3,16 @@
 
 #include "dangd/plugin_api.h"
 #include <dlfcn.h>
+#include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <string_view>
 
 int main(int argc, char** argv) {
   if (argc != 2) return 2;
+  const char* registry_path = std::getenv("DANG_RIB_REGISTRY_FILE");
+  std::error_code ignored;
+  if (registry_path) std::filesystem::remove(registry_path, ignored);
   void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
   auto init = library ? reinterpret_cast<DangPluginInitV8>(
       dlsym(library, "dang_plugin_init_v8")) : nullptr;
@@ -87,6 +92,7 @@ int main(int argc, char** argv) {
       std::string_view(operation_result.output_xml).find(">true</result>") !=
           std::string_view::npos;
   dlclose(library);
+  if (registry_path) std::filesystem::remove(registry_path, ignored);
   if (!valid) std::cerr << (error.message ? error.message : "RIB plugin contract failed") << '\n';
   return valid ? 0 : 1;
 }

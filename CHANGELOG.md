@@ -17,6 +17,15 @@ All notable changes to the external dangd plugin collection are recorded here.
   declares the corresponding Kea runtime. Linux and FreeBSD native workflows
   now both validate Kea 3.2.0.
 
+### Fixed
+
+- Preserved empty RFC 8431 RIB registrations in operational state. A durable
+  successful `rib-add` now remains visible before any native route or reusable
+  nexthop exists and after plugin restart. Operational route observation and
+  registry capture are serialized against imperative RPCs, preventing a reply
+  from mixing two transaction epochs. Portable regressions plus native Linux
+  network-namespace and FreeBSD VNET tests cover the behavior.
+
 ### Added
 
 - Added reconciled native daemon versions to the `dang-kea-instance`

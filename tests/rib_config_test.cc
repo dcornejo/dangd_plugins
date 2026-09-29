@@ -576,9 +576,12 @@ TEST(RibConfigTest, IncludesDatastoreRoutesInResolutionState) {
 }
 
 TEST(RibConfigTest, SerializesRegisteredNexthopsWithAndWithoutRoutes) {
-  const std::vector<std::tuple<std::string, std::string, std::uint32_t>> refs{
-      {"100", "ipv4", 7}, {"200", "ipv6", 9}};
-  const std::string xml = SerializeOperationalRoutes({}, refs);
+  const PersistentRegistry registry{
+      .ribs = {{"100", "ipv4"}, {"200", "ipv6"}},
+      .nexthops = {{"100", 7, {}, {}, "ipv4", false},
+                   {"200", 9, {}, {}, "ipv6", false}},
+      .bindings = {}};
+  const std::string xml = SerializeOperationalRoutes({}, registry);
   EXPECT_NE(xml.find("<name>100</name><address-family>ipv4-address-family</address-family>"),
             std::string::npos);
   EXPECT_NE(xml.find("<nexthop-member-id>7</nexthop-member-id>"),
@@ -589,8 +592,24 @@ TEST(RibConfigTest, SerializesRegisteredNexthopsWithAndWithoutRoutes) {
             std::string::npos);
 }
 
+TEST(RibConfigTest, SerializesEmptyRegisteredRib) {
+  const PersistentRegistry registry{.ribs = {{"300", "ipv4"}},
+                                    .nexthops = {},
+                                    .bindings = {}};
+  const std::string xml = SerializeOperationalRoutes({}, registry);
+  EXPECT_NE(xml.find("<rib-list><name>300</name><address-family>"
+                     "ipv4-address-family</address-family></rib-list>"),
+            std::string::npos);
+  EXPECT_EQ(xml.find("<route-list>"), std::string::npos);
+  EXPECT_EQ(xml.find("<nexthop-list>"), std::string::npos);
+}
+
 TEST(RibConfigTest, OmitsFamilyUnknownNexthopWithoutContainingRib) {
-  const std::string xml = SerializeOperationalRoutes({}, {{"100", "", 7}});
+  const PersistentRegistry registry{
+      .ribs = {},
+      .nexthops = {{"100", 7, {}, {}, {}, false}},
+      .bindings = {}};
+  const std::string xml = SerializeOperationalRoutes({}, registry);
   EXPECT_EQ(xml.find("<nexthop-member-id>7</nexthop-member-id>"),
             std::string::npos);
 }
@@ -992,9 +1011,9 @@ TEST(RibConfigTest, RibAddDurablySuppliesInterfaceOnlyNexthopFamily) {
       &registry,
       R"(<nh-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-base><outgoing-interface>dummy0</outgoing-interface></nexthop-base></nh-add>)",
       &output, &error, &path)) << error;
-  const auto snapshot = registry.Snapshot();
-  ASSERT_EQ(snapshot.size(), 1U);
-  EXPECT_EQ(std::get<1>(snapshot[0]), "ipv6");
+  const auto snapshot = registry.PersistentState();
+  ASSERT_EQ(snapshot.nexthops.size(), 1U);
+  EXPECT_EQ(snapshot.nexthops[0].address_family, "ipv6");
   EXPECT_NE(SerializeOperationalRoutes({}, snapshot).find(
                 "<address-family>ipv6-address-family</address-family>"),
             std::string::npos);
