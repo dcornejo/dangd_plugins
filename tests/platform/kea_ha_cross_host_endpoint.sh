@@ -35,7 +35,8 @@ case "$(uname -s)" in
       fail "$interface carries the IPv6 default route"
     fi
     hook_dir=/usr/lib/x86_64-linux-gnu/kea/hooks
-    socket_dir=/run/kea
+    # ISC's Kea 3.2 package enforces its compiled UNIX socket directory.
+    socket_dir=/var/run/kea
     dhcp4=$(command -v kea-dhcp4)
     dhcp6=$(command -v kea-dhcp6)
     python=$(command -v python3 || command -v python3.12 || command -v python3.11)

@@ -58,10 +58,10 @@ int main() {
           "</kea-instance>",
       "DHCPv4 instance operational identity is incorrect");
   valid &= Check(
-      BuildInstanceOperationalXml("v6-only", {true}, {"3.0.3"}) ==
+      BuildInstanceOperationalXml("v6-only", {true}, {"3.2.0"}) ==
           "<kea-instance xmlns=\"urn:dang:kea:instance\"><instance-id>"
           "v6-only</instance-id><address-family>dhcpv6</address-family>"
-          "<daemon><address-family>dhcpv6</address-family><version>3.0.3"
+          "<daemon><address-family>dhcpv6</address-family><version>3.2.0"
           "</version></daemon>"
           "</kea-instance>",
       "DHCPv6 instance operational identity is incorrect");
@@ -1044,13 +1044,26 @@ int main() {
          std::string*) -> std::optional<nlohmann::json> {
     if (command != "version-get" || !arguments.empty()) return std::nullopt;
     return OptionalJson(nlohmann::json{
-        {"result", 0}, {"text", "3.0.3 (3.0.3 (tarball))"}});
+        {"result", 0}, {"text", "3.2.0 (isc20260622084837 deb)"}});
   };
   error.clear();
   const auto version = dang::plugins::kea::ReadDaemonVersion(
       "/tmp/kea4.sock", valid_version_reply, &error);
-  valid &= Check(version && *version == "3.0.3",
+  valid &= Check(version && *version == "3.2.0",
                  "valid native Kea version was not extracted");
+  const dang::plugins::kea::ControlQuery obsolete_version_reply =
+      [](std::string_view, std::string_view,
+         const nlohmann::json&,
+         std::string*) -> std::optional<nlohmann::json> {
+    return OptionalJson(nlohmann::json{
+        {"result", 0}, {"text", "3.1.9 (unsupported test build)"}});
+  };
+  error.clear();
+  valid &= Check(!dang::plugins::kea::ReadDaemonVersion(
+                      "/tmp/kea4.sock", obsolete_version_reply, &error) &&
+                     error.find("version 3.2.0 or newer is required") !=
+                         std::string::npos,
+                 "pre-3.2 Kea daemon version was accepted");
   const dang::plugins::kea::ControlQuery malformed_version_reply =
       [](std::string_view, std::string_view,
          const nlohmann::json&,

@@ -41,9 +41,10 @@ inventories prevent that daemon from becoming authoritative.
 The read-only instance tree records the strict three-component version returned
 by each accepted daemon's native `version-get` command. This lets automation
 verify the implementation behind an endpoint instead of inferring it from a
-package name or host role. A malformed reply prevents reconciliation; a valid
-version is identity evidence, while the daemon's `config-test` remains the
-final compatibility check for a particular candidate.
+package name or host role. A malformed reply or a version older than the
+supported Kea 3.2.0 baseline prevents reconciliation; a valid version is
+identity evidence, while the daemon's `config-test` remains the final
+compatibility check for a particular candidate.
 
 ## Multiple local instances
 
@@ -78,8 +79,8 @@ position or a socket pathname.
 
 Use a service-manager template or one explicit service definition per instance.
 For example, the `access-east` service environment can name
-`DANG_KEA_INSTANCE_ID=access-east`, `/run/kea/access-east-4.sock`, and
-`/run/kea/access-east-6.sock`, while its dangd command names
+`DANG_KEA_INSTANCE_ID=access-east`, `/var/run/kea/access-east-4.sock`, and
+`/var/run/kea/access-east-6.sock`, while its dangd command names
 `/var/lib/dangd/access-east/state.json` and a unique NETCONF port. A second
 service repeats that pattern with a different identifier and paths. Run each
 complete command with `--check` before enabling either service, then query the

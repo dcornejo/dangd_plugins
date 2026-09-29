@@ -8,9 +8,12 @@ root=${1:-/tmp/dang_plugins_validation}
 namespace=dang-kea-test
 host_interface=dangkea-host
 runtime_dir=/tmp/dang-kea-runtime-$$
-socket4=/run/kea/dang-kea4-$$.sock
-socket4_secondary=/run/kea/dang-kea4-secondary-$$.sock
-socket6=/run/kea/dang-kea6-$$.sock
+# ISC's Kea 3.2 Linux packages restrict UNIX control sockets to this compiled
+# runtime directory. Keep isolated names within it instead of relying on the
+# distro package's former /run/kea spelling.
+socket4=/var/run/kea/dang-kea4-$$.sock
+socket4_secondary=/var/run/kea/dang-kea4-secondary-$$.sock
+socket6=/var/run/kea/dang-kea6-$$.sock
 pid4=
 pid4_secondary=
 pid6=

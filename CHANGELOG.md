@@ -7,6 +7,16 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- Raised the managed Kea baseline to 3.2.0. Reconciliation now rejects older
+  daemon identities, portable tests cover that boundary, Linux validation uses
+  ISC's supported `kea-3-2` packages and their required `/var/run/kea` socket
+  directory, and the installation guide names the current ISC repository,
+  packages, and services. Debian and FreeBSD plugin package metadata now also
+  declares the corresponding Kea runtime. Linux and FreeBSD native workflows
+  now both validate Kea 3.2.0.
+
 ### Added
 
 - Added reconciled native daemon versions to the `dang-kea-instance`
@@ -14,7 +24,7 @@ All notable changes to the external dangd plugin collection are recorded here.
   accepts only a bounded three-component numeric identity, retains it with the
   accepted configuration snapshot, and publishes it beside the corresponding
   DHCPv4 or DHCPv6 family. Malformed version replies fail reconciliation at
-  the owning module path. Native Linux Kea 3.0.3 and FreeBSD Kea 3.2.0 tests
+  the owning module path. Native Linux and FreeBSD Kea 3.2.0 tests
   require the versioned instance entries in both ordinary and HA state reads.
 
 - Added native Kea command-capability attestation to applied-state
@@ -170,8 +180,8 @@ All notable changes to the external dangd plugin collection are recorded here.
   and closing configuration-authority checks, shares the complete query, item,
   byte, time, and XML budgets, and fails closed with a model path for malformed
   or unavailable status. Portable tests cover translation, XML escaping,
-  malformed types, output clearing, and limits; native Linux Kea 3.0.3 and
-  FreeBSD Kea 3.2.0 workflows verify the same schema against real hot-standby
+  malformed types, output clearing, and limits; native Linux and FreeBSD Kea
+  3.2.0 workflows verify the same schema against real hot-standby
   members.
 
 - Added explicit local-member Kea HA support and validation. HA hook parameters

@@ -50,6 +50,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(CPACK_DEBIAN_PACKAGE_DEPENDS "dangd (>= ${PROJECT_VERSION})")
   set(CPACK_DEBIAN_EXAMPLE_PACKAGE_NAME "dangd-plugin-example")
   set(CPACK_DEBIAN_KEA_PACKAGE_NAME "dangd-plugin-kea")
+  string(CONCAT CPACK_DEBIAN_KEA_PACKAGE_DEPENDS
+    "dangd (>= ${PROJECT_VERSION}), isc-kea-hooks (>= 3.2.0), "
+    "isc-kea-dhcp4 (>= 3.2.0) | isc-kea-dhcp6 (>= 3.2.0)")
   set(CPACK_DEBIAN_IP-MANAGEMENT_PACKAGE_NAME "dangd-plugin-ip-management")
   set(CPACK_DEBIAN_SYSTEM_PACKAGE_NAME "dangd-plugin-system")
   set(CPACK_DEBIAN_PAM_PACKAGE_NAME "dangd-pam")
@@ -87,7 +90,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
     elseif(DANG_PACKAGE_COMPONENT STREQUAL "kea")
       set(DANG_FREEBSD_PACKAGE_NAME "dangd-plugin-kea")
       set(DANG_FREEBSD_PACKAGE_DEPS
-        "net-mgmt/dangd;textproc/libxml2;devel/nlohmann-json")
+        "net-mgmt/dangd;textproc/libxml2;devel/nlohmann-json;net/kea")
     elseif(DANG_PACKAGE_COMPONENT STREQUAL "ip-management")
       set(DANG_FREEBSD_PACKAGE_NAME "dangd-plugin-ip-management")
       set(DANG_FREEBSD_PACKAGE_DEPS

@@ -18,22 +18,33 @@ the companion models and adapter code are Apache-2.0.
 The runtime requires dangd 0.1.0 or newer, a compatible Kea server package for
 every enabled address family, the Kea lease-command, host-command, and
 supplemental-statistics hook libraries, and local UNIX control sockets
-accessible by the plugin worker. On Debian/Ubuntu install `kea-dhcp4-server`,
-`kea-dhcp6-server`, or both as required; on FreeBSD install `kea`. A source
-build additionally needs CMake 3.24+, a C++20 compiler, libxml2 development
-files, nlohmann-json 3.11+, and GoogleTest. The recorded native matrix covers
-Kea 3.0.3 on Linux and Kea 3.2.0 on FreeBSD; other releases require the same
-command-inventory, configuration-validation, and platform workflow before
-production use.
+accessible by the plugin worker. Kea 3.2.0 is the minimum supported daemon
+release. On Debian/Ubuntu use ISC's `kea-3-2` repository and install
+`isc-kea-dhcp4`, `isc-kea-dhcp6`, or both as required plus `isc-kea-hooks`; on
+FreeBSD install `kea`. A source build additionally needs CMake 3.24+, a C++20
+compiler, libxml2 development files, nlohmann-json 3.11+, and GoogleTest. The
+recorded native matrix covers Kea 3.2.0 on both Linux and FreeBSD. Newer
+releases require the same command-inventory, configuration-validation, and
+platform workflow before production use.
 
 Debian/Ubuntu package installation:
 
 ```sh
+curl -1sLf https://dl.cloudsmith.io/public/isc/kea-3-2/setup.deb.sh \
+  | sudo -E bash
 sudo apt update
-sudo apt install kea-dhcp4-server kea-dhcp6-server
+sudo apt install isc-kea-dhcp4 isc-kea-dhcp6 isc-kea-hooks
 sudo apt install ./dangd-plugin-kea_0.1.0_amd64.deb
 dpkg -L dangd-plugin-kea
 ```
+
+The repository setup command is ISC's published
+[Kea package installation method](https://kb.isc.org/docs/isc-kea-packages).
+Review the downloaded script before running it when required by local policy.
+The packages provide the `isc-kea-dhcp4-server` and
+`isc-kea-dhcp6-server` services. Do not substitute distribution packages older
+than 3.2: the plugin rejects their native `version-get` identity during
+reconciliation.
 
 FreeBSD package installation:
 
@@ -384,8 +395,8 @@ dual-stack deployment uses both:
 
 ```sh
 export DANG_KEA_INSTANCE_ID=default
-export DANG_KEA_DHCP4_SOCKET=/run/kea/kea4-ctrl-socket
-export DANG_KEA_DHCP6_SOCKET=/run/kea/kea6-ctrl-socket
+export DANG_KEA_DHCP4_SOCKET=/var/run/kea/kea4-ctrl-socket
+export DANG_KEA_DHCP6_SOCKET=/var/run/kea/kea6-ctrl-socket
 ```
 
 `DANG_KEA_INSTANCE_ID` defaults to `default` for an existing single-instance
@@ -397,7 +408,8 @@ a NETCONF client can verify the management boundary it reached. After
 applied-state reconciliation, each family also has a keyed daemon entry with
 the strict three-component version returned by native `version-get`. That
 identity is retained with the accepted snapshot rather than sampled from an
-unverified daemon during every operational read.
+unverified daemon during every operational read. Reconciliation rejects
+versions older than 3.2.0 before their state can become authoritative.
 
 For IPv4-only operation, set only `DANG_KEA_DHCP4_SOCKET` and omit the DHCPv6
 variable. For IPv6-only operation, do the reverse. An unset variable explicitly
@@ -407,19 +419,21 @@ datastore, otherwise preparation fails at that module's `config` path rather
 than silently dropping its configuration. The inventory is captured when the
 plugin library loads and does not change during the process lifetime.
 
-Use `/var/run/kea` on the tested FreeBSD package. The same paths must appear
-in each modeled `control-sockets` list so a successful `config-set` keeps the
-management channel available. The plugin rejects a replacement that omits or
-changes that UNIX socket, and refuses missing or overlong environment paths and
-uses a single five-second deadline covering nonblocking connect, write, and read
-plus 16 MiB request and response ceilings for each local exchange.
+Use `/var/run/kea` on the tested ISC Linux and FreeBSD packages. The same paths
+must appear in each modeled `control-sockets` list so a successful `config-set`
+keeps the management channel available. The plugin rejects a replacement that
+omits or changes that UNIX socket, and refuses missing or overlong environment
+paths and uses a single five-second deadline covering nonblocking connect,
+write, and read plus 16 MiB request and response ceilings for each local
+exchange.
 Socket paths containing an embedded NUL are also rejected because the kernel
 would otherwise resolve a different, truncated pathname from the identity
 validated by the plugin.
 
-On Ubuntu, install `kea-dhcp4-server` and `kea-dhcp6-server`. On FreeBSD,
-install the `kea` package. The isolated tests use unique socket and PID paths,
-so the packaged services may remain running.
+On Ubuntu, install `isc-kea-dhcp4`, `isc-kea-dhcp6`, and `isc-kea-hooks` from
+ISC's `kea-3-2` repository. On FreeBSD, install the `kea` package. The isolated
+tests use unique socket and PID paths, so the packaged services may remain
+running.
 
 Add a UNIX control socket to each existing Kea configuration. This is the
 relevant DHCPv4 fragment, not a complete Kea configuration:
@@ -428,7 +442,7 @@ relevant DHCPv4 fragment, not a complete Kea configuration:
 {
   "Dhcp4": {
     "control-sockets": [
-      { "socket-type": "unix", "socket-name": "/run/kea/kea4-ctrl-socket" }
+      { "socket-type": "unix", "socket-name": "/var/run/kea/kea4-ctrl-socket" }
     ],
     "hooks-libraries": [
       { "library": "/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_lease_cmds.so" },
@@ -441,9 +455,9 @@ relevant DHCPv4 fragment, not a complete Kea configuration:
 
 Use the equivalent `Dhcp6` object and `kea6-ctrl-socket` in the DHCPv6 file
 when DHCPv6 is enabled.
-On FreeBSD use `/var/run/kea/...` consistently and find the hooks under
-`/usr/local/lib/kea/hooks`. Distribution paths can differ; verify the installed
-locations rather than copying these examples blindly. All hook entries must
+On FreeBSD find the hooks under `/usr/local/lib/kea/hooks`. Distribution paths
+can differ; verify the installed locations rather than copying these examples
+blindly. All hook entries must
 also be represented in the modeled configuration; the plugin rejects a
 replacement missing any required command hook so `config-set` cannot silently
 remove operational retrieval. Validate both native files before restarting the

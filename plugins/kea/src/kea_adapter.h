@@ -93,7 +93,7 @@ using ConfigurationCommand = std::function<bool(
     const ServerConfiguration& expected, const ControlQuery& query,
     std::string* error);
 
-/** Returns the strict three-component version reported by one live daemon. */
+/** Returns a supported (3.2.0+) three-component live daemon version. */
 [[nodiscard]] std::optional<std::string> ReadDaemonVersion(
     std::string_view socket_path, const ControlQuery& query,
     std::string* error);

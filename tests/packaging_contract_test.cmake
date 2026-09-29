@@ -29,6 +29,22 @@ foreach(component IN ITEMS frr rib)
 endforeach()
 
 file(READ "${SOURCE_DIR}/packaging/Packaging.cmake" packaging)
+
+# Kea is a runtime provider rather than a link dependency, so package metadata
+# must name it explicitly. Debian permits either single-stack daemon while the
+# shared hooks package is required; FreeBSD supplies both families and hooks in
+# one package.
+foreach(requirement IN ITEMS
+    "CPACK_DEBIAN_KEA_PACKAGE_DEPENDS"
+    "isc-kea-hooks (>= 3.2.0)"
+    "isc-kea-dhcp4 (>= 3.2.0) | isc-kea-dhcp6 (>= 3.2.0)"
+    "devel/nlohmann-json;net/kea")
+  string(FIND "${packaging}" "${requirement}" position)
+  if(position EQUAL -1)
+    message(FATAL_ERROR "Kea package dependency is missing: ${requirement}")
+  endif()
+endforeach()
+
 foreach(pair IN ITEMS
     "RIB_PACKAGE_CONFLICTS \"dangd-plugin-frr\""
     "FRR_PACKAGE_CONFLICTS \"dangd-plugin-rib\"")

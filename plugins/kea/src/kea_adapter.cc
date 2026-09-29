@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <cctype>
 #include <charconv>
@@ -43,6 +44,7 @@ namespace dang::plugins::kea {
 namespace {
 
 constexpr std::size_t kMaximumControlBytes = 16 * 1024 * 1024;
+constexpr std::array<std::uint32_t, 3> kMinimumKeaVersion{3, 2, 0};
 constexpr std::size_t kMaximumDatastoreBytes = 16 * 1024 * 1024;
 constexpr auto kSocketTimeout = std::chrono::seconds(5);
 constexpr std::string_view kNetconfBaseNamespace =
@@ -2066,7 +2068,8 @@ std::optional<std::string> ReadDaemonVersion(
     return std::nullopt;
   }
   std::size_t component_start = 0;
-  for (int component = 0; component < 3; ++component) {
+  std::array<std::uint32_t, 3> components{};
+  for (std::size_t component = 0; component < components.size(); ++component) {
     const std::size_t separator = version.find('.', component_start);
     const std::size_t component_end =
         separator == std::string_view::npos ? version.size() : separator;
@@ -2082,7 +2085,21 @@ std::optional<std::string> ReadDaemonVersion(
       if (error) *error = "Kea version-get response has an invalid version";
       return std::nullopt;
     }
+    const char* first = version.data() + component_start;
+    const char* last = version.data() + component_end;
+    const auto [parsed_end, parse_error] =
+        std::from_chars(first, last, components[component]);
+    if (parse_error != std::errc{} || parsed_end != last) {
+      if (error) *error = "Kea version-get response has an invalid version";
+      return std::nullopt;
+    }
     component_start = component_end + 1;
+  }
+  if (components < kMinimumKeaVersion) {
+    if (error)
+      *error = "unsupported Kea version " + std::string(version) +
+          "; version 3.2.0 or newer is required";
+    return std::nullopt;
   }
   return std::string(version);
 }
