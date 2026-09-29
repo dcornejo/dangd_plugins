@@ -125,6 +125,12 @@ a different order. The pinned models' user-ordered subnet, pool, prefix-pool,
 and client-class lists retain positional comparison, as do arrays embedded in
 arbitrary JSON values. Missing, duplicated, changed, or additional managed
 values reject the commit with the owning module and configuration path.
+Reconciliation then calls native `list-commands` and requires
+every command used by the enabled family: configuration get/test/set, version,
+paged lease and reservation retrieval, supplemental lease statistics, and HA
+status when the accepted image loads `libdhcp_ha.so`. This detects a missing or
+failed hook registration before dangd accepts and publishes the daemon, rather
+than waiting for a later operational read to expose it.
 Reconciliation also binds the applied XML to the prepared proposal before it
 uses that proposal to decide which daemons require readback. A stale prepared
 handle, a different applied snapshot, or a reordered target cannot skip the

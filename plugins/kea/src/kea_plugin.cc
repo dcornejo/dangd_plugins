@@ -44,6 +44,7 @@ using dang::plugins::kea::SendControlQuery;
 using dang::plugins::kea::ServerConfiguration;
 using dang::plugins::kea::TranslateConfiguration;
 using dang::plugins::kea::VerifyLiveConfiguration;
+using dang::plugins::kea::VerifyRequiredControlCommands;
 using dang::plugins::kea::VerifyRestoredConfigurations;
 using dang::plugins::kea::ValidInstanceId;
 
@@ -803,7 +804,9 @@ int ReconcileAppliedConfigurationImpl(
                         prepared->proposed[index].arguments)
       continue;
     std::string reason;
-    if (VerifyLiveConfiguration((*accepted)[index], SendControlQuery, &reason))
+    if (VerifyLiveConfiguration((*accepted)[index], SendControlQuery, &reason) &&
+        VerifyRequiredControlCommands(
+            (*accepted)[index], SendControlQuery, &reason))
       continue;
     const std::string& module = (*accepted)[index].module_name;
     SetError(error, module + ": " + reason,

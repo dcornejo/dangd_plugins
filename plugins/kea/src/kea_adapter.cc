@@ -1997,6 +1997,50 @@ bool VerifyLiveConfiguration(const ServerConfiguration& expected,
   }
 }
 
+bool VerifyRequiredControlCommands(const ServerConfiguration& expected,
+                                   const ControlQuery& query,
+                                   std::string* error) {
+  const bool dhcp4 = expected.module_name == "kea-dhcp4-server" &&
+      expected.service_name == "Dhcp4";
+  const bool dhcp6 = expected.module_name == "kea-dhcp6-server" &&
+      expected.service_name == "Dhcp6";
+  if (!query || expected.socket_path.empty() || (!dhcp4 && !dhcp6)) {
+    if (error) *error = "invalid Kea command-inventory request";
+    return false;
+  }
+  auto response = RunControlQuery(query, expected.socket_path, "list-commands",
+                                  nlohmann::json::object(), error);
+  if (!response || !CommandSucceeded(*response, error)) return false;
+  const nlohmann::json* answer = Answer(*response);
+  if (!answer || !answer->contains("arguments") ||
+      !answer->at("arguments").is_array()) {
+    if (error) *error = "Kea list-commands response omits an arguments array";
+    return false;
+  }
+  std::set<std::string, std::less<>> available;
+  for (const auto& command : answer->at("arguments")) {
+    if (!command.is_string()) {
+      if (error) *error = "Kea list-commands response contains a non-string";
+      return false;
+    }
+    available.emplace(command.get_ref<const std::string&>());
+  }
+  std::vector<std::string_view> required{
+      "config-get", "config-set", "config-test", "list-commands",
+      "reservation-get-page", "version-get"};
+  required.push_back(dhcp6 ? "lease6-get-page" : "lease4-get-page");
+  required.push_back(dhcp6 ? "stat-lease6-get" : "stat-lease4-get");
+  if (HasHaHook(expected)) required.push_back("status-get");
+  for (const auto command : required) {
+    if (available.contains(command)) continue;
+    if (error)
+      *error = "Kea daemon did not register required command " +
+          std::string(command);
+    return false;
+  }
+  return true;
+}
+
 std::optional<nlohmann::json> CollectLeasePages(
     std::string_view socket_path, bool dhcp6, const ControlQuery& query,
     std::string* error, const PageLimits& limits) {

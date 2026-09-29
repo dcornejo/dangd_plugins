@@ -85,6 +85,15 @@ using ConfigurationCommand = std::function<bool(
     std::string* error);
 
 /**
+ * Verifies that a live daemon registered every command required to manage the
+ * accepted model. This catches a configured hook library that did not load or
+ * did not register its command set before dangd accepts the daemon as healthy.
+ */
+[[nodiscard]] bool VerifyRequiredControlCommands(
+    const ServerConfiguration& expected, const ControlQuery& query,
+    std::string* error);
+
+/**
  * Retrieves a complete lease result using Kea's stable address cursor.
  * Repeated cursors, malformed pages, or configured resource limits fail closed.
  */

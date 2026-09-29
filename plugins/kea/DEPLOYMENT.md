@@ -31,6 +31,14 @@ order. The current order is DHCPv4 followed by DHCPv6 when both are enabled.
 Single-stack operation therefore uses the same transaction machinery without
 a placeholder or unreachable target for the absent family.
 
+Applied-state reconciliation also queries each enabled daemon's native
+`list-commands` inventory. The daemon must advertise the core configuration
+and version commands, its family-specific paged lease and statistics commands,
+the reservation paging command, and `status-get` when the accepted image loads
+the HA hook. A hook pathname in configuration is not treated as proof that the
+library loaded and registered successfully. Missing or malformed capability
+inventories prevent that daemon from becoming authoritative.
+
 ## Multiple local instances
 
 Multiple local instances are supported as separate dangd process boundaries.

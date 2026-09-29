@@ -9,6 +9,15 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added native Kea command-capability attestation to applied-state
+  reconciliation. Before accepting a daemon, the plugin now requires its
+  `list-commands` inventory to contain the core configuration, version,
+  family-specific lease/statistics, reservation, and—when configured—HA
+  status commands used by the managed model. Malformed inventories and a
+  configured hook that failed to register its command now fail at the owning
+  module's configuration path. Portable negative tests and the complete Linux
+  and FreeBSD native workflows cover the contract.
+
 - Added explicit multiple-instance Kea support through separate dangd process
   boundaries. `DANG_KEA_INSTANCE_ID` supplies a stable portable identifier
   while retaining `default` for existing single-instance deployments. The new

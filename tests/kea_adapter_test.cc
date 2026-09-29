@@ -993,6 +993,55 @@ int main() {
   valid &= Check(dang::plugins::kea::VerifyLiveConfiguration(
                      *dhcp4, matching_configuration, &error),
                  "Kea-added defaults were mistaken for configuration drift");
+  nlohmann::json required_commands = nlohmann::json::array(
+      {"config-get", "config-set", "config-test", "lease4-get-page",
+       "list-commands", "reservation-get-page", "stat-lease4-get",
+       "version-get"});
+  const dang::plugins::kea::ControlQuery complete_command_inventory =
+      [&](std::string_view, std::string_view command,
+          const nlohmann::json& arguments,
+          std::string*) -> std::optional<nlohmann::json> {
+    if (command != "list-commands" || !arguments.empty()) return std::nullopt;
+    return OptionalJson(
+        nlohmann::json{{"result", 0}, {"arguments", required_commands}});
+  };
+  error.clear();
+  valid &= Check(dang::plugins::kea::VerifyRequiredControlCommands(
+                     *dhcp4, complete_command_inventory, &error),
+                 "complete Kea command inventory was rejected");
+  required_commands.erase(std::find(required_commands.begin(),
+                                    required_commands.end(),
+                                    "reservation-get-page"));
+  error.clear();
+  valid &= Check(!dang::plugins::kea::VerifyRequiredControlCommands(
+                      *dhcp4, complete_command_inventory, &error) &&
+                     error.find("required command reservation-get-page") !=
+                         std::string::npos,
+                 "missing host-command registration was accepted");
+  required_commands.push_back("reservation-get-page");
+  error.clear();
+  valid &= Check(!dang::plugins::kea::VerifyRequiredControlCommands(
+                      *ha_member, complete_command_inventory, &error) &&
+                     error.find("required command status-get") !=
+                         std::string::npos,
+                 "HA configuration without status-get was accepted");
+  required_commands.push_back("status-get");
+  error.clear();
+  valid &= Check(dang::plugins::kea::VerifyRequiredControlCommands(
+                     *ha_member, complete_command_inventory, &error),
+                 "complete HA command inventory was rejected");
+  const dang::plugins::kea::ControlQuery malformed_command_inventory =
+      [](std::string_view, std::string_view,
+         const nlohmann::json&,
+         std::string*) -> std::optional<nlohmann::json> {
+    return OptionalJson(nlohmann::json{
+        {"result", 0}, {"arguments", nlohmann::json::array({"config-get", 7})}});
+  };
+  error.clear();
+  valid &= Check(!dang::plugins::kea::VerifyRequiredControlCommands(
+                      *dhcp4, malformed_command_inventory, &error) &&
+                     error.find("contains a non-string") != std::string::npos,
+                 "malformed Kea command inventory was accepted");
   dang::plugins::kea::ServerConfiguration reordered_expected = *dhcp4;
   auto& expected_reservations =
       reordered_expected.arguments["Dhcp4"]["reservations"];
