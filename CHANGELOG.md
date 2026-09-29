@@ -9,6 +9,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Corrected Kea HA YANG discovery metadata to advertise the packaged
+  `2026-09-28` revision and retrieval URL rather than the superseded initial
+  revision. The generic plugin discovery smoke test can now assert an expected
+  source revision against both the ABI metadata and embedded module text, so a
+  future model-file rename cannot silently leave YANG Library stale.
+
 - Added effective Kea HA transport security to the read-only operational
   model. Each relationship now reports whether its local dedicated listener
   and singular active-remote channel use plaintext or TLS, whether the TLS

@@ -10,8 +10,9 @@
 #include <string_view>
 
 int main(int argc, char** argv) {
-  if (argc != 4) {
-    std::cerr << "usage: plugin_loader_smoke_test PLUGIN NAME SOURCE_MODULE\n";
+  if (argc != 4 && argc != 5) {
+    std::cerr << "usage: plugin_loader_smoke_test PLUGIN NAME SOURCE_MODULE "
+                 "[SOURCE_REVISION]\n";
     return 2;
   }
   void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
@@ -61,9 +62,14 @@ int main(int argc, char** argv) {
         valid = false;
         break;
       }
+      const bool expected_revision = argc == 4 ||
+          (source.revision && std::string_view(source.revision) == argv[4] &&
+           std::string_view(source.source, source.source_size).find(
+               std::string("revision ") + argv[4]) != std::string_view::npos);
       if (std::string_view(source.module_name) == argv[3] &&
           std::string_view(source.source, source.source_size).find(
-              std::string("module ") + argv[3]) != std::string_view::npos)
+              std::string("module ") + argv[3]) != std::string_view::npos &&
+          expected_revision)
         found_source = true;
     }
   valid = valid && found_source;

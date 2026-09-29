@@ -337,7 +337,7 @@ if(BUILD_TESTING)
       dang-kea kea-types)
   add_test(NAME kea_ha_plugin_discovery
     COMMAND plugin_loader_smoke_test $<TARGET_FILE:dangd_kea_plugin>
-      dang-kea dang-kea-ha)
+      dang-kea dang-kea-ha 2026-09-28)
   add_test(NAME ip_management_plugin_discovery
     COMMAND plugin_loader_smoke_test $<TARGET_FILE:dangd_ip_management_plugin>
       dangd-ip-management ietf-ip)

@@ -338,10 +338,10 @@ int SourceAtImpl(void*, size_t index, DangYangSourceV1* source,
        "https://gitlab.isc.org/isc-projects/kea/-/blob/Kea-3.2.0/"
        "src/share/yang/modules/kea-dhcp6-server%402026-06-24.yang",
        DANG_YANG_IMPLEMENTED_V1, nullptr, 0},
-      {"dang-kea-ha", "2026-09-24", kDangKeaHaYang,
+      {"dang-kea-ha", "2026-09-28", kDangKeaHaYang,
        std::strlen(kDangKeaHaYang),
        "https://github.com/dcornejo/dang_plugins/blob/main/plugins/kea/models/"
-       "dang-kea-ha%402026-09-24.yang",
+       "dang-kea-ha%402026-09-28.yang",
        DANG_YANG_IMPLEMENTED_V1, nullptr, 0}};
   if (index >= std::size(sources)) {
     SetError(error, "the YANG source index is out of range");
