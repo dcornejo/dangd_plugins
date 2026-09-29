@@ -9,35 +9,43 @@ jail_name=dang_kea_test
 host_interface=
 runtime_dir=/tmp/dang-kea-runtime-$$
 socket4=/var/run/kea/dang-kea4-$$.sock
+socket4_secondary=/var/run/kea/dang-kea4-secondary-$$.sock
 socket6=/var/run/kea/dang-kea6-$$.sock
 pid4=
+pid4_secondary=
 pid6=
 
 cleanup() {
   [ -z "$pid4" ] || kill "$pid4" 2>/dev/null || true
+  [ -z "$pid4_secondary" ] || kill "$pid4_secondary" 2>/dev/null || true
   [ -z "$pid6" ] || kill "$pid6" 2>/dev/null || true
   jail -r "$jail_name" 2>/dev/null || true
   if [ -n "$host_interface" ]; then
     ifconfig "$host_interface" destroy 2>/dev/null || true
   fi
   rm -rf "$runtime_dir"
-  rm -f "$socket4" "$socket6"
-  rm -f /tmp/kea-dhcp4-freebsd.json /tmp/kea-dhcp6-freebsd.json \
+  rm -f "$socket4" "$socket4_secondary" "$socket6"
+  rm -f /tmp/kea-dhcp4-freebsd.json \
+    /tmp/kea-dhcp4-secondary-freebsd.json /tmp/kea-dhcp6-freebsd.json \
     /tmp/kea-before-freebsd.xml /tmp/kea-proposed-freebsd.xml \
     /tmp/kea-empty-freebsd.xml \
     /tmp/kea-before4-freebsd.xml /tmp/kea-proposed4-freebsd.xml \
     /tmp/kea-before6-freebsd.xml /tmp/kea-proposed6-freebsd.xml \
     /tmp/kea-before4-only-freebsd.xml /tmp/kea-proposed4-only-freebsd.xml \
+    /tmp/kea-before4-secondary-freebsd.xml \
     /tmp/kea-before6-only-freebsd.xml /tmp/kea-proposed6-only-freebsd.xml \
     /tmp/kea-proposed-ha-freebsd.xml \
     /tmp/kea-proposed-ha-passive-freebsd.xml \
     /tmp/kea-proposed6-state-freebsd.xml \
     /tmp/kea-before-validation-freebsd.xml \
-    /tmp/kea-proposed-validation-freebsd.xml
+    /tmp/kea-proposed-validation-freebsd.xml \
+    /tmp/kea-instance-primary-freebsd.log \
+    /tmp/kea-instance-secondary-freebsd.log
 }
 trap cleanup EXIT INT TERM
 cleanup
 mkdir -p "$runtime_dir"
+mkdir -p "$runtime_dir/secondary"
 
 host_interface=$(ifconfig epair create)
 peer_interface=${host_interface%a}b
@@ -53,6 +61,9 @@ ifconfig "$host_interface" up
 sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
   -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
   "$root/tests/kea4-boot.json" > /tmp/kea-dhcp4-freebsd.json
+sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
+  -e "s#/var/run/kea/kea4-ctrl-socket#$socket4_secondary#g" \
+  "$root/tests/kea4-boot.json" > /tmp/kea-dhcp4-secondary-freebsd.json
 sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
   -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
   "$root/tests/kea6-boot.json" > /tmp/kea-dhcp6-freebsd.json
@@ -91,6 +102,10 @@ sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
   -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
   "$root/tests/kea-before4-only.xml" > /tmp/kea-before4-only-freebsd.xml
 sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
+  -e "s#/var/run/kea/kea4-ctrl-socket#$socket4_secondary#g" \
+  "$root/tests/kea-before4-only.xml" \
+  > /tmp/kea-before4-secondary-freebsd.xml
+sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
   -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
   "$root/tests/kea-proposed4-only.xml" > /tmp/kea-proposed4-only-freebsd.xml
 sed -e 's#@KEA_HOOK_DIR@#/usr/local/lib/kea/hooks#g' \
@@ -117,20 +132,79 @@ jexec "$jail_name" env KEA_PIDFILE_DIR="$runtime_dir" \
   /usr/local/sbin/kea-dhcp4 -d \
   -c /tmp/kea-dhcp4-freebsd.json > /tmp/dang-kea4.log 2>&1 &
 pid4=$!
+jexec "$jail_name" env KEA_PIDFILE_DIR="$runtime_dir/secondary" \
+  /usr/local/sbin/kea-dhcp4 -d -p 2067 \
+  -c /tmp/kea-dhcp4-secondary-freebsd.json \
+  > /tmp/dang-kea4-secondary.log 2>&1 &
+pid4_secondary=$!
 jexec "$jail_name" env KEA_PIDFILE_DIR="$runtime_dir" \
   /usr/local/sbin/kea-dhcp6 -d \
   -c /tmp/kea-dhcp6-freebsd.json > /tmp/dang-kea6.log 2>&1 &
 pid6=$!
 
 attempt=0
-while [ ! -S "$socket4" ] || [ ! -S "$socket6" ]; do
+while [ ! -S "$socket4" ] || [ ! -S "$socket4_secondary" ] ||
+    [ ! -S "$socket6" ]; do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 100 ]; then
-    cat /tmp/dang-kea4.log /tmp/dang-kea6.log
+    cat /tmp/dang-kea4.log /tmp/dang-kea4-secondary.log /tmp/dang-kea6.log
     exit 1
   fi
   sleep 0.1
 done
+
+# Prove that two same-family Kea instances remain distinct plugin process
+# boundaries. Their no-op reconciliation and complete operational reads run
+# concurrently. Removing the secondary daemon must affect only its endpoint.
+(
+  jexec -l -U root "$jail_name" env \
+    DANG_KEA_INSTANCE_ID=primary \
+    DANG_KEA_TEST_NOOP_SEED=1 \
+    DANG_KEA_DHCP4_SOCKET="$socket4" \
+    "$root/build/kea_plugin_integration_test" \
+    "$root/build/dangd_kea_plugin.so" /tmp/kea-before4-only-freebsd.xml \
+    /tmp/kea-before4-only-freebsd.xml
+) > /tmp/kea-instance-primary-freebsd.log 2>&1 &
+primary_check=$!
+(
+  jexec -l -U root "$jail_name" env \
+    DANG_KEA_INSTANCE_ID=secondary \
+    DANG_KEA_TEST_NOOP_SEED=1 \
+    DANG_KEA_DHCP4_SOCKET="$socket4_secondary" \
+    "$root/build/kea_plugin_integration_test" \
+    "$root/build/dangd_kea_plugin.so" \
+    /tmp/kea-before4-secondary-freebsd.xml \
+    /tmp/kea-before4-secondary-freebsd.xml
+) > /tmp/kea-instance-secondary-freebsd.log 2>&1 &
+secondary_check=$!
+primary_status=0
+secondary_status=0
+wait "$primary_check" || primary_status=$?
+wait "$secondary_check" || secondary_status=$?
+if [ "$primary_status" -ne 0 ] || [ "$secondary_status" -ne 0 ]; then
+  cat /tmp/kea-instance-primary-freebsd.log \
+    /tmp/kea-instance-secondary-freebsd.log
+  exit 1
+fi
+
+kill "$pid4_secondary"
+wait "$pid4_secondary" 2>/dev/null || true
+pid4_secondary=
+jexec -l -U root "$jail_name" env \
+  DANG_KEA_INSTANCE_ID=secondary \
+  DANG_KEA_EXPECT_STARTUP_SOCKET_FAILURE=kea-dhcp4-server \
+  DANG_KEA_DHCP4_SOCKET="$socket4_secondary" \
+  "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" \
+  /tmp/kea-before4-secondary-freebsd.xml \
+  /tmp/kea-before4-secondary-freebsd.xml
+jexec -l -U root "$jail_name" env \
+  DANG_KEA_INSTANCE_ID=primary \
+  DANG_KEA_TEST_NOOP_SEED=1 \
+  DANG_KEA_DHCP4_SOCKET="$socket4" \
+  "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before4-only-freebsd.xml \
+  /tmp/kea-before4-only-freebsd.xml
 
 # Match dangd's empty-to-restored startup transaction. Each live daemon image
 # becomes the rollback source before persisted dangd authority is applied and

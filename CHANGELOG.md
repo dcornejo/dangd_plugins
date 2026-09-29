@@ -19,6 +19,10 @@ All notable changes to the external dangd plugin collection are recorded here.
   assertions cover the contract. Deployment documentation now requires unique
   Kea sockets, datastore files, NETCONF endpoints, service identities, and
   runtime paths, and states the absence of cross-instance atomicity.
+  The native Linux and FreeBSD workflows now start two DHCPv4 daemons at once,
+  reconcile and query independently identified plugin processes concurrently,
+  stop only the secondary daemon, require its failure to name the DHCPv4
+  module and exact configuration path, and prove the primary remains usable.
 
 - Corrected Kea HA YANG discovery metadata to advertise the packaged
   `2026-09-28` revision and retrieval URL rather than the superseded initial

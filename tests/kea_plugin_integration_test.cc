@@ -263,6 +263,8 @@ int main(int argc, char** argv) {
       std::getenv("DANG_KEA_EXPECT_OPERATIONAL_SUBTREE");
   const char* expected_startup_failure =
       std::getenv("DANG_KEA_EXPECT_STARTUP_RECONCILE_FAILURE");
+  const char* expected_startup_socket_failure =
+      std::getenv("DANG_KEA_EXPECT_STARTUP_SOCKET_FAILURE");
   const char* expected_disabled_module =
       std::getenv("DANG_KEA_EXPECT_DISABLED_MODULE");
   const char* expected_inventory_error =
@@ -361,6 +363,22 @@ int main(int argc, char** argv) {
     if (plugin->destroy) plugin->destroy(plugin->context);
     dlclose(library);
     if (valid) std::cout << "Kea startup reconciliation rejection passed\n";
+    return valid ? 0 : 1;
+  }
+  if (expected_startup_socket_failure) {
+    const std::string expected_path =
+        "/{urn:ietf:params:xml:ns:yang:" +
+        std::string(expected_startup_socket_failure) + "}config";
+    valid = valid && !startup_accepted && error.message &&
+        error.instance_path &&
+        std::string_view(error.message).find(
+            expected_startup_socket_failure) != std::string_view::npos &&
+        std::string_view(error.instance_path) == expected_path;
+    if (!valid)
+      Report("expected startup socket rejection", error);
+    if (plugin->destroy) plugin->destroy(plugin->context);
+    dlclose(library);
+    if (valid) std::cout << "Kea startup socket rejection passed\n";
     return valid ? 0 : 1;
   }
   valid = valid &&

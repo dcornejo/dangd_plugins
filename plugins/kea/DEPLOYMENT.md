@@ -77,6 +77,14 @@ instances must treat them as independent NETCONF servers and define its own
 failure recovery. Schema mount and logical sharding remain possible future
 deployment models, not implied behavior of this implementation.
 
+The isolated Linux and FreeBSD validation workflows enforce this boundary with
+two live DHCPv4 daemons. Independently identified plugin processes reconcile
+and collect state from them concurrently. The test then stops only the
+secondary daemon, requires a module- and path-attributed control-socket error
+from that instance, and verifies that the primary instance still reconciles
+and serves operational state. This is an executable isolation proof; it does
+not add distributed atomicity.
+
 ## Kea HA pairs
 
 There are two distinct HA support levels.

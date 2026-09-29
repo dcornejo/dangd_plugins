@@ -9,32 +9,40 @@ namespace=dang-kea-test
 host_interface=dangkea-host
 runtime_dir=/tmp/dang-kea-runtime-$$
 socket4=/run/kea/dang-kea4-$$.sock
+socket4_secondary=/run/kea/dang-kea4-secondary-$$.sock
 socket6=/run/kea/dang-kea6-$$.sock
 pid4=
+pid4_secondary=
 pid6=
 
 cleanup() {
   [ -z "$pid4" ] || kill "$pid4" 2>/dev/null || true
+  [ -z "$pid4_secondary" ] || kill "$pid4_secondary" 2>/dev/null || true
   [ -z "$pid6" ] || kill "$pid6" 2>/dev/null || true
   ip netns del "$namespace" 2>/dev/null || true
   rm -rf "$runtime_dir"
-  rm -f "$socket4" "$socket6"
-  rm -f /tmp/kea-dhcp4.conf /tmp/kea-dhcp6.conf \
+  rm -f "$socket4" "$socket4_secondary" "$socket6"
+  rm -f /tmp/kea-dhcp4.conf /tmp/kea-dhcp4-secondary.conf \
+    /tmp/kea-dhcp6.conf \
     /tmp/kea-before-linux.xml /tmp/kea-proposed-linux.xml \
     /tmp/kea-empty-linux.xml \
     /tmp/kea-before4-linux.xml /tmp/kea-proposed4-linux.xml \
     /tmp/kea-before6-linux.xml /tmp/kea-proposed6-linux.xml \
     /tmp/kea-before4-only-linux.xml /tmp/kea-proposed4-only-linux.xml \
+    /tmp/kea-before4-secondary-linux.xml \
     /tmp/kea-before6-only-linux.xml /tmp/kea-proposed6-only-linux.xml \
     /tmp/kea-proposed-ha-linux.xml /tmp/kea-proposed-ha-passive-linux.xml \
     /tmp/kea-proposed6-state-linux.xml \
     /tmp/kea-before-validation-linux.xml \
     /tmp/kea-proposed-validation-linux.xml \
+    /tmp/kea-instance-primary-linux.log \
+    /tmp/kea-instance-secondary-linux.log \
     /tmp/dang-kea-dhcp4 /tmp/dang-kea-dhcp6
 }
 trap cleanup EXIT INT TERM
 cleanup
 mkdir -p "$runtime_dir"
+mkdir -p "$runtime_dir/secondary"
 
 ip netns add "$namespace"
 ip link add "$host_interface" type veth peer name dangkea0
@@ -55,6 +63,10 @@ sed -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
   -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
   "$root/tests/kea4-boot.json" \
   > /tmp/kea-dhcp4.conf
+sed -e "s#/var/run/kea/kea4-ctrl-socket#$socket4_secondary#g" \
+  -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
+  "$root/tests/kea4-boot.json" \
+  > /tmp/kea-dhcp4-secondary.conf
 sed -e "s#/var/run/kea/kea6-ctrl-socket#$socket6#g" \
   -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
   "$root/tests/kea6-boot.json" \
@@ -101,6 +113,10 @@ sed -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
   -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
   "$root/tests/kea-before4-only.xml" \
   > /tmp/kea-before4-only-linux.xml
+sed -e "s#/var/run/kea/kea4-ctrl-socket#$socket4_secondary#g" \
+  -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
+  "$root/tests/kea-before4-only.xml" \
+  > /tmp/kea-before4-secondary-linux.xml
 sed -e "s#/var/run/kea/kea4-ctrl-socket#$socket4#g" \
   -e 's#@KEA_HOOK_DIR@#/usr/lib/x86_64-linux-gnu/kea/hooks#g' \
   "$root/tests/kea-proposed4-only.xml" \
@@ -132,6 +148,11 @@ ip netns exec "$namespace" env KEA_PIDFILE_DIR="$runtime_dir" \
   -c /tmp/kea-dhcp4.conf \
   > /tmp/dang-kea4.log 2>&1 &
 pid4=$!
+ip netns exec "$namespace" env KEA_PIDFILE_DIR="$runtime_dir/secondary" \
+  "$dhcp4" -d -p 2067 \
+  -c /tmp/kea-dhcp4-secondary.conf \
+  > /tmp/dang-kea4-secondary.log 2>&1 &
+pid4_secondary=$!
 ip netns exec "$namespace" env KEA_PIDFILE_DIR="$runtime_dir" \
   "$dhcp6" -d -p 1547 \
   -c /tmp/kea-dhcp6.conf \
@@ -139,14 +160,63 @@ ip netns exec "$namespace" env KEA_PIDFILE_DIR="$runtime_dir" \
 pid6=$!
 
 attempt=0
-while [ ! -S "$socket4" ] || [ ! -S "$socket6" ]; do
+while [ ! -S "$socket4" ] || [ ! -S "$socket4_secondary" ] ||
+    [ ! -S "$socket6" ]; do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 100 ]; then
-    cat /tmp/dang-kea4.log /tmp/dang-kea6.log
+    cat /tmp/dang-kea4.log /tmp/dang-kea4-secondary.log /tmp/dang-kea6.log
     exit 1
   fi
   sleep 0.1
 done
+
+# Two independent plugin processes may manage separate daemons of the same
+# family. Run their complete no-op reconciliation and operational reads at the
+# same time, then remove only the secondary daemon. Its endpoint must fail at
+# the DHCPv4 configuration path while the primary remains fully usable.
+(
+  DANG_KEA_INSTANCE_ID=primary \
+  DANG_KEA_TEST_NOOP_SEED=1 \
+  DANG_KEA_DHCP4_SOCKET="$socket4" \
+    ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
+    "$root/build/dangd_kea_plugin.so" /tmp/kea-before4-only-linux.xml \
+    /tmp/kea-before4-only-linux.xml
+) > /tmp/kea-instance-primary-linux.log 2>&1 &
+primary_check=$!
+(
+  DANG_KEA_INSTANCE_ID=secondary \
+  DANG_KEA_TEST_NOOP_SEED=1 \
+  DANG_KEA_DHCP4_SOCKET="$socket4_secondary" \
+    ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
+    "$root/build/dangd_kea_plugin.so" /tmp/kea-before4-secondary-linux.xml \
+    /tmp/kea-before4-secondary-linux.xml
+) > /tmp/kea-instance-secondary-linux.log 2>&1 &
+secondary_check=$!
+primary_status=0
+secondary_status=0
+wait "$primary_check" || primary_status=$?
+wait "$secondary_check" || secondary_status=$?
+if [ "$primary_status" -ne 0 ] || [ "$secondary_status" -ne 0 ]; then
+  cat /tmp/kea-instance-primary-linux.log \
+    /tmp/kea-instance-secondary-linux.log
+  exit 1
+fi
+
+kill "$pid4_secondary"
+wait "$pid4_secondary" 2>/dev/null || true
+pid4_secondary=
+DANG_KEA_INSTANCE_ID=secondary \
+DANG_KEA_EXPECT_STARTUP_SOCKET_FAILURE=kea-dhcp4-server \
+DANG_KEA_DHCP4_SOCKET="$socket4_secondary" \
+  ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before4-secondary-linux.xml \
+  /tmp/kea-before4-secondary-linux.xml
+DANG_KEA_INSTANCE_ID=primary \
+DANG_KEA_TEST_NOOP_SEED=1 \
+DANG_KEA_DHCP4_SOCKET="$socket4" \
+  ip netns exec "$namespace" "$root/build/kea_plugin_integration_test" \
+  "$root/build/dangd_kea_plugin.so" /tmp/kea-before4-only-linux.xml \
+  /tmp/kea-before4-only-linux.xml
 
 # Match dangd's real startup path: the restored datastore changes from empty
 # to persisted intent. The plugin must capture both running daemon images for

@@ -510,6 +510,13 @@ It verifies that no
 other interface entered the isolation boundary and removes the temporary
 memory-backed lease databases, unique sockets, PID storage, and namespace or
 jail afterward.
+Before the transaction matrix, each platform workflow also starts a second
+DHCPv4 daemon with its own socket, PID directory, port, and instance identity.
+The two plugin processes reconcile and collect operational state concurrently.
+The workflow stops only the secondary daemon, requires its error to identify
+`kea-dhcp4-server` and the exact module configuration path, then reruns the
+primary process successfully. This proves same-family instance isolation with
+the packaged native daemon rather than only through portable mocks.
 The same native workflow also runs real IPv4-only and IPv6-only transactions.
 Each enabled daemon must complete validation, mutation, readback, operational
 collection, and rollback while the other family has no configured target or
