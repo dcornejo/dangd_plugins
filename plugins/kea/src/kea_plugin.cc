@@ -12,6 +12,7 @@
 
 #include "kea_adapter.h"
 #include "kea_callback_guard.h"
+#include "kea_instance.h"
 #include "kea_model_sources.h"
 
 #include <algorithm>
@@ -30,6 +31,7 @@
 namespace {
 
 using dang::plugins::kea::ApplyWithCompensation;
+using dang::plugins::kea::BuildInstanceOperationalXml;
 using dang::plugins::kea::CollectAuthoritativeOperationalState;
 using dang::plugins::kea::CommandSucceeded;
 using dang::plugins::kea::ExtractSubnetIds;
@@ -43,6 +45,7 @@ using dang::plugins::kea::ServerConfiguration;
 using dang::plugins::kea::TranslateConfiguration;
 using dang::plugins::kea::VerifyLiveConfiguration;
 using dang::plugins::kea::VerifyRestoredConfigurations;
+using dang::plugins::kea::ValidInstanceId;
 
 struct Prepared {
   // Target order comes from the process-stable inventory and is shared by both
@@ -64,6 +67,8 @@ struct TargetDefinition {
 
 /** Immutable bootstrap result shared by every callback. */
 struct PluginContext {
+  /** Stable operator identity for this independently persisted dangd process. */
+  std::string instance_id = "default";
   std::vector<TargetDefinition> targets;
   std::string configuration_error;
 };
@@ -83,6 +88,15 @@ constexpr std::array<TargetEnvironment, 2> kTargetEnvironments{{
 /** Captures enabled families once, distinguishing unset from empty variables. */
 PluginContext BuildPluginContext() {
   PluginContext context;
+  if (const char* instance = std::getenv("DANG_KEA_INSTANCE_ID")) {
+    if (!ValidInstanceId(instance)) {
+      context.configuration_error =
+          "DANG_KEA_INSTANCE_ID must contain 1 to 64 portable identifier "
+          "characters and start with an ASCII letter or digit";
+      return context;
+    }
+    context.instance_id = instance;
+  }
   for (const auto& target : kTargetEnvironments) {
     const char* socket = std::getenv(target.variable_name);
     if (!socket) continue;
@@ -308,7 +322,7 @@ int Guard(std::string_view name, DangPluginErrorV1* error,
       });
 }
 
-size_t SourceCount(void*) { return 5; }
+size_t SourceCount(void*) { return 6; }
 
 int SourceAtImpl(void*, size_t index, DangYangSourceV1* source,
                  DangPluginErrorV1* error) {
@@ -342,6 +356,11 @@ int SourceAtImpl(void*, size_t index, DangYangSourceV1* source,
        std::strlen(kDangKeaHaYang),
        "https://github.com/dcornejo/dang_plugins/blob/main/plugins/kea/models/"
        "dang-kea-ha%402026-09-28.yang",
+       DANG_YANG_IMPLEMENTED_V1, nullptr, 0},
+      {"dang-kea-instance", "2026-09-28", kDangKeaInstanceYang,
+       std::strlen(kDangKeaInstanceYang),
+       "https://github.com/dcornejo/dang_plugins/blob/main/plugins/kea/models/"
+       "dang-kea-instance%402026-09-28.yang",
        DANG_YANG_IMPLEMENTED_V1, nullptr, 0}};
   if (index >= std::size(sources)) {
     SetError(error, "the YANG source index is out of range");
@@ -622,6 +641,13 @@ int OperationalImpl(void* opaque_context, DangOperationalDataV1* result,
   }
   operational_xml =
       "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">";
+  std::vector<bool> dhcp6_families;
+  dhcp6_families.reserve(context.targets.size());
+  for (const auto& target : context.targets) {
+    dhcp6_families.push_back(target.dhcp6);
+  }
+  operational_xml +=
+      BuildInstanceOperationalXml(context.instance_id, dhcp6_families);
   // The ISC state containers and dang-owned HA companion tree have different
   // namespaces and must be sibling top-level data nodes. Accumulate only the
   // list entries here, then emit one companion container after all targets.

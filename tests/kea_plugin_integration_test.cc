@@ -233,6 +233,9 @@ int main(int argc, char** argv) {
   const bool empty_startup =
       std::getenv("DANG_KEA_EMPTY_STARTUP") != nullptr;
   const bool ha_member = std::getenv("DANG_KEA_HA_MEMBER") != nullptr;
+  const char* instance_environment = std::getenv("DANG_KEA_INSTANCE_ID");
+  const std::string instance_id =
+      instance_environment ? instance_environment : "default";
   const char* ha_mode_environment = std::getenv("DANG_KEA_HA_MODE");
   const std::string_view ha_mode =
       ha_mode_environment ? ha_mode_environment : "hot-standby";
@@ -566,6 +569,9 @@ int main(int argc, char** argv) {
             Report("HA operational", error);
     const std::string xml = valid && state.data_xml ? state.data_xml : "";
     valid = valid && state.complete == 1 &&
+            xml.find("<kea-instance xmlns=\"urn:dang:kea:instance\">"
+                     "<instance-id>" + instance_id + "</instance-id>") !=
+                std::string::npos &&
             xml.find("<high-availability xmlns=\"urn:dang:kea:ha\">") !=
                 std::string::npos &&
             (!dhcp4_enabled ||
@@ -624,6 +630,15 @@ int main(int argc, char** argv) {
         || Report("operational", error);
     const std::string xml = valid && state.data_xml ? state.data_xml : "";
     valid = valid && state.complete == 1 &&
+        xml.find("<kea-instance xmlns=\"urn:dang:kea:instance\">"
+                 "<instance-id>" + instance_id + "</instance-id>") !=
+            std::string::npos &&
+        (dhcp4_enabled ==
+         (xml.find("<address-family>dhcpv4</address-family>") !=
+          std::string::npos)) &&
+        (dhcp6_enabled ==
+         (xml.find("<address-family>dhcpv6</address-family>") !=
+          std::string::npos)) &&
         (dhcp4_enabled ==
          (xml.find("urn:ietf:params:xml:ns:yang:kea-dhcp4-server") !=
           std::string::npos)) &&

@@ -9,6 +9,17 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added explicit multiple-instance Kea support through separate dangd process
+  boundaries. `DANG_KEA_INSTANCE_ID` supplies a stable portable identifier
+  while retaining `default` for existing single-instance deployments. The new
+  read-only `dang-kea-instance` model publishes that identity and the immutable
+  DHCPv4/DHCPv6 target inventory, allowing a client to verify which independently
+  persisted NETCONF endpoint it reached. Invalid identifiers fail plugin
+  startup use; schema, discovery, negative identity, and operational-output
+  assertions cover the contract. Deployment documentation now requires unique
+  Kea sockets, datastore files, NETCONF endpoints, service identities, and
+  runtime paths, and states the absence of cross-instance atomicity.
+
 - Corrected Kea HA YANG discovery metadata to advertise the packaged
   `2026-09-28` revision and retrieval URL rather than the superseded initial
   revision. The generic plugin discovery smoke test can now assert an expected

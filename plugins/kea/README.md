@@ -9,7 +9,9 @@ Kea 3.2.0
 `kea-dhcp4-server` and `kea-dhcp6-server` modules at revision 2026-06-24 plus
 their pinned Kea type modules. It also provides the read-only `dang-kea-ha`
 module for local-member HA status. The original model files retain ISC's
-MPL-2.0 license notices; the companion model and adapter code are Apache-2.0.
+MPL-2.0 license notices. The read-only `dang-kea-instance` companion identifies
+the independently managed process boundary and its enabled address families;
+the companion models and adapter code are Apache-2.0.
 
 ## Dependencies and installation
 
@@ -49,8 +51,8 @@ sudo cmake --install build --component kea
 ```
 
 The plugin does not require Kea Control Agent or a database lease backend.
-See [DEPLOYMENT.md](DEPLOYMENT.md) for the supported single-stack and
-dual-stack layouts and the explicit multiple-instance and HA design boundary.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for supported single-stack, dual-stack,
+multiple-instance, and HA layouts.
 When the local daemon participates in Kea HA, the operating-system Kea package
 must also provide `libdhcp_ha.so`; pair communication and any TLS files remain
 ordinary Kea runtime dependencies.
@@ -372,9 +374,17 @@ The worker process must inherit a socket path for each enabled family. A
 dual-stack deployment uses both:
 
 ```sh
+export DANG_KEA_INSTANCE_ID=default
 export DANG_KEA_DHCP4_SOCKET=/run/kea/kea4-ctrl-socket
 export DANG_KEA_DHCP6_SOCKET=/run/kea/kea6-ctrl-socket
 ```
+
+`DANG_KEA_INSTANCE_ID` defaults to `default` for an existing single-instance
+installation. Set it explicitly when more than one local Kea instance is
+managed. It must contain 1 through 64 ASCII letters, digits, dots, underscores,
+or hyphens and must begin with a letter or digit. The read-only
+`dang-kea-instance` tree publishes this identifier and the enabled families so
+a NETCONF client can verify the management boundary it reached.
 
 For IPv4-only operation, set only `DANG_KEA_DHCP4_SOCKET` and omit the DHCPv6
 variable. For IPv6-only operation, do the reverse. An unset variable explicitly
@@ -444,8 +454,10 @@ dangd --model /path/to/root.yang --config /path/to/config.xml \
 ```
 
 Start the service with the same environment and arguments. Confirm YANG
-Library advertises both Kea server modules. Make and commit a small candidate
-change while watching both Kea logs before attempting a production migration.
+Library advertises both Kea server modules plus `dang-kea-instance`. Make and
+commit a small candidate change while watching both Kea logs before attempting
+a production migration. For multiple local instances, follow the complete
+isolation checklist in [DEPLOYMENT.md](DEPLOYMENT.md#multiple-local-instances).
 
 ## Troubleshooting and removal
 

@@ -84,6 +84,8 @@ file(READ plugins/kea/models/kea-dhcp-types@2026-06-24.yang KEA_DHCP_TYPES_YANG)
 file(READ plugins/kea/models/kea-dhcp4-server@2026-06-24.yang KEA_DHCP4_YANG)
 file(READ plugins/kea/models/kea-dhcp6-server@2026-06-24.yang KEA_DHCP6_YANG)
 file(READ plugins/kea/models/dang-kea-ha@2026-09-28.yang DANG_KEA_HA_YANG)
+file(READ plugins/kea/models/dang-kea-instance@2026-09-28.yang
+  DANG_KEA_INSTANCE_YANG)
 configure_file(plugins/kea/src/kea_model_sources.h.in
   generated/kea_model_sources.h @ONLY)
 
@@ -338,6 +340,9 @@ if(BUILD_TESTING)
   add_test(NAME kea_ha_plugin_discovery
     COMMAND plugin_loader_smoke_test $<TARGET_FILE:dangd_kea_plugin>
       dang-kea dang-kea-ha 2026-09-28)
+  add_test(NAME kea_instance_plugin_discovery
+    COMMAND plugin_loader_smoke_test $<TARGET_FILE:dangd_kea_plugin>
+      dang-kea dang-kea-instance 2026-09-28)
   add_test(NAME ip_management_plugin_discovery
     COMMAND plugin_loader_smoke_test $<TARGET_FILE:dangd_ip_management_plugin>
       dangd-ip-management ietf-ip)
@@ -407,6 +412,9 @@ if(BUILD_TESTING)
     add_test(NAME kea_ha_operational_schema
       COMMAND "${DANG_YANGLINT_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/plugins/kea/models/dang-kea-ha@2026-09-28.yang")
+    add_test(NAME kea_instance_operational_schema
+      COMMAND "${DANG_YANGLINT_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/plugins/kea/models/dang-kea-instance@2026-09-28.yang")
     add_test(NAME vpp_ownership_schema
       COMMAND "${DANG_YANGLINT_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/plugins/vpp/models/dang-vpp-interface-ownership@2026-09-06.yang")
@@ -709,6 +717,15 @@ if(BUILD_TESTING)
       $<TARGET_FILE:dangd_kea_plugin>
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-before4-only.xml"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-proposed4-only.xml")
+  add_test(NAME kea_invalid_instance_identity_rejected
+    COMMAND "${CMAKE_COMMAND}" -E env --unset=DANG_KEA_DHCP6_SOCKET
+      DANG_KEA_DHCP4_SOCKET=/var/run/kea/kea4-ctrl-socket
+      DANG_KEA_INSTANCE_ID=invalid/instance
+      DANG_KEA_EXPECT_INVENTORY_ERROR=DANG_KEA_INSTANCE_ID
+      $<TARGET_FILE:kea_plugin_integration_test>
+      $<TARGET_FILE:dangd_kea_plugin>
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-before4-only.xml"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-proposed4-only.xml")
   add_test(NAME kea_ha_member_noop_translation
     COMMAND kea_plugin_integration_test $<TARGET_FILE:dangd_kea_plugin>
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/kea-proposed-ha.xml"
@@ -748,6 +765,7 @@ install(FILES
   plugins/kea/models/kea-dhcp4-server@2026-06-24.yang
   plugins/kea/models/kea-dhcp6-server@2026-06-24.yang
   plugins/kea/models/dang-kea-ha@2026-09-28.yang
+  plugins/kea/models/dang-kea-instance@2026-09-28.yang
   DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules"
   COMPONENT kea)
 install(FILES

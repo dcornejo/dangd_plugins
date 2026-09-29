@@ -1,0 +1,58 @@
+module dang-kea-instance {
+  yang-version 1.1;
+  namespace "urn:dang:kea:instance";
+  prefix dang-kea-instance;
+
+  organization "dang project";
+  contact "https://github.com/dcornejo/dang_plugins";
+  description
+    "Read-only identity and target inventory for one Kea management boundary.
+
+     The official Kea server modules each describe one top-level server. Dangd
+     therefore supports multiple local servers by running one independently
+     persisted and independently addressed dangd process per Kea instance,
+     rather than repeating an invalid model root. This module lets a client
+     verify which process boundary it reached.";
+
+  revision 2026-09-28 {
+    description
+      "Initial stable instance identity and enabled-family inventory.";
+  }
+
+  typedef address-family {
+    type enumeration {
+      enum dhcpv4 {
+        description "The process manages one Kea DHCPv4 daemon.";
+      }
+      enum dhcpv6 {
+        description "The process manages one Kea DHCPv6 daemon.";
+      }
+    }
+    description "Kea daemon family enabled in this process boundary.";
+  }
+
+  container kea-instance {
+    config false;
+    description
+      "Stable identity and immutable target inventory captured when the Kea
+       plugin worker loads.";
+
+    leaf instance-id {
+      type string {
+        length "1..64";
+        pattern '[A-Za-z0-9][A-Za-z0-9_.-]*';
+      }
+      mandatory true;
+      description
+        "Operator-assigned identity for this dangd/Kea process boundary.";
+    }
+
+    leaf-list address-family {
+      type address-family;
+      min-elements 1;
+      ordered-by user;
+      description
+        "Enabled local targets in the transaction order used by the plugin.";
+    }
+  }
+}

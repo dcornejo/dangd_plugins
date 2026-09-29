@@ -7,9 +7,11 @@ work. Dangd remains the definitive authority for every supported shape.
 ## Supported target inventory
 
 The plugin captures one immutable target inventory when its shared library is
-loaded. It currently permits one DHCPv4 target, one DHCPv6 target, or one of
-each:
+loaded. One plugin process permits one DHCPv4 target, one DHCPv6 target, or one
+of each:
 
+- `DANG_KEA_INSTANCE_ID` assigns the process boundary a stable identity and
+  defaults to `default` for an existing single-instance deployment;
 - `DANG_KEA_DHCP4_SOCKET` enables the local DHCPv4 daemon;
 - `DANG_KEA_DHCP6_SOCKET` enables the local DHCPv6 daemon;
 - an unset variable disables that family; and
@@ -31,27 +33,49 @@ a placeholder or unreachable target for the absent family.
 
 ## Multiple local instances
 
-Multiple daemons of one address family are not yet supported. The internal
-target inventory is intended to grow stable instance identifiers, but the
-official Kea YANG module still describes one top-level server configuration.
-Repeating that module container in one datastore would violate the schema and
-cannot be used as an instance selector.
+Multiple local instances are supported as separate dangd process boundaries.
+The official Kea YANG modules each describe one top-level server, so repeating
+a module root in one datastore would be invalid. Each process instead owns one
+independent datastore and manages at most one daemon of each address family.
+This preserves the native model without an RFC 8528 schema-mount dependency or
+an ambiguous rule for sharding global Kea settings.
 
-Before multiple instances are enabled, dangd needs one explicit model-boundary
-choice:
+Every process must have all of the following unique values:
 
-1. a deployment model whose instance list uses YANG schema mount for each Kea
-   server;
-2. a defined sharding model that derives several native daemon images from one
-   logical Kea configuration; or
-3. separate dangd processes and datastores, one for each Kea instance.
+1. `DANG_KEA_INSTANCE_ID` (for example, `access-east` or `guest-west`);
+2. every enabled Kea UNIX control-socket path;
+3. the dangd `--state` file and initial `--config` file;
+4. the NETCONF listening address/port combination; and
+5. service-manager identity, PID tracking, and writable runtime directory.
 
-Schema mount preserves the native Kea model most directly but adds an RFC 8528
-dependency. Sharding is appropriate only if ownership of global settings,
-subnets, and shared networks can be specified without ambiguity. Separate
-processes are operationally simple but do not provide one atomic configuration
-transaction across instances. The plugin must not assign implicit array
-positions or socket names as durable instance identity.
+The root model, plugin binary, module search path, NACM seed, host keys, and
+trust anchors may be shared when site policy permits, but private-key access
+must still follow the service account's normal protections. Configure each Kea
+daemon with the same UNIX socket named in its corresponding process environment
+and keep its native configuration, PID file, lease file, and HA listener
+separate from every other local instance.
+
+At runtime, read `/kea-instance` from the `urn:dang:kea:instance` namespace.
+It returns the stable instance ID plus `dhcpv4`, `dhcpv6`, or both in the exact
+transaction order. An unset ID reports `default`; an explicitly empty,
+overlong, slash-containing, or otherwise non-portable ID prevents plugin
+transactions and operational publication. The ID is not inferred from array
+position or a socket pathname.
+
+Use a service-manager template or one explicit service definition per instance.
+For example, the `access-east` service environment can name
+`DANG_KEA_INSTANCE_ID=access-east`, `/run/kea/access-east-4.sock`, and
+`/run/kea/access-east-6.sock`, while its dangd command names
+`/var/lib/dangd/access-east/state.json` and a unique NETCONF port. A second
+service repeats that pattern with a different identifier and paths. Run each
+complete command with `--check` before enabling either service, then query the
+instance tree on both NETCONF endpoints before making a configuration change.
+
+Transactions are atomic only inside one process boundary. There is no
+cross-instance prepare/commit coordinator, so an operation spanning two local
+instances must treat them as independent NETCONF servers and define its own
+failure recovery. Schema mount and logical sharding remain possible future
+deployment models, not implied behavior of this implementation.
 
 ## Kea HA pairs
 

@@ -3,6 +3,7 @@
 
 #include "kea_adapter.h"
 #include "kea_callback_guard.h"
+#include "kea_instance.h"
 
 #include <cerrno>
 #include <chrono>
@@ -36,14 +37,45 @@ std::optional<nlohmann::json> OptionalJson(nlohmann::json value) {
 }  // namespace
 
 int main() {
+  using dang::plugins::kea::BuildInstanceOperationalXml;
+  using dang::plugins::kea::ValidInstanceId;
+
+  bool valid = true;
+  valid &= Check(ValidInstanceId("default") && ValidInstanceId("site-1.v4_6"),
+                 "portable Kea instance identifiers were rejected");
+  valid &= Check(ValidInstanceId(std::string(64, 'a')) &&
+                     !ValidInstanceId("") && !ValidInstanceId("-site") &&
+                     !ValidInstanceId("site/name") &&
+                     !ValidInstanceId("site<one") &&
+                     !ValidInstanceId(std::string(65, 'a')),
+                 "Kea instance identifier boundaries were not enforced");
+  valid &= Check(
+      BuildInstanceOperationalXml("v4-only", {false}) ==
+          "<kea-instance xmlns=\"urn:dang:kea:instance\"><instance-id>"
+          "v4-only</instance-id><address-family>dhcpv4</address-family>"
+          "</kea-instance>",
+      "DHCPv4 instance operational identity is incorrect");
+  valid &= Check(
+      BuildInstanceOperationalXml("v6-only", {true}) ==
+          "<kea-instance xmlns=\"urn:dang:kea:instance\"><instance-id>"
+          "v6-only</instance-id><address-family>dhcpv6</address-family>"
+          "</kea-instance>",
+      "DHCPv6 instance operational identity is incorrect");
+  valid &= Check(
+      BuildInstanceOperationalXml("dual", {false, true}) ==
+          "<kea-instance xmlns=\"urn:dang:kea:instance\"><instance-id>dual"
+          "</instance-id><address-family>dhcpv4</address-family>"
+          "<address-family>dhcpv6</address-family></kea-instance>",
+      "dual-stack instance family order is incorrect");
+
   std::string guarded_failure;
   const int guarded_standard_exception =
       dang::plugins::kea::GuardPluginCallback(
           []() -> int { throw std::runtime_error("injected callback failure"); },
           [&](std::string_view detail) { guarded_failure = detail; });
-  bool valid = Check(guarded_standard_exception == 0 &&
-                         guarded_failure == "injected callback failure",
-                     "standard exception escaped the plugin callback guard");
+  valid &= Check(guarded_standard_exception == 0 &&
+                     guarded_failure == "injected callback failure",
+                 "standard exception escaped the plugin callback guard");
   guarded_failure.clear();
   const int guarded_unknown_exception =
       dang::plugins::kea::GuardPluginCallback(
