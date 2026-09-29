@@ -11,6 +11,7 @@ linux_host=${1:-dev-linux-1}
 freebsd_host=${2:-dev-freebsd-1}
 linux_interface=${3:-ens19}
 freebsd_interface=${4:-vtnet1}
+failover_mode=${5:-manual}
 endpoint=/tmp/dang-kea-ha-cross-endpoint-$$.sh
 client=/tmp/dang-kea-ha-cross-client-$$.py
 probe=/tmp/dang-kea-ha-cross-probe-$$.py
@@ -21,6 +22,12 @@ linux4=192.0.2.1
 linux6=2001:db8:6::1
 freebsd4=192.0.2.2
 freebsd6=2001:db8:6::2
+
+case "$failover_mode" in
+  manual) auto_failover=false ;;
+  automatic) auto_failover=true ;;
+  *) echo "failover mode must be manual or automatic" >&2; exit 2 ;;
+esac
 
 remote() {
   host=$1
@@ -135,11 +142,11 @@ run_phase() {
   remote "$first_host" sudo "$endpoint" start "$first_interface" \
     "$first4" "$first6" "$first_name" "$first_role" \
     "$first_remote4" "$first_remote6" "$first_remote_name" \
-    "$first_remote_role"
+    "$first_remote_role" "$auto_failover"
   remote "$second_host" sudo "$endpoint" start "$second_interface" \
     "$second4" "$second6" "$second_name" "$second_role" \
     "$second_remote4" "$second_remote6" "$second_remote_name" \
-    "$second_remote_role"
+    "$second_remote_role" "$auto_failover"
 
   remote "$linux_host" sudo "$endpoint" ready "$linux_interface" linux \
     freebsd "$linux_role" "$probe"
@@ -160,12 +167,17 @@ run_phase() {
     return 1
   fi
 
-  # The documented ha-scopes command can cause split-brain if the primary can
-  # still answer. Prove both primary daemons have exited before activating the
-  # one hot-standby scope on the survivor, then allocate a distinct client.
+  # Manual ha-scopes can cause split-brain if the primary can still answer, and
+  # automatic failure detection must not race an incompletely stopped peer.
+  # Prove both primary daemons have exited before either takeover path proceeds.
   remote "$primary_host" sudo "$endpoint" halt "$primary_interface"
-  remote "$standby_host" sudo "$endpoint" takeover "$standby_interface" \
-    "$standby_name" "$primary_name" "$probe"
+  if [ "$failover_mode" = automatic ]; then
+    remote "$standby_host" sudo "$endpoint" automatic \
+      "$standby_interface" "$standby_name" "$primary_name" "$probe"
+  else
+    remote "$standby_host" sudo "$endpoint" takeover "$standby_interface" \
+      "$standby_name" "$primary_name" "$probe"
+  fi
   remote "$primary_host" sudo "$endpoint" client "$primary_interface" \
     "$primary4" "$primary6" "$standby4" "$standby6" "$client" \
     192.0.2.101 2001:db8:6::101
@@ -175,13 +187,15 @@ run_phase() {
     return 1
   fi
 
-  # Remove the survivor's manual scope before the former primary returns. This
-  # deliberately creates a bounded service gap instead of ever allowing both
-  # servers to answer the same scope. The empty restarted database must then
-  # recover the outage leases before a fresh allocation proves replication has
-  # resumed in both directions.
-  remote "$standby_host" sudo "$endpoint" relinquish "$standby_interface" \
-    "$standby_name" "$probe"
+  # Manual mode removes the survivor's assigned scope before the former primary
+  # returns, deliberately preferring a bounded service gap to two responders.
+  # Automatic partner-down recovery safely retains service while Kea negotiates
+  # and synchronizes. In either mode the restarted empty database must recover
+  # the outage leases before a fresh allocation proves replication has resumed.
+  if [ "$failover_mode" = manual ]; then
+    remote "$standby_host" sudo "$endpoint" relinquish \
+      "$standby_interface" "$standby_name" "$probe"
+  fi
   remote "$primary_host" sudo "$endpoint" resume "$primary_interface"
   remote "$primary_host" sudo "$endpoint" ready "$primary_interface" \
     "$primary_name" "$standby_name" primary "$probe"
@@ -203,9 +217,9 @@ run_phase() {
 
   remote "$linux_host" sudo "$endpoint" stop "$linux_interface"
   remote "$freebsd_host" sudo "$endpoint" stop "$freebsd_interface"
-  echo "$primary primary completed replication, takeover, and safe recovery"
+  echo "$primary primary completed $failover_mode failover and safe recovery"
 }
 
 run_phase linux
 run_phase freebsd
-echo "Bidirectional Linux/FreeBSD Kea HA takeover and recovery passed"
+echo "Bidirectional Linux/FreeBSD Kea HA $failover_mode failover passed"

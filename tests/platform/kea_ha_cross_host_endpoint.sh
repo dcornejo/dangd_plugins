@@ -158,8 +158,8 @@ start_daemons() {
 case "$action" in
   start)
     # start IFACE LOCAL4 LOCAL6 LOCAL_NAME LOCAL_ROLE REMOTE4 REMOTE6
-    #       REMOTE_NAME REMOTE_ROLE
-    [ "$#" -eq 10 ] || fail "invalid start arguments"
+    #       REMOTE_NAME REMOTE_ROLE AUTO_FAILOVER
+    [ "$#" -eq 11 ] || fail "invalid start arguments"
     local4=$3
     local6=$4
     local_name=$5
@@ -168,6 +168,7 @@ case "$action" in
     remote6=$8
     remote_name=$9
     remote_role=${10}
+    auto_failover=${11}
     case "$local4:$remote4:$local6:$remote6" in
       192.0.2.1:192.0.2.2:2001:db8:6::1:2001:db8:6::2 | \
       192.0.2.2:192.0.2.1:2001:db8:6::2:2001:db8:6::1) ;;
@@ -191,6 +192,15 @@ case "$action" in
         standby4=$local4
         ;;
       *) fail "roles must be one primary and one standby" ;;
+    esac
+    case "$auto_failover" in
+      true)
+        # The sterile test treats loss of the dedicated peer channel as proof
+        # of failure; no client-observation threshold is needed.
+        failure_detection='"max-unacked-clients":0,'
+        ;;
+      false) failure_detection= ;;
+      *) fail "AUTO_FAILOVER must be true or false" ;;
     esac
     [ ! -e "$runtime" ] || fail "stale runtime exists at $runtime"
     [ ! -e "$socket4" ] && [ ! -e "$socket6" ] ||
@@ -221,15 +231,16 @@ case "$action" in
       "high-availability":[{
         "this-server-name":"$local_name","mode":"hot-standby",
         "heartbeat-delay":1000,"max-response-delay":3000,
+        $failure_detection
         "multi-threading":{"enable-multi-threading":true,
                            "http-dedicated-listener":true,
                            "http-listener-threads":1,
                            "http-client-threads":1},
         "peers":[
           {"name":"$primary_name","url":"http://$primary4:$control_port4/",
-           "role":"primary","auto-failover":false},
+           "role":"primary","auto-failover":$auto_failover},
           {"name":"$standby_name","url":"http://$standby4:$control_port4/",
-           "role":"standby","auto-failover":false}
+           "role":"standby","auto-failover":$auto_failover}
         ]
       }]
     }}
@@ -254,15 +265,16 @@ EOF
       "high-availability":[{
         "this-server-name":"$local_name","mode":"hot-standby",
         "heartbeat-delay":1000,"max-response-delay":3000,
+        $failure_detection
         "multi-threading":{"enable-multi-threading":true,
                            "http-dedicated-listener":true,
                            "http-listener-threads":1,
                            "http-client-threads":1},
         "peers":[
           {"name":"$primary_name","url":"http://$primary4:$control_port6/",
-           "role":"primary","auto-failover":false},
+           "role":"primary","auto-failover":$auto_failover},
           {"name":"$standby_name","url":"http://$standby4:$control_port6/",
-           "role":"standby","auto-failover":false}
+           "role":"standby","auto-failover":$auto_failover}
         ]
       }]
     }}
@@ -333,6 +345,13 @@ EOF
     "$python" "$5" takeover "$socket4" "$3" "$4"
     "$python" "$5" takeover "$socket6" "$3" "$4"
     echo "$3 now serves the stopped primary $4 scope"
+    ;;
+  automatic)
+    # automatic IFACE LOCAL_NAME PRIMARY_NAME PROBE
+    [ "$#" -eq 5 ] || fail "invalid automatic arguments"
+    "$python" "$5" automatic "$socket4" "$3" "$4"
+    "$python" "$5" automatic "$socket6" "$3" "$4"
+    echo "$3 automatically entered partner-down for $4"
     ;;
   relinquish)
     # relinquish IFACE LOCAL_NAME PROBE

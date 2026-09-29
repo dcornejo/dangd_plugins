@@ -100,8 +100,23 @@ return to normal hot-standby, and the former primary must recover the leases
 issued during its outage. A distinct third-client DHCPv4 and DHCPv6 allocation
 must subsequently replicate to both members. This validates the peer data
 plane, replication, guarded manual takeover, rejoin synchronization, and
-post-recovery replication in both directions. It does not test automatic
-failover or turn two independently managed dangd instances into one atomic
+post-recovery replication in both directions. This manual mode does not turn
+two independently managed dangd instances into one atomic transaction.
+
+The same harness also has an explicit `automatic` mode. On the sterile VLAN it
+enables Kea's native `auto-failover` setting and sets `max-unacked-clients` to
+zero. After the primary processes have exited, the survivor must enter
+`partner-down` and acquire the primary scope without an administrative
+`ha-scopes` command. It must serve the second client, synchronize the restarted
+primary, return to normal hot-standby, and replicate the third client. Both
+operating-system role assignments are repeated. This setting is intentionally
+specific to a network where loss of the dedicated peer channel is accepted as
+proof that the peer is down. A production deployment exposed to partitions
+must select failure-detection thresholds for its topology and traffic; copying
+the test value without that analysis can make both sides enter `partner-down`.
+
+The automatic proof removes the previous native-failover test gap. It still
+does not turn two independently managed dangd instances into one atomic
 transaction.
 
 The pinned ISC modules do not expose HA relationship status. The companion

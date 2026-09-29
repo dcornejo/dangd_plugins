@@ -9,6 +9,14 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added bidirectional automatic-failover coverage to the cross-host Kea HA
+  matrix. The isolated test enables native `auto-failover`, uses a zero
+  unacknowledged-client threshold so bounded peer-channel loss immediately
+  selects `partner-down`, and requires the survivor to own the primary scope
+  without an administrative `ha-scopes` command. Outage allocation, primary
+  resynchronization, restored replication, cleanup, and both Linux/FreeBSD role
+  assignments use the same assertions as the separately retained manual path.
+
 - Extended the guarded Kea HA takeover matrix through safe primary recovery.
   The survivor relinquishes its manually assigned scope before the stopped
   primary restarts, accepting a bounded service gap instead of risking two

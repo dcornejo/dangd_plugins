@@ -613,3 +613,21 @@ exercise a pair-wide dangd commit or claim distributed transaction atomicity.
 As with the basic VLAN interaction, the cleanup trap removes the
 documentation-prefix aliases, sockets, processes, configurations, and copied
 helpers after success or failure.
+
+The optional `automatic` mode exercises Kea's native failure transition rather
+than issuing `ha-scopes`:
+
+```sh
+tests/platform/run_kea_ha_cross_host.sh \
+  dev-linux-1 dev-freebsd-1 ens19 vtnet1 automatic
+```
+
+This isolated test sets `auto-failover` on both peers and uses
+`max-unacked-clients: 0`, so a survivor that loses the dedicated HA channel
+enters `partner-down` after the bounded response delay. The test requires that
+state and the primary scope before sending outage traffic, then proves the same
+rejoin synchronization and post-recovery replication as the manual mode. A
+zero threshold is not a general production recommendation: deployments where
+the peer channel can partition while both servers remain alive must select
+traffic-aware failure thresholds to prevent both members entering
+`partner-down`.
