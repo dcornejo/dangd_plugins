@@ -41,7 +41,8 @@ inline bool ValidInstanceId(std::string_view value) {
  * markup and does not need general-purpose XML escaping.
  */
 inline std::string BuildInstanceOperationalXml(
-    std::string_view instance_id, const std::vector<bool>& dhcp6_families) {
+    std::string_view instance_id, const std::vector<bool>& dhcp6_families,
+    const std::vector<std::string>& versions = {}) {
   std::string xml =
       "<kea-instance xmlns=\"urn:dang:kea:instance\"><instance-id>";
   xml += instance_id;
@@ -50,6 +51,18 @@ inline std::string BuildInstanceOperationalXml(
     xml += "<address-family>";
     xml += dhcp6 ? "dhcpv6" : "dhcpv4";
     xml += "</address-family>";
+  }
+  if (versions.size() == dhcp6_families.size()) {
+    for (std::size_t index = 0; index < versions.size(); ++index) {
+      if (versions[index].empty()) continue;
+      xml += "<daemon><address-family>";
+      xml += dhcp6_families[index] ? "dhcpv6" : "dhcpv4";
+      xml += "</address-family><version>";
+      // ReadDaemonVersion accepts digits and dots only, so version text cannot
+      // introduce markup into this generated operational fragment.
+      xml += versions[index];
+      xml += "</version></daemon>";
+    }
   }
   xml += "</kea-instance>";
   return xml;

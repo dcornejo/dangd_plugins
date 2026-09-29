@@ -9,6 +9,14 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added reconciled native daemon versions to the `dang-kea-instance`
+  operational tree. The plugin obtains each version through `version-get`,
+  accepts only a bounded three-component numeric identity, retains it with the
+  accepted configuration snapshot, and publishes it beside the corresponding
+  DHCPv4 or DHCPv6 family. Malformed version replies fail reconciliation at
+  the owning module path. Native Linux Kea 3.0.3 and FreeBSD Kea 3.2.0 tests
+  require the versioned instance entries in both ordinary and HA state reads.
+
 - Added native Kea command-capability attestation to applied-state
   reconciliation. Before accepting a daemon, the plugin now requires its
   `list-commands` inventory to contain the core configuration, version,

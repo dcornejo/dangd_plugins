@@ -2041,6 +2041,52 @@ bool VerifyRequiredControlCommands(const ServerConfiguration& expected,
   return true;
 }
 
+std::optional<std::string> ReadDaemonVersion(
+    std::string_view socket_path, const ControlQuery& query,
+    std::string* error) {
+  if (!query || socket_path.empty()) {
+    if (error) *error = "invalid Kea version request";
+    return std::nullopt;
+  }
+  auto response = RunControlQuery(query, socket_path, "version-get",
+                                  nlohmann::json::object(), error);
+  if (!response || !CommandSucceeded(*response, error)) return std::nullopt;
+  const nlohmann::json* answer = Answer(*response);
+  if (!answer || !answer->contains("text") ||
+      !answer->at("text").is_string()) {
+    if (error) *error = "Kea version-get response omits string text";
+    return std::nullopt;
+  }
+  const std::string& text = answer->at("text").get_ref<const std::string&>();
+  const std::size_t end = text.find_first_of(" \t\r\n(");
+  const std::string_view version(text.data(),
+                                 end == std::string::npos ? text.size() : end);
+  if (version.empty() || version.size() > 32) {
+    if (error) *error = "Kea version-get response has an invalid version";
+    return std::nullopt;
+  }
+  std::size_t component_start = 0;
+  for (int component = 0; component < 3; ++component) {
+    const std::size_t separator = version.find('.', component_start);
+    const std::size_t component_end =
+        separator == std::string_view::npos ? version.size() : separator;
+    if (component_end == component_start ||
+        !std::all_of(version.begin() +
+                         static_cast<std::ptrdiff_t>(component_start),
+                     version.begin() +
+                         static_cast<std::ptrdiff_t>(component_end),
+                     [](char character) {
+                       return character >= '0' && character <= '9';
+                     }) ||
+        (component < 2) != (separator != std::string_view::npos)) {
+      if (error) *error = "Kea version-get response has an invalid version";
+      return std::nullopt;
+    }
+    component_start = component_end + 1;
+  }
+  return std::string(version);
+}
+
 std::optional<nlohmann::json> CollectLeasePages(
     std::string_view socket_path, bool dhcp6, const ControlQuery& query,
     std::string* error, const PageLimits& limits) {

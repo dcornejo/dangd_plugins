@@ -15,13 +15,16 @@ the companion models and adapter code are Apache-2.0.
 
 ## Dependencies and installation
 
-The runtime requires dangd 0.1.0 or newer, the Kea 3.2.x server package for
+The runtime requires dangd 0.1.0 or newer, a compatible Kea server package for
 every enabled address family, the Kea lease-command, host-command, and
 supplemental-statistics hook libraries, and local UNIX control sockets
 accessible by the plugin worker. On Debian/Ubuntu install `kea-dhcp4-server`,
 `kea-dhcp6-server`, or both as required; on FreeBSD install `kea`. A source
 build additionally needs CMake 3.24+, a C++20 compiler, libxml2 development
-files, nlohmann-json 3.11+, and GoogleTest.
+files, nlohmann-json 3.11+, and GoogleTest. The recorded native matrix covers
+Kea 3.0.3 on Linux and Kea 3.2.0 on FreeBSD; other releases require the same
+command-inventory, configuration-validation, and platform workflow before
+production use.
 
 Debian/Ubuntu package installation:
 
@@ -390,7 +393,11 @@ installation. Set it explicitly when more than one local Kea instance is
 managed. It must contain 1 through 64 ASCII letters, digits, dots, underscores,
 or hyphens and must begin with a letter or digit. The read-only
 `dang-kea-instance` tree publishes this identifier and the enabled families so
-a NETCONF client can verify the management boundary it reached.
+a NETCONF client can verify the management boundary it reached. After
+applied-state reconciliation, each family also has a keyed daemon entry with
+the strict three-component version returned by native `version-get`. That
+identity is retained with the accepted snapshot rather than sampled from an
+unverified daemon during every operational read.
 
 For IPv4-only operation, set only `DANG_KEA_DHCP4_SOCKET` and omit the DHCPv6
 variable. For IPv6-only operation, do the reverse. An unset variable explicitly

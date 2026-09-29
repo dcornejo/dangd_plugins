@@ -38,6 +38,12 @@ the reservation paging command, and `status-get` when the accepted image loads
 the HA hook. A hook pathname in configuration is not treated as proof that the
 library loaded and registered successfully. Missing or malformed capability
 inventories prevent that daemon from becoming authoritative.
+The read-only instance tree records the strict three-component version returned
+by each accepted daemon's native `version-get` command. This lets automation
+verify the implementation behind an endpoint instead of inferring it from a
+package name or host role. A malformed reply prevents reconciliation; a valid
+version is identity evidence, while the daemon's `config-test` remains the
+final compatibility check for a particular candidate.
 
 ## Multiple local instances
 

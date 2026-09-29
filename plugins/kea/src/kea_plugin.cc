@@ -37,6 +37,7 @@ using dang::plugins::kea::CommandSucceeded;
 using dang::plugins::kea::ExtractSubnetIds;
 using dang::plugins::kea::GuardPluginCallback;
 using dang::plugins::kea::PageLimits;
+using dang::plugins::kea::ReadDaemonVersion;
 using dang::plugins::kea::ReadLiveConfiguration;
 using dang::plugins::kea::RollbackChanged;
 using dang::plugins::kea::SendControlCommand;
@@ -139,6 +140,10 @@ constexpr std::string_view kHaOperationalClose = "</high-availability>";
 struct AcceptedConfigurationSnapshot {
   std::vector<std::vector<std::uint32_t>> subnet_ids;
   std::vector<ServerConfiguration> configurations;
+  // Native identities sampled at the same reconciliation boundary as the
+  // accepted configuration. Empty entries occur only in transport-free test
+  // seeding and are not published as daemon identity.
+  std::vector<std::string> daemon_versions;
   // Nonempty from the start of a changing hardware apply until verified
   // reconciliation or complete compensation. Operational reads fail closed
   // while the backend is not yet known to match accepted dangd state.
@@ -152,7 +157,8 @@ std::shared_mutex accepted_state_mutex;
 AcceptedConfigurationSnapshot accepted_state;
 
 void RememberAcceptedState(
-    const std::vector<ServerConfiguration>& configurations) {
+    const std::vector<ServerConfiguration>& configurations,
+    std::vector<std::string> daemon_versions = {}) {
   // Build the complete replacement before taking the lock. If allocation
   // fails, readers retain the previous internally consistent snapshot.
   AcceptedConfigurationSnapshot next;
@@ -161,6 +167,12 @@ void RememberAcceptedState(
   for (const auto& configuration : configurations)
     next.subnet_ids.push_back(ExtractSubnetIds(configuration));
   std::lock_guard lock(accepted_state_mutex);
+  if (daemon_versions.empty() &&
+      accepted_state.daemon_versions.size() == configurations.size()) {
+    next.daemon_versions = accepted_state.daemon_versions;
+  } else {
+    next.daemon_versions = std::move(daemon_versions);
+  }
   accepted_state = std::move(next);
 }
 
@@ -636,7 +648,9 @@ int OperationalImpl(void* opaque_context, DangOperationalDataV1* result,
   }
   if (accepted.configurations.empty() ||
       accepted.configurations.size() != accepted.subnet_ids.size() ||
-      accepted.configurations.size() != context.targets.size()) {
+      accepted.configurations.size() != context.targets.size() ||
+      (!accepted.daemon_versions.empty() &&
+       accepted.configurations.size() != accepted.daemon_versions.size())) {
     SetError(error, "Kea accepted configuration is unavailable", "/");
     return 0;
   }
@@ -648,7 +662,8 @@ int OperationalImpl(void* opaque_context, DangOperationalDataV1* result,
     dhcp6_families.push_back(target.dhcp6);
   }
   operational_xml +=
-      BuildInstanceOperationalXml(context.instance_id, dhcp6_families);
+      BuildInstanceOperationalXml(context.instance_id, dhcp6_families,
+                                  accepted.daemon_versions);
   // The ISC state containers and dang-owned HA companion tree have different
   // namespaces and must be sibling top-level data nodes. Accumulate only the
   // list entries here, then emit one companion container after all targets.
@@ -798,6 +813,13 @@ int ReconcileAppliedConfigurationImpl(
       return 0;
     }
   }
+  std::vector<std::string> daemon_versions;
+  {
+    std::shared_lock lock(accepted_state_mutex);
+    if (accepted_state.daemon_versions.size() == accepted->size())
+      daemon_versions = accepted_state.daemon_versions;
+  }
+  if (daemon_versions.empty()) daemon_versions.resize(accepted->size());
   for (std::size_t index = 0; index < accepted->size(); ++index) {
     if (prepared && !verify_all_pending &&
         prepared->before[index].arguments ==
@@ -806,14 +828,20 @@ int ReconcileAppliedConfigurationImpl(
     std::string reason;
     if (VerifyLiveConfiguration((*accepted)[index], SendControlQuery, &reason) &&
         VerifyRequiredControlCommands(
-            (*accepted)[index], SendControlQuery, &reason))
-      continue;
+            (*accepted)[index], SendControlQuery, &reason)) {
+      auto version = ReadDaemonVersion(
+          (*accepted)[index].socket_path, SendControlQuery, &reason);
+      if (version) {
+        daemon_versions[index] = std::move(*version);
+        continue;
+      }
+    }
     const std::string& module = (*accepted)[index].module_name;
     SetError(error, module + ": " + reason,
              "/{urn:ietf:params:xml:ns:yang:" + module + "}config");
     return 0;
   }
-  RememberAcceptedState(*accepted);
+  RememberAcceptedState(*accepted, std::move(daemon_versions));
   *result = {.applied_xml = current_xml,
              .outcomes = nullptr,
              .outcome_count = 0};

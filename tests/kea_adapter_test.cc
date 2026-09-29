@@ -50,22 +50,30 @@ int main() {
                      !ValidInstanceId(std::string(65, 'a')),
                  "Kea instance identifier boundaries were not enforced");
   valid &= Check(
-      BuildInstanceOperationalXml("v4-only", {false}) ==
+      BuildInstanceOperationalXml("v4-only", {false}, {"3.2.0"}) ==
           "<kea-instance xmlns=\"urn:dang:kea:instance\"><instance-id>"
           "v4-only</instance-id><address-family>dhcpv4</address-family>"
+          "<daemon><address-family>dhcpv4</address-family><version>3.2.0"
+          "</version></daemon>"
           "</kea-instance>",
       "DHCPv4 instance operational identity is incorrect");
   valid &= Check(
-      BuildInstanceOperationalXml("v6-only", {true}) ==
+      BuildInstanceOperationalXml("v6-only", {true}, {"3.0.3"}) ==
           "<kea-instance xmlns=\"urn:dang:kea:instance\"><instance-id>"
           "v6-only</instance-id><address-family>dhcpv6</address-family>"
+          "<daemon><address-family>dhcpv6</address-family><version>3.0.3"
+          "</version></daemon>"
           "</kea-instance>",
       "DHCPv6 instance operational identity is incorrect");
   valid &= Check(
-      BuildInstanceOperationalXml("dual", {false, true}) ==
+      BuildInstanceOperationalXml(
+          "dual", {false, true}, {"3.2.0", "3.2.0"}) ==
           "<kea-instance xmlns=\"urn:dang:kea:instance\"><instance-id>dual"
           "</instance-id><address-family>dhcpv4</address-family>"
-          "<address-family>dhcpv6</address-family></kea-instance>",
+          "<address-family>dhcpv6</address-family>"
+          "<daemon><address-family>dhcpv4</address-family><version>3.2.0"
+          "</version></daemon><daemon><address-family>dhcpv6</address-family>"
+          "<version>3.2.0</version></daemon></kea-instance>",
       "dual-stack instance family order is incorrect");
 
   std::string guarded_failure;
@@ -1030,6 +1038,31 @@ int main() {
   valid &= Check(dang::plugins::kea::VerifyRequiredControlCommands(
                      *ha_member, complete_command_inventory, &error),
                  "complete HA command inventory was rejected");
+  const dang::plugins::kea::ControlQuery valid_version_reply =
+      [](std::string_view, std::string_view command,
+         const nlohmann::json& arguments,
+         std::string*) -> std::optional<nlohmann::json> {
+    if (command != "version-get" || !arguments.empty()) return std::nullopt;
+    return OptionalJson(nlohmann::json{
+        {"result", 0}, {"text", "3.0.3 (3.0.3 (tarball))"}});
+  };
+  error.clear();
+  const auto version = dang::plugins::kea::ReadDaemonVersion(
+      "/tmp/kea4.sock", valid_version_reply, &error);
+  valid &= Check(version && *version == "3.0.3",
+                 "valid native Kea version was not extracted");
+  const dang::plugins::kea::ControlQuery malformed_version_reply =
+      [](std::string_view, std::string_view,
+         const nlohmann::json&,
+         std::string*) -> std::optional<nlohmann::json> {
+    return OptionalJson(
+        nlohmann::json{{"result", 0}, {"text", "development-build"}});
+  };
+  error.clear();
+  valid &= Check(!dang::plugins::kea::ReadDaemonVersion(
+                      "/tmp/kea4.sock", malformed_version_reply, &error) &&
+                     error.find("invalid version") != std::string::npos,
+                 "malformed native Kea version was accepted");
   const dang::plugins::kea::ControlQuery malformed_command_inventory =
       [](std::string_view, std::string_view,
          const nlohmann::json&,

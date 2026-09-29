@@ -230,6 +230,11 @@ int main(int argc, char** argv) {
       std::getenv("DANG_KEA_FORCE_HOST_PAGING") != nullptr;
   const bool test_noop_seed =
       std::getenv("DANG_KEA_TEST_NOOP_SEED") != nullptr;
+  // Portable contract cases have no daemon transport. They may bypass only
+  // successful reconciliation; native workflows retain TEST_NOOP_SEED and
+  // exercise the real control sockets, command inventory, and version read.
+  const bool transport_free_seed =
+      std::getenv("DANG_KEA_TEST_TRANSPORT_FREE_SEED") != nullptr;
   const bool empty_startup =
       std::getenv("DANG_KEA_EMPTY_STARTUP") != nullptr;
   const bool ha_member = std::getenv("DANG_KEA_HA_MEMBER") != nullptr;
@@ -336,13 +341,14 @@ int main(int argc, char** argv) {
   void* startup_prepared = nullptr;
   const bool seed_with_noop = expected_validate_failure ||
       expected_operational_failure || skip_operational || test_noop_seed ||
-      expect_prepared_mismatch || expect_unapplied_reconcile;
+      transport_free_seed || expect_prepared_mismatch ||
+      expect_unapplied_reconcile;
   if (valid && seed_with_noop) {
     DangTransactionV1 startup{before.c_str(), before.c_str(), "[]"};
     valid = plugin->prepare(plugin->context, &startup, &startup_prepared,
                             &error) || Report("startup preparation", error);
   }
-  const bool startup_accepted = empty_startup ? valid :
+  const bool startup_accepted = empty_startup || transport_free_seed ? valid :
       valid && plugin6->reconcile_applied_configuration(
           plugin->context, startup_prepared, before.c_str(), &reconciled,
           &error);
@@ -383,7 +389,7 @@ int main(int argc, char** argv) {
   }
   valid = valid &&
       (startup_accepted || Report("startup reconciliation", error));
-  if (!empty_startup)
+  if (!empty_startup && !transport_free_seed)
     valid = valid && reconciled.applied_xml == before.c_str() &&
         reconciled.outcomes == nullptr && reconciled.outcome_count == 0;
   void* prepared = nullptr;
@@ -554,9 +560,10 @@ int main(int argc, char** argv) {
     valid = RemoveHostHook(expected_reconcile_failure);
   if (valid && !expected_validate_failure && !expected_apply_failure) {
     DangAppliedConfigurationV1 applied{};
-    const bool reconciliation_accepted =
-        plugin6->reconcile_applied_configuration(
-        plugin->context, prepared, proposed.c_str(), &applied, &error);
+    const bool reconciliation_accepted = transport_free_seed
+        ? true
+        : plugin6->reconcile_applied_configuration(
+              plugin->context, prepared, proposed.c_str(), &applied, &error);
     if (expected_reconcile_failure) {
       const std::string expected_path =
           "/{urn:ietf:params:xml:ns:yang:" +
@@ -569,8 +576,10 @@ int main(int argc, char** argv) {
     } else {
       valid = reconciliation_accepted ||
           Report("post-apply reconciliation", error);
-      valid = valid && applied.applied_xml == proposed.c_str() &&
-          applied.outcomes == nullptr && applied.outcome_count == 0;
+      valid = valid &&
+          (transport_free_seed ||
+           (applied.applied_xml == proposed.c_str() &&
+            applied.outcomes == nullptr && applied.outcome_count == 0));
     }
   }
   if (valid && ha_member && dhcp4_enabled)
@@ -598,6 +607,12 @@ int main(int argc, char** argv) {
             (!dhcp6_enabled ||
              xml.find("<address-family>dhcpv6</address-family>") !=
                  std::string::npos) &&
+            (!dhcp4_enabled ||
+             xml.find("<daemon><address-family>dhcpv4</address-family>"
+                      "<version>") != std::string::npos) &&
+            (!dhcp6_enabled ||
+             xml.find("<daemon><address-family>dhcpv6</address-family>"
+                      "<version>") != std::string::npos) &&
             xml.find("<mode>" + std::string(ha_mode) + "</mode>") !=
                 std::string::npos &&
             xml.find("<server-name>local-primary</server-name>") !=
@@ -657,6 +672,12 @@ int main(int argc, char** argv) {
         (dhcp6_enabled ==
          (xml.find("<address-family>dhcpv6</address-family>") !=
           std::string::npos)) &&
+        (dhcp4_enabled ==
+         (xml.find("<daemon><address-family>dhcpv4</address-family>"
+                   "<version>") != std::string::npos)) &&
+        (dhcp6_enabled ==
+         (xml.find("<daemon><address-family>dhcpv6</address-family>"
+                   "<version>") != std::string::npos)) &&
         (dhcp4_enabled ==
          (xml.find("urn:ietf:params:xml:ns:yang:kea-dhcp4-server") !=
           std::string::npos)) &&

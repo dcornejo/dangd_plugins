@@ -16,7 +16,8 @@ module dang-kea-instance {
 
   revision 2026-09-28 {
     description
-      "Initial stable instance identity and enabled-family inventory.";
+      "Initial stable instance identity, enabled-family inventory, and
+       reconciled native daemon versions.";
   }
 
   typedef address-family {
@@ -53,6 +54,28 @@ module dang-kea-instance {
       ordered-by user;
       description
         "Enabled local targets in the transaction order used by the plugin.";
+    }
+
+    list daemon {
+      key "address-family";
+      config false;
+      description
+        "Reconciled native implementation identity for each enabled target.";
+
+      leaf address-family {
+        type address-family;
+        description "Address family served by this daemon.";
+      }
+
+      leaf version {
+        type string {
+          length "5..32";
+          pattern '[0-9]+\.[0-9]+\.[0-9]+';
+        }
+        mandatory true;
+        description
+          "Three-component version returned by the native version-get API.";
+      }
     }
   }
 }

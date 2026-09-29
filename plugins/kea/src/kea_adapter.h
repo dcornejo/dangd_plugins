@@ -93,6 +93,11 @@ using ConfigurationCommand = std::function<bool(
     const ServerConfiguration& expected, const ControlQuery& query,
     std::string* error);
 
+/** Returns the strict three-component version reported by one live daemon. */
+[[nodiscard]] std::optional<std::string> ReadDaemonVersion(
+    std::string_view socket_path, const ControlQuery& query,
+    std::string* error);
+
 /**
  * Retrieves a complete lease result using Kea's stable address cursor.
  * Repeated cursors, malformed pages, or configured resource limits fail closed.
