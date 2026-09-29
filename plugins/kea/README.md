@@ -343,6 +343,16 @@ local and singular active-remote server names and roles to the configured peer
 list. Passive-backup must not report a remote member. A missing, extra, stale,
 or cross-member response therefore fails at the HA operational path instead of
 being labeled with the current datastore identity.
+The same relationship entry publishes an effective `transport-security`
+policy from that accepted image. `local-listener` and, where a singular active
+peer exists, `active-remote` distinguish plaintext from TLS without exposing
+trust-anchor, certificate, or private-key paths. For a TLS listener the model
+also reports whether client certificates are required; every listener reports
+whether non-HA commands are restricted. These are configuration-derived
+posture values, not claims that a handshake is presently healthy. The adapter
+applies Kea's per-peer override and empty-string disable rules to the three TLS
+files and rejects an incomplete effective triplet rather than labeling the
+channel incorrectly.
 The status query is omitted when the accepted image has no HA hook. A missing,
 rejected, malformed, oversized, or late HA reply fails the complete operational
 request at `/{urn:dang:kea:ha}high-availability`; raw native JSON is never

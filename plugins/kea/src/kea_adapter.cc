@@ -28,6 +28,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <set>
@@ -545,13 +546,59 @@ bool HasHaHook(const ServerConfiguration& server) {
 }
 
 struct HaRelationshipIdentity {
+  struct TransportSecurity {
+    bool local_listener_tls = false;
+    bool require_client_certificates = true;
+    bool restrict_commands = true;
+    std::optional<bool> active_remote_tls;
+  };
+
   std::string mode;
   std::string server_name;
   std::string role;
   std::optional<std::string> remote_server_name;
   std::optional<std::string> remote_role;
   bool remote_must_be_absent = false;
+  TransportSecurity transport_security;
 };
+
+bool HaBoolean(const nlohmann::json& relationship, std::string_view key,
+               bool default_value) {
+  const auto value = relationship.find(std::string(key));
+  if (value == relationship.end()) return default_value;
+  if (!value->is_boolean())
+    throw std::runtime_error(std::string(key) + " is not a boolean");
+  return value->get<bool>();
+}
+
+bool HaPeerUsesTls(const nlohmann::json& relationship,
+                   const nlohmann::json& peer) {
+  // Kea enables TLS from this complete credential triplet, not from the URL
+  // spelling. A peer value overrides its relationship-level counterpart; an
+  // empty peer string therefore deliberately disables that inherited member.
+  constexpr std::string_view fields[] = {"trust-anchor", "cert-file",
+                                         "key-file"};
+  std::size_t configured = 0;
+  for (const auto field : fields) {
+    const nlohmann::json* value = nullptr;
+    const auto peer_value = peer.find(std::string(field));
+    if (peer_value != peer.end()) {
+      value = &*peer_value;
+    } else {
+      const auto relationship_value = relationship.find(std::string(field));
+      if (relationship_value != relationship.end())
+        value = &*relationship_value;
+    }
+    if (!value) continue;
+    if (!value->is_string())
+      throw std::runtime_error(std::string(field) + " is not a string");
+    if (!value->get_ref<const std::string&>().empty()) ++configured;
+  }
+  if (configured != 0 && configured != std::size(fields))
+    throw std::runtime_error(
+        "effective peer TLS parameters are incomplete");
+  return configured == std::size(fields);
+}
 
 std::optional<std::vector<HaRelationshipIdentity>>
 ConfiguredHaRelationshipIdentities(const ServerConfiguration& server,
@@ -612,10 +659,16 @@ ConfiguredHaRelationshipIdentities(const ServerConfiguration& server,
         const auto& role = configured_peer->at("role");
         if (!role.is_string())
           throw std::runtime_error("local peer role is not a string");
-        HaRelationshipIdentity identity{
-            configured_mode, configured_name,
-            role.get_ref<const std::string&>(), std::nullopt, std::nullopt,
-            false};
+        HaRelationshipIdentity identity;
+        identity.mode = configured_mode;
+        identity.server_name = configured_name;
+        identity.role = role.get_ref<const std::string&>();
+        identity.transport_security.local_listener_tls =
+            HaPeerUsesTls(relationship, *configured_peer);
+        identity.transport_security.require_client_certificates =
+            HaBoolean(relationship, "require-client-certs", true);
+        identity.transport_security.restrict_commands =
+            HaBoolean(relationship, "restrict-commands", true);
         if (configured_mode == "passive-backup") {
           identity.remote_must_be_absent = true;
         } else if (active_role(identity.role)) {
@@ -636,6 +689,8 @@ ConfiguredHaRelationshipIdentities(const ServerConfiguration& server,
               active_remote->at("name").get_ref<const std::string&>();
           identity.remote_role =
               active_remote->at("role").get_ref<const std::string&>();
+          identity.transport_security.active_remote_tls =
+              HaPeerUsesTls(relationship, *active_remote);
         }
         identities.push_back(std::move(identity));
       }
@@ -2289,8 +2344,9 @@ std::optional<std::string> TranslateOperationalState(
   return state;
 }
 
-std::optional<std::string> TranslateHaOperationalState(
+std::optional<std::string> TranslateHaOperationalStateImpl(
     std::string_view module_name, const nlohmann::json& status,
+    const std::vector<HaRelationshipIdentity>* configured,
     std::string* error, std::size_t maximum_xml_bytes) {
   if (error) error->clear();
   std::string_view family;
@@ -2321,6 +2377,9 @@ std::optional<std::string> TranslateHaOperationalState(
       throw std::runtime_error("high-availability is missing");
     if (!found->is_array())
       throw std::runtime_error("high-availability is not an array");
+    if (configured && configured->size() != found->size())
+      throw std::runtime_error(
+          "relationship count does not match accepted configuration");
     std::string xml;
     for (std::size_t index = 0; index < found->size(); ++index) {
       if (index > std::numeric_limits<std::uint32_t>::max())
@@ -2434,8 +2493,28 @@ std::optional<std::string> TranslateHaOperationalState(
       std::string entry =
           "<relationship><address-family>" + std::string(family) +
           "</address-family><relationship-id>" + std::to_string(index) +
-          "</relationship-id><mode>" + mode + "</mode><local>" +
-          "<server-name>" +
+          "</relationship-id><mode>" + mode + "</mode>";
+      if (configured) {
+        const auto& security = configured->at(index).transport_security;
+        entry += "<transport-security><local-listener>";
+        entry += security.local_listener_tls ? "tls" : "plaintext";
+        entry += "</local-listener>";
+        if (security.local_listener_tls) {
+          entry += "<client-certificates-required>";
+          entry += security.require_client_certificates ? "true" : "false";
+          entry += "</client-certificates-required>";
+        }
+        entry += "<commands-restricted>";
+        entry += security.restrict_commands ? "true" : "false";
+        entry += "</commands-restricted>";
+        if (security.active_remote_tls) {
+          entry += "<active-remote>";
+          entry += *security.active_remote_tls ? "tls" : "plaintext";
+          entry += "</active-remote>";
+        }
+        entry += "</transport-security>";
+      }
+      entry += "<local><server-name>" +
           string_value(local, "server-name") + "</server-name><role>" +
           string_value(local, "role") + "</role><state>" +
           string_value(local, "state") + "</state>";
@@ -2501,6 +2580,13 @@ std::optional<std::string> TranslateHaOperationalState(
       *error = std::string("invalid Kea HA status reply: ") + exception.what();
     return std::nullopt;
   }
+}
+
+std::optional<std::string> TranslateHaOperationalState(
+    std::string_view module_name, const nlohmann::json& status,
+    std::string* error, std::size_t maximum_xml_bytes) {
+  return TranslateHaOperationalStateImpl(module_name, status, nullptr, error,
+                                         maximum_xml_bytes);
 }
 
 std::optional<std::string> CollectAuthoritativeOperationalState(
@@ -2620,9 +2706,11 @@ std::optional<std::string> CollectAuthoritativeOperationalState(
       return std::nullopt;
     }
     state_bytes += encoded.size();
-    auto translated = TranslateHaOperationalState(
+    // Validate the native shape before inspecting its relationship count, but
+    // preserve the shared item-limit error precedence over identity drift.
+    auto status_only = TranslateHaOperationalState(
         expected.module_name, *status, error, limits.maximum_xml_bytes);
-    if (!translated) return std::nullopt;
+    if (!status_only) return std::nullopt;
     const nlohmann::json* status_answer = Answer(*status);
     const auto& relationships =
         status_answer->at("arguments").at("high-availability");
@@ -2633,6 +2721,12 @@ std::optional<std::string> CollectAuthoritativeOperationalState(
     state_items += relationships.size();
     if (!VerifyHaStatusIdentity(expected, *status, error))
       return std::nullopt;
+    auto configured = ConfiguredHaRelationshipIdentities(expected, error);
+    if (!configured) return std::nullopt;
+    auto translated = TranslateHaOperationalStateImpl(
+        expected.module_name, *status, &*configured, error,
+        limits.maximum_xml_bytes);
+    if (!translated) return std::nullopt;
     ha_state = std::move(*translated);
   }
 

@@ -14,6 +14,12 @@ module dang-kea-ha {
      the portable subset of the native status-get reply that dangd can verify
      across supported Kea installations.";
 
+  revision 2026-09-28 {
+    description
+      "Expose the effective HA listener and active-peer transport security
+       policy from the accepted Kea configuration.";
+  }
+
   revision 2026-09-24 {
     description
       "Initial local-member HA operational state.";
@@ -29,6 +35,19 @@ module dang-kea-ha {
       }
     }
     description "Kea daemon family that owns an HA relationship.";
+  }
+
+  typedef transport-protection {
+    type enumeration {
+      enum plaintext {
+        description "The dedicated HA channel does not use TLS.";
+      }
+      enum tls {
+        description "The dedicated HA channel uses TLS.";
+      }
+    }
+    description
+      "Effective protection of one direction of Kea HA communication.";
   }
 
   container high-availability {
@@ -58,6 +77,47 @@ module dang-kea-ha {
         description
           "Kea HA mode, retained as text so newer native modes remain
            observable without a schema revision.";
+      }
+
+      container transport-security {
+        presence
+          "The accepted Kea configuration was available to resolve the
+           effective transport policy.";
+        description
+          "Effective policy derived from the accepted native HA hook
+           configuration. Certificate and key paths are intentionally not
+           exposed.";
+        leaf local-listener {
+          type transport-protection;
+          mandatory true;
+          description
+            "Protection used by the dedicated listener named by the local
+             peer entry. Kea selects TLS from a complete effective
+             trust-anchor, certificate, and private-key triplet rather than
+             from the peer URL spelling.";
+        }
+        leaf client-certificates-required {
+          when "../local-listener = 'tls'";
+          type boolean;
+          mandatory true;
+          description
+            "Whether the local TLS listener requires and verifies peer client
+             certificates. Absent for a plaintext listener.";
+        }
+        leaf commands-restricted {
+          type boolean;
+          mandatory true;
+          description
+            "Whether the dedicated listener rejects commands not used by the
+             HA hook.";
+        }
+        leaf active-remote {
+          type transport-protection;
+          description
+            "Protection used for outbound communication to the singular
+             active peer. Absent for passive-backup and for a local backup
+             role without a singular active peer.";
+        }
       }
 
       container local {

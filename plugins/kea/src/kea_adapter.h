@@ -119,7 +119,9 @@ using ConfigurationCommand = std::function<bool(
  * Active-peer traffic counters must form one complete sample. The local and
  * remote UTC samples and their skew are published together or omitted together
  * until Kea has measured them. Malformed or partial samples fail the complete
- * translation instead of producing misleading state.
+ * translation instead of producing misleading state. This status-only helper
+ * cannot label transport security: the authoritative collector adds that
+ * policy from the accepted configuration after binding the status identity.
  */
 [[nodiscard]] std::optional<std::string> TranslateHaOperationalState(
     std::string_view module_name, const nlohmann::json& status,
@@ -136,7 +138,9 @@ using ConfigurationCommand = std::function<bool(
  * reservations and HA status. When supplied, ha_operational_xml receives the
  * dang-kea-ha relationship entries separately from the ISC module state only
  * after their count, mode, and local and active-remote identities match the
- * accepted HA configuration.
+ * accepted HA configuration. Those entries also carry the effective local and
+ * active-peer transport policy, with Kea's TLS inheritance and empty-string
+ * overrides resolved but certificate and key paths omitted.
  */
 [[nodiscard]] std::optional<std::string> CollectAuthoritativeOperationalState(
     const ServerConfiguration& expected, bool dhcp6,

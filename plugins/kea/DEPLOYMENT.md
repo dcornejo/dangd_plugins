@@ -181,6 +181,16 @@ local and singular active-remote server names and roles to match the accepted
 HA hook parameters before it publishes any entry. Passive-backup must omit the
 remote map. This prevents stale status or a response from another member or
 partner from being attributed to the authoritative dangd configuration.
+Each accepted relationship also supplies an effective transport-security
+posture. The model reports plaintext or TLS independently for the local
+dedicated listener and the singular active-remote channel, the local TLS
+client-certificate requirement, and dedicated-listener command restriction.
+Kea selects TLS from a complete `trust-anchor`, `cert-file`, and `key-file`
+triplet. Relationship-level values are inherited unless a peer overrides them,
+and empty peer strings disable inheritance. The adapter resolves those rules,
+fails closed on a partial effective triplet, and never exposes file paths.
+These leaves describe accepted policy; `in-touch` and the other live status
+leaves remain the evidence that the peer channel is actually operating.
 The numeric relationship ID is stable only until that daemon's accepted HA
 configuration changes; use the reported server names for operator-facing
 identity. Collection occurs between the same two complete configuration checks

@@ -488,6 +488,93 @@ int main() {
   valid &= Check(authoritative_ha_state && !collected_ha_state.empty() &&
                      ha_failure_path.empty(),
                  "HA status was not collected inside the authority checks");
+  valid &= Check(
+      collected_ha_state.find(
+          "<transport-security><local-listener>plaintext</local-listener>") !=
+              std::string::npos &&
+          collected_ha_state.find(
+              "<commands-restricted>true</commands-restricted>") !=
+              std::string::npos &&
+          collected_ha_state.find(
+              "<active-remote>plaintext</active-remote>") !=
+              std::string::npos &&
+          collected_ha_state.find("<client-certificates-required>") ==
+              std::string::npos,
+      "plaintext HA transport policy was not published from accepted config");
+
+  auto tls_ha_member = *ha_member;
+  auto& tls_relationship =
+      tls_ha_member.arguments["Dhcp4"]["hooks-libraries"][3]["parameters"]
+                             ["high-availability"][0];
+  tls_relationship["trust-anchor"] = "/run/kea/ca.pem";
+  tls_relationship["cert-file"] = "/run/kea/member.pem";
+  tls_relationship["key-file"] = "/run/kea/member.key";
+  tls_relationship["require-client-certs"] = false;
+  tls_relationship["restrict-commands"] = false;
+  // Empty peer-level values override the global triplet and deliberately
+  // leave only this outbound direction in plaintext.
+  auto& plaintext_remote = tls_relationship["peers"][1];
+  plaintext_remote["trust-anchor"] = "";
+  plaintext_remote["cert-file"] = "";
+  plaintext_remote["key-file"] = "";
+  const dang::plugins::kea::ControlQuery tls_ha_operational_read =
+      [&](std::string_view, std::string_view command, const nlohmann::json&,
+          std::string*) -> std::optional<nlohmann::json> {
+    if (command == "config-get")
+      return OptionalJson(nlohmann::json{
+          {"result", 0}, {"arguments", tls_ha_member.arguments}});
+    if (command == "lease4-get-page" || command == "reservation-get-page")
+      return OptionalJson(nlohmann::json{{"result", 3}});
+    if (command == "status-get") return OptionalJson(authoritative_ha_status);
+    return std::nullopt;
+  };
+  ha_failure_path.clear();
+  collected_ha_state.clear();
+  error.clear();
+  auto tls_authoritative_state =
+      dang::plugins::kea::CollectAuthoritativeOperationalState(
+          tls_ha_member, false, {}, tls_ha_operational_read, &ha_failure_path,
+          &error, {}, &collected_ha_state);
+  valid &= Check(
+      tls_authoritative_state && ha_failure_path.empty() &&
+          collected_ha_state.find(
+              "<local-listener>tls</local-listener>") != std::string::npos &&
+          collected_ha_state.find(
+              "<client-certificates-required>false"
+              "</client-certificates-required>") != std::string::npos &&
+          collected_ha_state.find(
+              "<commands-restricted>false</commands-restricted>") !=
+              std::string::npos &&
+          collected_ha_state.find(
+              "<active-remote>plaintext</active-remote>") !=
+              std::string::npos &&
+          collected_ha_state.find("/run/kea/") == std::string::npos,
+      "effective HA TLS inheritance, override, or secret redaction failed");
+
+  auto incomplete_tls_member = *ha_member;
+  incomplete_tls_member.arguments["Dhcp4"]["hooks-libraries"][3]
+                                 ["parameters"]["high-availability"][0]
+                                 ["trust-anchor"] = "/run/kea/ca.pem";
+  const dang::plugins::kea::ControlQuery incomplete_tls_read =
+      [&](std::string_view, std::string_view command,
+          const nlohmann::json& arguments,
+          std::string* query_error) -> std::optional<nlohmann::json> {
+    if (command == "config-get")
+      return OptionalJson(nlohmann::json{
+          {"result", 0}, {"arguments", incomplete_tls_member.arguments}});
+    return ha_operational_read({}, command, arguments, query_error);
+  };
+  ha_failure_path.clear();
+  collected_ha_state = "stale";
+  error.clear();
+  valid &= Check(
+      !dang::plugins::kea::CollectAuthoritativeOperationalState(
+          incomplete_tls_member, false, {}, incomplete_tls_read,
+          &ha_failure_path, &error, {}, &collected_ha_state) &&
+          ha_failure_path == "ha-state" && collected_ha_state.empty() &&
+          error.find("effective peer TLS parameters are incomplete") !=
+              std::string::npos,
+      "incomplete effective HA TLS credentials were published");
   const auto rejects_mismatched_ha_identity =
       [&](const nlohmann::json& rejected_status,
           std::string_view expected_error, const char* description) {

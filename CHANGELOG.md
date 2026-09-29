@@ -9,6 +9,17 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Added effective Kea HA transport security to the read-only operational
+  model. Each relationship now reports whether its local dedicated listener
+  and singular active-remote channel use plaintext or TLS, whether the TLS
+  listener requires client certificates, and whether non-HA commands are
+  restricted. The values are resolved from the accepted configuration using
+  Kea's global-to-peer TLS inheritance and empty-string override rules; an
+  incomplete effective credential triplet fails closed, and certificate and
+  private-key paths are never published. Portable tests cover plaintext,
+  inheritance, peer disablement, non-default security flags, redaction, and
+  malformed partial TLS configuration.
+
 - Hardened the Kea HA TLS matrix with negative trust and downgrade tests. Each
   dedicated DHCPv4 and DHCPv6 listener must reject three non-peer clients from
   both hosts: a CA-validating client with no certificate, a client presenting a
