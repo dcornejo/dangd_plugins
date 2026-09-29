@@ -137,6 +137,24 @@ halt_server() {
   rm -f "$socket4" "$socket6"
 }
 
+start_daemons() {
+  KEA_PIDFILE_DIR="$runtime" "$dhcp4" -d -p "$port4" -P 1068 \
+    -c "$runtime/kea4.json" >>"$runtime/kea4.stdout" 2>&1 &
+  echo $! >"$runtime/pid4"
+  KEA_PIDFILE_DIR="$runtime" "$dhcp6" -d -p "$port6" -P 1546 \
+    -c "$runtime/kea6.json" >>"$runtime/kea6.stdout" 2>&1 &
+  echo $! >"$runtime/pid6"
+  attempt=0
+  while [ ! -S "$socket4" ] || [ ! -S "$socket6" ]; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 100 ]; then
+      cat "$runtime/kea4.stdout" "$runtime/kea6.stdout" 2>/dev/null || true
+      fail "Kea did not create both control sockets"
+    fi
+    sleep 0.1
+  done
+}
+
 case "$action" in
   start)
     # start IFACE LOCAL4 LOCAL6 LOCAL_NAME LOCAL_ROLE REMOTE4 REMOTE6
@@ -258,23 +276,29 @@ EOF
               "output-options":[{"output":"stderr"}]}]
 }}
 EOF
-    KEA_PIDFILE_DIR="$runtime" "$dhcp4" -d -p "$port4" -P 1068 \
-      -c "$runtime/kea4.json" >"$runtime/kea4.stdout" 2>&1 &
-    echo $! >"$runtime/pid4"
-    KEA_PIDFILE_DIR="$runtime" "$dhcp6" -d -p "$port6" -P 1546 \
-      -c "$runtime/kea6.json" >"$runtime/kea6.stdout" 2>&1 &
-    echo $! >"$runtime/pid6"
-    attempt=0
-    while [ ! -S "$socket4" ] || [ ! -S "$socket6" ]; do
-      attempt=$((attempt + 1))
-      if [ "$attempt" -ge 100 ]; then
-        cat "$runtime/kea4.stdout" "$runtime/kea6.stdout" 2>/dev/null || true
-        fail "Kea did not create both control sockets"
-      fi
-      sleep 0.1
-    done
+    : >"$runtime/kea4.stdout"
+    : >"$runtime/kea6.stdout"
+    start_daemons
     trap - EXIT INT TERM
     echo "$local_name Kea HA member is ready on $interface"
+    ;;
+  resume)
+    [ "$#" -eq 2 ] || fail "invalid resume arguments"
+    [ -d "$runtime" ] || fail "no halted Kea runtime exists"
+    [ ! -e "$runtime/pid4" ] && [ ! -e "$runtime/pid6" ] ||
+      fail "Kea runtime still has active process identifiers"
+    [ ! -e "$socket4" ] && [ ! -e "$socket6" ] ||
+      fail "a test control socket still exists"
+    [ -f "$runtime/kea4.json" ] && [ -f "$runtime/kea6.json" ] ||
+      fail "halted Kea configuration is incomplete"
+    if [ "$(uname -s)" = Linux ]; then
+      dhcp4=$runtime/kea-dhcp4
+      dhcp6=$runtime/kea-dhcp6
+      [ -x "$dhcp4" ] && [ -x "$dhcp6" ] ||
+        fail "halted Linux Kea executables are incomplete"
+    fi
+    start_daemons
+    echo "Kea primary daemons resumed on $interface"
     ;;
   ready)
     # ready IFACE LOCAL_NAME REMOTE_NAME LOCAL_ROLE PROBE
@@ -284,9 +308,12 @@ EOF
     echo "$3 reaches $4 for DHCPv4 and DHCPv6"
     ;;
   client)
-    # client IFACE LOCAL4 LOCAL6 SERVER4 SERVER6 CLIENT [REQUEST4 EXPECTED6]
-    [ "$#" -eq 7 ] || [ "$#" -eq 9 ] || fail "invalid client arguments"
-    if [ "$#" -eq 9 ]; then
+    # client IFACE LOCAL4 LOCAL6 SERVER4 SERVER6 CLIENT
+    #        [REQUEST4 EXPECTED6 [CLIENT_MAC]]
+    [ "$#" -eq 7 ] || [ "$#" -eq 9 ] || [ "$#" -eq 10 ] ||
+      fail "invalid client arguments"
+    if [ "$#" -ge 9 ]; then
+      [ "$#" -eq 9 ] || client_mac=${10}
       "$python" "$7" "$5" "$6" "$interface" "$client_mac" "$3" "$4" \
         "$8" "$9"
     else
@@ -307,6 +334,13 @@ EOF
     "$python" "$5" takeover "$socket6" "$3" "$4"
     echo "$3 now serves the stopped primary $4 scope"
     ;;
+  relinquish)
+    # relinquish IFACE LOCAL_NAME PROBE
+    [ "$#" -eq 4 ] || fail "invalid relinquish arguments"
+    "$python" "$4" relinquish "$socket4" "$3"
+    "$python" "$4" relinquish "$socket6" "$3"
+    echo "$3 relinquished the manually assigned primary scope"
+    ;;
   halt)
     halt_server
     echo "Kea primary daemons stopped; test interface retained"
@@ -318,5 +352,7 @@ EOF
   stop)
     stop_server
     ;;
-  *) fail "usage: $0 {start|ready|client|verify|takeover|halt|logs|stop} IFACE ..." ;;
+  *)
+    fail "unknown action $action"
+    ;;
 esac

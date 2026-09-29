@@ -590,8 +590,13 @@ both primary daemons while retaining only the disposable interface aliases.
 The standby must report interrupted communication and the partner unavailable
 before the harness uses the local `ha-scopes` command to activate the stopped
 primary's scope. A second client must then create distinct IPv4 and IPv6 leases
-on the survivor. The harness destroys the memory-only pair, reverses the Linux
-and FreeBSD roles, and repeats:
+on the survivor. For recovery, the survivor must relinquish that manual scope
+before the primary restarts. This introduces a bounded service gap while
+ensuring that two servers never answer the same scope. The restarted primary
+has an empty memory database, so it must recover the outage leases from its
+partner, return to normal hot-standby, and replicate a distinct third-client
+allocation to both members. The harness then destroys the memory-only pair,
+reverses the Linux and FreeBSD roles, and repeats:
 
 ```sh
 tests/platform/run_kea_ha_cross_host.sh \
@@ -600,10 +605,11 @@ tests/platform/run_kea_ha_cross_host.sh \
 
 This proves cross-version peer communication, initial synchronization, normal
 service scope activation, bidirectional lease replication, outage recognition,
-and guarded manual takeover. It deliberately keeps automatic failover disabled
-and never changes scopes until the primary processes have exited, avoiding the
-split-brain risk documented for `ha-scopes`. It does not exercise a pair-wide
-dangd commit or claim distributed transaction atomicity. As with the basic VLAN
-interaction, the cleanup trap removes the documentation-prefix aliases,
-sockets, processes, configurations, and copied helpers after success or
-failure.
+guarded manual takeover, rejoin synchronization, and restored replication. It
+deliberately keeps automatic failover disabled, never adds the primary scope
+until the primary processes have exited, and removes that scope before they
+restart, avoiding the split-brain risk documented for `ha-scopes`. It does not
+exercise a pair-wide dangd commit or claim distributed transaction atomicity.
+As with the basic VLAN interaction, the cleanup trap removes the
+documentation-prefix aliases, sockets, processes, configurations, and copied
+helpers after success or failure.

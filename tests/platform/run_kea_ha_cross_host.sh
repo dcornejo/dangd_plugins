@@ -2,8 +2,8 @@
 # Copyright 2026 David Cornejo
 # SPDX-License-Identifier: Apache-2.0
 
-# Proves real Kea hot-standby communication and lease replication between the
-# disposable Linux and FreeBSD test endpoints, then reverses their roles.
+# Proves real Kea hot-standby replication, guarded takeover, and safe recovery
+# between disposable Linux and FreeBSD endpoints, then reverses their roles.
 
 set -eu
 
@@ -175,11 +175,37 @@ run_phase() {
     return 1
   fi
 
+  # Remove the survivor's manual scope before the former primary returns. This
+  # deliberately creates a bounded service gap instead of ever allowing both
+  # servers to answer the same scope. The empty restarted database must then
+  # recover the outage leases before a fresh allocation proves replication has
+  # resumed in both directions.
+  remote "$standby_host" sudo "$endpoint" relinquish "$standby_interface" \
+    "$standby_name" "$probe"
+  remote "$primary_host" sudo "$endpoint" resume "$primary_interface"
+  remote "$primary_host" sudo "$endpoint" ready "$primary_interface" \
+    "$primary_name" "$standby_name" primary "$probe"
+  remote "$standby_host" sudo "$endpoint" ready "$standby_interface" \
+    "$standby_name" "$primary_name" standby "$probe"
+  remote "$primary_host" sudo "$endpoint" verify "$primary_interface" \
+    "$probe" 192.0.2.101 2001:db8:6::101
+  remote "$standby_host" sudo "$endpoint" client "$standby_interface" \
+    "$standby4" "$standby6" "$primary4" "$primary6" "$client" \
+    192.0.2.102 2001:db8:6::102 02:00:00:00:94:02
+  if ! remote "$primary_host" sudo "$endpoint" verify \
+       "$primary_interface" "$probe" 192.0.2.102 2001:db8:6::102 ||
+     ! remote "$standby_host" sudo "$endpoint" verify \
+       "$standby_interface" "$probe" 192.0.2.102 2001:db8:6::102; then
+    remote "$linux_host" sudo "$endpoint" logs "$linux_interface" || true
+    remote "$freebsd_host" sudo "$endpoint" logs "$freebsd_interface" || true
+    return 1
+  fi
+
   remote "$linux_host" sudo "$endpoint" stop "$linux_interface"
   remote "$freebsd_host" sudo "$endpoint" stop "$freebsd_interface"
-  echo "$primary primary replicated leases and its standby completed takeover"
+  echo "$primary primary completed replication, takeover, and safe recovery"
 }
 
 run_phase linux
 run_phase freebsd
-echo "Bidirectional Linux/FreeBSD Kea HA replication and takeover passed"
+echo "Bidirectional Linux/FreeBSD Kea HA takeover and recovery passed"

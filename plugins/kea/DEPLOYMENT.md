@@ -92,9 +92,17 @@ stops both primary daemons and proves their exit before changing scopes. The
 survivor must report communication interruption and the partner unavailable;
 only then does the test issue `ha-scopes` over the survivor's local UNIX
 socket, allocate a distinct DHCPv4 and DHCPv6 client, and require both new
-leases locally. This validates the peer data plane, replication, and guarded
-manual takeover in both directions, but it does not test automatic failover or
-turn two independently managed dangd instances into one atomic transaction.
+leases locally. Before restarting the former primary, the harness removes the
+survivor's manually assigned scope and proves that removal. This intentionally
+accepts a bounded service gap rather than allowing both members to answer the
+same scope. The empty memory-only primary then restarts, both members must
+return to normal hot-standby, and the former primary must recover the leases
+issued during its outage. A distinct third-client DHCPv4 and DHCPv6 allocation
+must subsequently replicate to both members. This validates the peer data
+plane, replication, guarded manual takeover, rejoin synchronization, and
+post-recovery replication in both directions. It does not test automatic
+failover or turn two independently managed dangd instances into one atomic
+transaction.
 
 The pinned ISC modules do not expose HA relationship status. The companion
 `dang-kea-ha` module fills that model gap without changing their configuration

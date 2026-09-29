@@ -9,6 +9,15 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Added
 
+- Extended the guarded Kea HA takeover matrix through safe primary recovery.
+  The survivor relinquishes its manually assigned scope before the stopped
+  primary restarts, accepting a bounded service gap instead of risking two
+  responders. The restarted memory-only primary must resynchronize the leases
+  issued during its outage, both members must return to their normal
+  hot-standby roles, and a distinct third-client dual-stack allocation must
+  replicate to both databases. The complete recovery proof runs with Linux and
+  FreeBSD in both roles.
+
 - Extended the cross-host Kea HA matrix through guarded manual takeover. After
   proving dual-stack replication, the harness stops and reaps both primary
   daemons, requires the survivor to report interrupted communication and the

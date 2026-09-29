@@ -119,6 +119,25 @@ def takeover_ready(path: str, local_name: str, primary_name: str) -> bool:
             local.get("scopes") == [primary_name])
 
 
+def relinquish_takeover(path: str, local_name: str) -> None:
+    """Disable the survivor's manual scope before its partner restarts."""
+    successful(query(path, "ha-scopes", {
+        "server-name": local_name,
+        "scopes": [],
+    }), "ha-scopes")
+
+
+def scopes_relinquished(path: str, local_name: str) -> bool:
+    """Return whether the local server has stopped serving manual scopes."""
+    arguments = successful(query(path, "status-get", {}), "status-get")
+    relationships = arguments.get("high-availability")
+    if not isinstance(relationships, list) or len(relationships) != 1:
+        return False
+    local = relationships[0].get("ha-servers", {}).get("local", {})
+    return (local.get("server-name") == local_name and
+            local.get("scopes") == [])
+
+
 def wait_for(predicate: Callable[[], bool], description: str) -> None:
     """Bound asynchronous HA startup and replication to twenty seconds."""
     deadline = time.monotonic() + 20
@@ -139,6 +158,7 @@ def main() -> None:
         raise SystemExit(
             f"usage: {sys.argv[0]} ready SOCKET NAME PEER ROLE | "
             "takeover SOCKET NAME PRIMARY | "
+            "relinquish SOCKET NAME | "
             "leases SOCKET4 SOCKET6 ADDRESS4 ADDRESS6"
         )
     if sys.argv[1] == "ready" and len(sys.argv) == 6:
@@ -162,6 +182,10 @@ def main() -> None:
         activate_takeover(sys.argv[2], sys.argv[3], sys.argv[4])
         wait_for(lambda: takeover_ready(sys.argv[2], sys.argv[3], sys.argv[4]),
                  f"{sys.argv[3]} to activate the {sys.argv[4]} scope")
+    elif sys.argv[1] == "relinquish" and len(sys.argv) == 4:
+        relinquish_takeover(sys.argv[2], sys.argv[3])
+        wait_for(lambda: scopes_relinquished(sys.argv[2], sys.argv[3]),
+                 f"{sys.argv[3]} to relinquish its manual scopes")
     elif sys.argv[1] == "leases" and len(sys.argv) == 6:
         wait_for(lambda: leases_present(sys.argv[2], sys.argv[3], sys.argv[4],
                                         sys.argv[5]),
