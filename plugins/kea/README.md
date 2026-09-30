@@ -726,6 +726,8 @@ test fixtures; production installations need synchronized clocks and their
 normal protected PKI lifecycle.
 
 The recorded cross-platform TLS matrix uses Kea 3.2.1 on Linux and Kea 3.2.0
-on FreeBSD. It passes with each operating system in the primary role, including
-initial dual-stack replication, automatic partner-down service, recovery,
-post-recovery replication, and all three listener rejection cases above.
+on FreeBSD. Manual takeover, automatic partner-down, and planned-maintenance
+workflows pass with each operating system in the primary role. The matrix
+includes initial dual-stack replication, survivor service, recovery,
+post-recovery replication, role reversal, and all three listener rejection
+cases above.

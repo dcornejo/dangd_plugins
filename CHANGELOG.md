@@ -19,9 +19,10 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 - Recorded the complete mutual-TLS HA matrix against Kea 3.2.1 on Linux and
   Kea 3.2.0 on FreeBSD. Both primary-role assignments pass dual-stack lease
-  replication, automatic partner-down service, recovery, and post-recovery
-  replication. Both DHCP family listeners also reject clients with no
-  certificate, a certificate signed by an untrusted CA, and plaintext HTTP.
+  replication, guarded manual takeover, automatic partner-down service,
+  planned maintenance, recovery, and post-recovery replication. Both DHCP
+  family listeners also reject clients with no certificate, a certificate
+  signed by an untrusted CA, and plaintext HTTP.
 
 ### Fixed
 
