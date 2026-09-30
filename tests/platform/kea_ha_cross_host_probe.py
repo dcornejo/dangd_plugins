@@ -98,10 +98,14 @@ def ha_ready(path: str, local_name: str, remote_name: str,
     remote = servers.get("remote", {})
     scopes = local.get("scopes")
     expected_scopes = [local_name] if local_role == "primary" else []
+    # in-touch becomes true before the peer's last observed state necessarily
+    # reaches hot-standby. Waiting for both signals prevents the first client
+    # exchange from racing the final HA state transition.
     return (local.get("server-name") == local_name and
             local.get("state") == "hot-standby" and
             scopes == expected_scopes and
             remote.get("server-name") == remote_name and
+            remote.get("last-state") == "hot-standby" and
             remote.get("in-touch") is True)
 
 

@@ -19,6 +19,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Fixed
 
+- Tightened the live Kea HA readiness gate to require the peer's last observed
+  state to reach `hot-standby`, not merely report an established control
+  connection. This prevents the first DHCPv4/DHCPv6 exchange from racing the
+  final HA state transition on mixed Linux and FreeBSD pairs.
+
 - Expanded Linux rtnetlink `RTA_MULTIPATH` observations into one RFC 8431
   route entry per native base nexthop. Operational state now preserves both
   gateway/interface path identity and dead-path installed state instead of
