@@ -15,7 +15,13 @@ All notable changes to the external dangd plugin collection are recorded here.
   directory, and the installation guide names the current ISC repository,
   packages, and services. Debian and FreeBSD plugin package metadata now also
   declares the corresponding Kea runtime. Linux and FreeBSD native workflows
-  now both validate Kea 3.2.0.
+  validate Kea 3.2.x.
+
+- Recorded the complete mutual-TLS HA matrix against Kea 3.2.1 on Linux and
+  Kea 3.2.0 on FreeBSD. Both primary-role assignments pass dual-stack lease
+  replication, automatic partner-down service, recovery, and post-recovery
+  replication. Both DHCP family listeners also reject clients with no
+  certificate, a certificate signed by an untrusted CA, and plaintext HTTP.
 
 ### Fixed
 

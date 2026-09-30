@@ -23,9 +23,9 @@ release. On Debian/Ubuntu use ISC's `kea-3-2` repository and install
 `isc-kea-dhcp4`, `isc-kea-dhcp6`, or both as required plus `isc-kea-hooks`; on
 FreeBSD install `kea`. A source build additionally needs CMake 3.24+, a C++20
 compiler, libxml2 development files, nlohmann-json 3.11+, and GoogleTest. The
-recorded native matrix covers Kea 3.2.0 on both Linux and FreeBSD. Newer
-releases require the same command-inventory, configuration-validation, and
-platform workflow before production use.
+recorded native matrix covers Kea 3.2.1 on Linux and Kea 3.2.0 on FreeBSD.
+Newer releases require the same command-inventory, configuration-validation,
+and platform workflow before production use.
 
 Debian/Ubuntu package installation:
 
@@ -724,3 +724,8 @@ not-yet-valid failure. Temporary keys and certificates are removed from the
 orchestrator and both hosts on success or failure. These credentials are only
 test fixtures; production installations need synchronized clocks and their
 normal protected PKI lifecycle.
+
+The recorded cross-platform TLS matrix uses Kea 3.2.1 on Linux and Kea 3.2.0
+on FreeBSD. It passes with each operating system in the primary role, including
+initial dual-stack replication, automatic partner-down service, recovery,
+post-recovery replication, and all three listener rejection cases above.
