@@ -255,11 +255,19 @@ plugin is not connected to that coordinator. Dangd now also has the private
 crash-safe journal and distinguishes a definite pre-decision failure from an
 unknown post-replacement outcome. Configured application startup and `SIGHUP`
 reload now load and validate that record, then fail closed with a token-free
-pending-peer summary. They do not yet reconstruct peer sessions. Authenticated
-remote control, stable configured peer identity, automatic recovery, and the
-pair-health adapter remain missing. A peer with an uncertain outcome must
-retain the transaction's pending marker; another transaction or a no-op
-callback must not clear it.
+pending-peer summary. Dangd also has a confirmation-only programmatic
+NETCONF/TLS adapter that verifies mutual-TLS identity and hostname, checks the
+required capabilities before sending the RPC, bounds individual I/O waits and
+message sizes, correlates the reply, and safely serializes the persistent
+commit token. It invokes no shell command.
+
+That adapter is not automatic recovery: dangd does not yet configure stable
+peer endpoints and trust material, map journal identities to endpoints, or
+reconstruct peer sessions during startup. Prepare, candidate transfer,
+validation, apply, readback/health verification, cancellation, and release also
+still need transport adapters, and the Kea pair-health check is not connected.
+A peer with an uncertain outcome must retain the transaction's pending marker;
+another transaction or a no-op callback must not clear it.
 
 A production pair controller must treat the peers as one transaction group:
 
