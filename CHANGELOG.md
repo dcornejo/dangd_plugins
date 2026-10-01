@@ -11,10 +11,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 - Updated the Kea HA deployment boundary for dangd's transport-neutral peer
   transaction coordinator and private crash-safe journal. The guide
-  distinguishes those tested building blocks from the still-missing NETCONF
-  transport, application startup recovery, stable configured peer identity,
-  and Kea pair-health integration, and records the safe behavior on each side
-  of the durable group decision.
+  records fail-closed startup and `SIGHUP` journal inspection and distinguishes
+  those tested building blocks from the still-missing NETCONF transport,
+  automatic authenticated recovery, stable configured peer identity, and Kea
+  pair-health integration. It also records the safe behavior on each side of
+  the durable group decision.
 
 - Raised the managed Kea baseline to 3.2.0. Reconciliation now rejects older
   daemon identities, portable tests cover that boundary, Linux validation uses

@@ -253,12 +253,13 @@ verifies the group, establishes a durable decision boundary, reverses
 pre-decision cancellation, and resumes post-decision confirmation. The Kea
 plugin is not connected to that coordinator. Dangd now also has the private
 crash-safe journal and distinguishes a definite pre-decision failure from an
-unknown post-replacement outcome, but application startup does not yet load
-that record and reconstruct peer sessions. Authenticated remote control,
-stable configured peer identity, lifecycle integration, and the pair-health
-adapter remain missing. A peer with an uncertain outcome must retain the
-transaction's pending marker; another transaction or a no-op callback must not
-clear it.
+unknown post-replacement outcome. Configured application startup and `SIGHUP`
+reload now load and validate that record, then fail closed with a token-free
+pending-peer summary. They do not yet reconstruct peer sessions. Authenticated
+remote control, stable configured peer identity, automatic recovery, and the
+pair-health adapter remain missing. A peer with an uncertain outcome must
+retain the transaction's pending marker; another transaction or a no-op
+callback must not clear it.
 
 A production pair controller must treat the peers as one transaction group:
 
