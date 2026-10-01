@@ -261,13 +261,19 @@ required capabilities before sending the RPC, bounds individual I/O waits and
 message sizes, correlates the reply, and safely serializes the persistent
 commit token. It invokes no shell command.
 
-That adapter is not automatic recovery: dangd does not yet configure stable
-peer endpoints and trust material, map journal identities to endpoints, or
-reconstruct peer sessions during startup. Prepare, candidate transfer,
-validation, apply, readback/health verification, cancellation, and release also
-still need transport adapters, and the Kea pair-health check is not connected.
-A peer with an uncertain outcome must retain the transaction's pending marker;
-another transaction or a no-op callback must not clear it.
+The private, versioned `--peer-recovery` file now maps exact journal identities
+to hosts, ports, client credentials, trust anchors, and per-I/O timeouts.
+Startup and reload validate that complete mapping, including safe ownership and
+permissions, before accepting it. Relative credential paths resolve from the
+mapping file.
+
+Those pieces are not automatic recovery: dangd does not yet use the validated
+mapping to reconstruct peer sessions and replay the journal during startup.
+Prepare, candidate transfer, validation, apply, readback/health verification,
+cancellation, and release also still need transport adapters, and the Kea
+pair-health check is not connected. A peer with an uncertain outcome must
+retain the transaction's pending marker; another transaction or a no-op
+callback must not clear it.
 
 A production pair controller must treat the peers as one transaction group:
 
