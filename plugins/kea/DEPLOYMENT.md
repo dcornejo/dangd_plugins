@@ -251,11 +251,14 @@ That is not operational. Dangd now contains a tested, transport-neutral
 that prepares every peer before mutation, applies standbys before the primary,
 verifies the group, establishes a durable decision boundary, reverses
 pre-decision cancellation, and resumes post-decision confirmation. The Kea
-plugin is not connected to that coordinator, and dangd does not yet provide its
-authenticated remote control, stable peer identity, crash-safe journal,
-startup recovery, or pair-health adapter. A peer with an uncertain outcome
-must retain the transaction's pending marker; another transaction or a no-op
-callback must not clear it.
+plugin is not connected to that coordinator. Dangd now also has the private
+crash-safe journal and distinguishes a definite pre-decision failure from an
+unknown post-replacement outcome, but application startup does not yet load
+that record and reconstruct peer sessions. Authenticated remote control,
+stable configured peer identity, lifecycle integration, and the pair-health
+adapter remain missing. A peer with an uncertain outcome must retain the
+transaction's pending marker; another transaction or a no-op callback must not
+clear it.
 
 A production pair controller must treat the peers as one transaction group:
 
