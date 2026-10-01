@@ -277,9 +277,10 @@ same journal.
 This completes the generic transport and recovery mechanics, not Kea pair-wide
 transaction initiation. The stateful participant locks candidate, transfers a
 complete configuration with `copy-config`, validates it, starts a persistent
-confirmed commit, retrieves running for a supplied health callback, confirms
-or reconnects to cancel, and releases candidate and session resources. Live
-two-peer commit and live rollback tests cover that generic adapter. The Kea
+confirmed commit, retrieves both running configuration and operational state
+for a supplied health callback, confirms or reconnects to cancel, and releases
+candidate and session resources. Live two-peer commit and live rollback tests
+cover that generic adapter. The Kea
 plugin still must translate one authoritative change into each member's
 complete candidate and supply a pair-health callback that proves the expected
 roles, relationship, scopes, synchronization, and peer freshness. A peer with

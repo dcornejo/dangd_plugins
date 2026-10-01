@@ -18,9 +18,9 @@ All notable changes to the external dangd plugin collection are recorded here.
   decision before serving requests. A reusable authenticated session now
   retains locks and framing across candidate RPCs. The guide now records the
   complete generic participant mapping for lock, complete candidate transfer,
-  validation, confirmed apply, authenticated readback, confirmation,
-  reconnecting cancellation, and release, with live two-peer commit and
-  rollback coverage. It narrows the remaining Kea work to per-member candidate
+  validation, confirmed apply, authenticated running and operational readback,
+  confirmation, reconnecting cancellation, and release, with live two-peer
+  commit and rollback coverage. It narrows the remaining Kea work to per-member candidate
   translation, HA health policy, and the production entry point, and records
   the safe behavior on each side of the durable group decision.
 
