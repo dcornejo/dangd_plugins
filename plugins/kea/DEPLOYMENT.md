@@ -275,11 +275,14 @@ exclusive private sibling lock prevents concurrent daemons from replaying the
 same journal.
 
 This completes post-decision confirmation recovery, not pair-wide transaction
-initiation. Prepare, candidate transfer, validation, apply,
-readback/health verification, cancellation, and release still need transport
-adapters, and the Kea pair-health check is not connected. A peer with an
-uncertain outcome must retain the transaction's pending marker; another
-transaction or a no-op callback must not clear it.
+initiation. Dangd now has a reusable authenticated NETCONF/TLS session with
+live lock/edit/validate/unlock coverage, so candidate locks and framing can
+survive across the required operations. Prepare, candidate transfer,
+validation, confirmed apply, readback/health verification, cancellation, and
+release still need coordinator adapters on that session, and the Kea
+pair-health check is not connected. A peer with an uncertain outcome must
+retain the transaction's pending marker; another transaction or a no-op
+callback must not clear it.
 
 A production pair controller must treat the peers as one transaction group:
 

@@ -15,8 +15,9 @@ All notable changes to the external dangd plugin collection are recorded here.
   those tested building blocks from the new confirmation-only mutual-TLS
   recovery adapter and the private, validated participant-to-endpoint and trust
   mapping. Startup and reload now use that mapping to finish a durable COMMIT
-  decision before serving requests. The guide identifies the still-missing
-  non-confirmation transaction operations and Kea pair-health integration, and
+  decision before serving requests. A reusable authenticated session now
+  retains locks and framing across candidate RPCs. The guide identifies the
+  still-missing coordinator adapters and Kea pair-health integration, and
   records the safe behavior on each side of the durable group decision.
 
 - Raised the managed Kea baseline to 3.2.0. Reconciliation now rejects older
