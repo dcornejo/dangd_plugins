@@ -12,13 +12,17 @@ All notable changes to the external dangd plugin collection are recorded here.
 - Updated the Kea HA deployment boundary for dangd's transport-neutral peer
   transaction coordinator and private crash-safe journal. The guide
   records fail-closed startup and `SIGHUP` journal inspection and distinguishes
-  those tested building blocks from the new confirmation-only mutual-TLS
-  recovery adapter and the private, validated participant-to-endpoint and trust
+  those tested building blocks from the mutual-TLS recovery adapter and the
+  private, validated participant-to-endpoint and trust
   mapping. Startup and reload now use that mapping to finish a durable COMMIT
   decision before serving requests. A reusable authenticated session now
-  retains locks and framing across candidate RPCs. The guide identifies the
-  still-missing coordinator adapters and Kea pair-health integration, and
-  records the safe behavior on each side of the durable group decision.
+  retains locks and framing across candidate RPCs. The guide now records the
+  complete generic participant mapping for lock, complete candidate transfer,
+  validation, confirmed apply, authenticated readback, confirmation,
+  reconnecting cancellation, and release, with live two-peer commit and
+  rollback coverage. It narrows the remaining Kea work to per-member candidate
+  translation, HA health policy, and the production entry point, and records
+  the safe behavior on each side of the durable group decision.
 
 - Raised the managed Kea baseline to 3.2.0. Reconciliation now rejects older
   daemon identities, portable tests cover that boundary, Linux validation uses

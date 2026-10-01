@@ -255,11 +255,11 @@ plugin is not connected to that coordinator. Dangd now also has the private
 crash-safe journal and distinguishes a definite pre-decision failure from an
 unknown post-replacement outcome. Configured application startup and `SIGHUP`
 reload now load and validate that record, then fail closed with a token-free
-pending-peer summary. Dangd also has a confirmation-only programmatic
-NETCONF/TLS adapter that verifies mutual-TLS identity and hostname, checks the
-required capabilities before sending the RPC, bounds individual I/O waits and
-message sizes, correlates the reply, and safely serializes the persistent
-commit token. It invokes no shell command.
+pending-peer summary. Dangd also has a complete programmatic NETCONF/TLS
+participant that verifies mutual-TLS identity and hostname, checks candidate,
+validate, and persistent confirmed-commit capabilities before sending an RPC,
+bounds individual I/O waits and message sizes, correlates every reply, and
+safely serializes persistent commit tokens. It invokes no shell command.
 
 The private, versioned `--peer-recovery` file now maps exact journal identities
 to hosts, ports, client credentials, trust anchors, and per-I/O timeouts.
@@ -274,15 +274,17 @@ blocks startup; recovery never contradicts durable COMMIT by cancelling. An
 exclusive private sibling lock prevents concurrent daemons from replaying the
 same journal.
 
-This completes post-decision confirmation recovery, not pair-wide transaction
-initiation. Dangd now has a reusable authenticated NETCONF/TLS session with
-live lock/edit/validate/unlock coverage, so candidate locks and framing can
-survive across the required operations. Prepare, candidate transfer,
-validation, confirmed apply, readback/health verification, cancellation, and
-release still need coordinator adapters on that session, and the Kea
-pair-health check is not connected. A peer with an uncertain outcome must
-retain the transaction's pending marker; another transaction or a no-op
-callback must not clear it.
+This completes the generic transport and recovery mechanics, not Kea pair-wide
+transaction initiation. The stateful participant locks candidate, transfers a
+complete configuration with `copy-config`, validates it, starts a persistent
+confirmed commit, retrieves running for a supplied health callback, confirms
+or reconnects to cancel, and releases candidate and session resources. Live
+two-peer commit and live rollback tests cover that generic adapter. The Kea
+plugin still must translate one authoritative change into each member's
+complete candidate and supply a pair-health callback that proves the expected
+roles, relationship, scopes, synchronization, and peer freshness. A peer with
+an uncertain outcome must retain the transaction's pending marker; another
+transaction or a no-op callback must not clear it.
 
 A production pair controller must treat the peers as one transaction group:
 
