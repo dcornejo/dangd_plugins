@@ -382,6 +382,20 @@ inserted into NETCONF data. Kea does not report a portable synchronization
 percentage in this response, so synchronization progress beyond these states
 and scopes remains unmodeled.
 
+Pair-wide transaction integration can feed the authenticated running and
+operational NETCONF replies directly to `VerifyPeerTransactionReplies`. The
+verifier re-translates every official Kea configuration from running and
+requires it to contain the complete proposed managed image. It then binds each
+operational HA relationship to that image's mode, local member, role, and
+active peer before accepting caller-selected stable states and exact scope
+sets. An active peer must be in touch, report no communication interruption,
+and have an age at or below the configured limit. Duplicate relationships,
+partial or malformed values, stale identity, wrong scopes, drifted running
+configuration, DTDs, and oversized replies all fail closed. This is the Kea
+health decision primitive; constructing both members' complete dangd
+candidates and exposing the production pair-wide commit entry point remain
+separate work.
+
 The plugin deliberately exposes one ABI-v4 hardware action for the entire Kea
 transaction. This preserves atomic compensation across Kea's own
 complete-configuration `config-set` operation and does not pretend that

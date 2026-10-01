@@ -32,6 +32,7 @@
 #include <iterator>
 #include <limits>
 #include <map>
+#include <memory>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -337,10 +338,20 @@ void FindConfigurations(const xmlNode* node,
 bool IsTopLevelConfiguration(const xmlNode* configuration,
                              const xmlNode* document_root) {
   if (configuration == document_root) return true;
-  if (!configuration || configuration->parent != document_root) return false;
-  const std::string root_name = LocalName(document_root);
-  return Namespace(document_root) == kNetconfBaseNamespace &&
-      (root_name == "config" || root_name == "data");
+  if (!configuration || !configuration->parent) return false;
+  const xmlNode* parent = configuration->parent;
+  if (parent == document_root) {
+    const std::string root_name = LocalName(document_root);
+    return Namespace(document_root) == kNetconfBaseNamespace &&
+        (root_name == "config" || root_name == "data");
+  }
+  // A correlated NETCONF get-config reply wraps top-level datastore nodes in
+  // rpc-reply/data. Accept exactly that ancestry, never a nested lookalike.
+  return LocalName(parent) == "data" &&
+      Namespace(parent) == kNetconfBaseNamespace &&
+      parent->parent == document_root &&
+      LocalName(document_root) == "rpc-reply" &&
+      Namespace(document_root) == kNetconfBaseNamespace;
 }
 
 std::optional<std::string> ForeignElement(
@@ -1670,6 +1681,122 @@ void FindSubnetIds(const nlohmann::json& value, std::string_view list_name,
   }
 }
 
+using XmlDocument = std::unique_ptr<xmlDoc, decltype(&xmlFreeDoc)>;
+
+struct ParsedNetconfData {
+  XmlDocument document{nullptr, xmlFreeDoc};
+  const xmlNode* data = nullptr;
+};
+
+std::optional<ParsedNetconfData> ParseNetconfDataReply(
+    std::string_view reply, std::string_view description, std::string* error) {
+  if (reply.size() > kMaximumDatastoreBytes) {
+    if (error)
+      *error = std::string(description) + " exceeds the plugin byte limit";
+    return std::nullopt;
+  }
+  XmlDocument document(
+      xmlReadMemory(reply.data(), static_cast<int>(reply.size()), "reply.xml",
+                    nullptr, XML_PARSE_NONET | XML_PARSE_NOBLANKS),
+      xmlFreeDoc);
+  if (!document || document->intSubset || document->extSubset) {
+    if (error)
+      *error = std::string(description) +
+          " is malformed or contains a forbidden DTD";
+    return std::nullopt;
+  }
+  const xmlNode* root = xmlDocGetRootElement(document.get());
+  if (!root || LocalName(root) != "rpc-reply" ||
+      Namespace(root) != kNetconfBaseNamespace) {
+    if (error)
+      *error = std::string(description) +
+          " does not have the NETCONF rpc-reply root";
+    return std::nullopt;
+  }
+  const xmlNode* data = nullptr;
+  for (const xmlNode* child : ElementChildren(root)) {
+    if (LocalName(child) == "data" &&
+        Namespace(child) == kNetconfBaseNamespace && !data) {
+      data = child;
+      continue;
+    }
+    if (error)
+      *error = std::string(description) +
+          " contains an error, duplicate data, or unexpected result";
+    return std::nullopt;
+  }
+  if (!data) {
+    if (error) *error = std::string(description) + " omits NETCONF data";
+    return std::nullopt;
+  }
+  return ParsedNetconfData{std::move(document), data};
+}
+
+const xmlNode* UniqueChild(const xmlNode* parent, std::string_view name,
+                           std::string_view xml_namespace,
+                           std::string* error) {
+  const xmlNode* result = nullptr;
+  for (const xmlNode* child : ElementChildren(parent)) {
+    if (LocalName(child) != name || Namespace(child) != xml_namespace) continue;
+    if (result) {
+      if (error)
+        *error = "Kea HA operational state repeats " + std::string(name);
+      return nullptr;
+    }
+    result = child;
+  }
+  return result;
+}
+
+std::optional<std::uint64_t> UnsignedXml(const xmlNode* node) {
+  if (!node) return std::nullopt;
+  const std::string value = Text(node);
+  std::uint64_t result = 0;
+  const auto [end, status] =
+      std::from_chars(value.data(), value.data() + value.size(), result);
+  if (status != std::errc{} || end != value.data() + value.size())
+    return std::nullopt;
+  return result;
+}
+
+std::optional<bool> BooleanXml(const xmlNode* node) {
+  if (!node) return std::nullopt;
+  const std::string value = Text(node);
+  if (value == "true") return true;
+  if (value == "false") return false;
+  return std::nullopt;
+}
+
+std::optional<std::set<std::string, std::less<>>> LeafListValues(
+    const xmlNode* parent, std::string_view name, std::string* error) {
+  std::set<std::string, std::less<>> values;
+  for (const xmlNode* child : ElementChildren(parent)) {
+    if (LocalName(child) != name || Namespace(child) != "urn:dang:kea:ha")
+      continue;
+    if (!values.emplace(Text(child)).second) {
+      if (error)
+        *error = "Kea HA operational state repeats " + std::string(name);
+      return std::nullopt;
+    }
+  }
+  return values;
+}
+
+std::optional<std::set<std::string, std::less<>>> ExpectedValues(
+    const std::vector<std::string>& values, std::string_view description,
+    std::string* error) {
+  std::set<std::string, std::less<>> result;
+  for (const std::string& value : values) {
+    if (!result.emplace(value).second) {
+      if (error)
+        *error = "Kea peer health expectation repeats " +
+            std::string(description);
+      return std::nullopt;
+    }
+  }
+  return result;
+}
+
 }  // namespace
 
 std::optional<ServerConfiguration> TranslateConfiguration(
@@ -2039,6 +2166,236 @@ bool VerifyRequiredControlCommands(const ServerConfiguration& expected,
       *error = "Kea daemon did not register required command " +
           std::string(command);
     return false;
+  }
+  return true;
+}
+
+bool VerifyPeerTransactionReplies(
+    const std::vector<ServerConfiguration>& expected,
+    const std::vector<HaPeerHealthExpectation>& health,
+    std::string_view running_reply, std::string_view operational_reply,
+    std::string* error) {
+  if (error) error->clear();
+  if (expected.empty() || health.empty()) {
+    if (error)
+      *error = "Kea peer verification requires configuration and health";
+    return false;
+  }
+  if (!ParseNetconfDataReply(running_reply, "Kea peer running reply", error))
+    return false;
+  std::map<std::string, const ServerConfiguration*, std::less<>> configurations;
+  for (const ServerConfiguration& proposed : expected) {
+    if (!configurations.emplace(proposed.module_name, &proposed).second ||
+        proposed.service_name.empty() || proposed.socket_path.empty() ||
+        !proposed.arguments.is_object() ||
+        !proposed.arguments.contains(proposed.service_name)) {
+      if (error) *error = "invalid expected Kea peer configuration";
+      return false;
+    }
+    std::string translation_error;
+    auto running = TranslateConfiguration(
+        running_reply, proposed.module_name, proposed.socket_path,
+        &translation_error);
+    if (!running) {
+      if (error)
+        *error = proposed.module_name + ": running readback failed: " +
+            translation_error;
+      return false;
+    }
+    try {
+      if (!ContainsExpectedConfiguration(
+              running->arguments.at(proposed.service_name),
+              proposed.arguments.at(proposed.service_name),
+              proposed.service_name, &translation_error)) {
+        if (error)
+          *error = proposed.module_name + ": running readback failed: " +
+              translation_error;
+        return false;
+      }
+    } catch (const std::exception& exception) {
+      if (error)
+        *error = proposed.module_name +
+            ": cannot compare running readback: " + exception.what();
+      return false;
+    }
+  }
+
+  auto parsed = ParseNetconfDataReply(
+      operational_reply, "Kea peer operational reply", error);
+  if (!parsed) return false;
+  const xmlNode* availability = nullptr;
+  for (const xmlNode* child : ElementChildren(parsed->data)) {
+    if (LocalName(child) != "high-availability" ||
+        Namespace(child) != "urn:dang:kea:ha")
+      continue;
+    if (availability) {
+      if (error)
+        *error = "Kea peer operational reply repeats high-availability";
+      return false;
+    }
+    availability = child;
+  }
+  if (!availability) {
+    if (error) *error = "Kea peer operational reply omits high-availability";
+    return false;
+  }
+  std::map<std::pair<std::string, std::uint64_t>, const xmlNode*>
+      relationships;
+  for (const xmlNode* relationship : ElementChildren(availability)) {
+    if (LocalName(relationship) != "relationship" ||
+        Namespace(relationship) != "urn:dang:kea:ha") {
+      if (error) *error = "Kea HA operational state has an unexpected child";
+      return false;
+    }
+    const xmlNode* family = UniqueChild(
+        relationship, "address-family", "urn:dang:kea:ha", error);
+    const xmlNode* identity = UniqueChild(
+        relationship, "relationship-id", "urn:dang:kea:ha", error);
+    const auto numeric_identity = UnsignedXml(identity);
+    if (!family || !numeric_identity ||
+        !relationships.emplace(
+             std::pair<std::string, std::uint64_t>{Text(family),
+                                                  *numeric_identity},
+             relationship)
+             .second) {
+      if (error && error->empty())
+        *error = "Kea HA operational state has an invalid or duplicate key";
+      return false;
+    }
+  }
+  if (relationships.size() != health.size()) {
+    if (error)
+      *error = "Kea HA relationship count does not match the health policy";
+    return false;
+  }
+
+  std::size_t configured_relationship_count = 0;
+  for (const auto& [module_name, configuration] : configurations) {
+    std::string identity_error;
+    const auto identities =
+        ConfiguredHaRelationshipIdentities(*configuration, &identity_error);
+    if (!identities) {
+      if (error) *error = module_name + ": " + identity_error;
+      return false;
+    }
+    configured_relationship_count += identities->size();
+  }
+  if (configured_relationship_count != health.size()) {
+    if (error)
+      *error = "Kea health policy does not cover every configured HA "
+               "relationship";
+    return false;
+  }
+
+  std::set<std::pair<std::string, std::uint32_t>> expected_keys;
+  for (const HaPeerHealthExpectation& policy : health) {
+    const auto configuration = configurations.find(policy.module_name);
+    const std::string family = policy.module_name == "kea-dhcp4-server"
+        ? "dhcpv4"
+        : policy.module_name == "kea-dhcp6-server" ? "dhcpv6" : "";
+    if (configuration == configurations.end() || family.empty() ||
+        policy.local_state.empty() ||
+        !expected_keys.emplace(policy.module_name, policy.relationship_id)
+             .second) {
+      if (error) *error = "invalid Kea peer health expectation";
+      return false;
+    }
+    std::string identity_error;
+    auto identities = ConfiguredHaRelationshipIdentities(
+        *configuration->second, &identity_error);
+    if (!identities || policy.relationship_id >= identities->size()) {
+      if (error)
+        *error = policy.module_name + ": " +
+            (identity_error.empty()
+                 ? "health relationship is absent from proposed configuration"
+                 : identity_error);
+      return false;
+    }
+    const auto relationship = relationships.find(
+        {family, static_cast<std::uint64_t>(policy.relationship_id)});
+    if (relationship == relationships.end()) {
+      if (error)
+        *error = policy.module_name + ": expected HA relationship is missing";
+      return false;
+    }
+    const xmlNode* node = relationship->second;
+    const HaRelationshipIdentity& configured =
+        identities->at(policy.relationship_id);
+    const auto required_text = [&](const xmlNode* parent,
+                                   std::string_view name)
+        -> std::optional<std::string> {
+      const xmlNode* child =
+          UniqueChild(parent, name, "urn:dang:kea:ha", error);
+      if (!child && error && error->empty())
+        *error = "Kea HA operational state omits " + std::string(name);
+      return child ? std::optional<std::string>(Text(child)) : std::nullopt;
+    };
+    const auto mode = required_text(node, "mode");
+    const xmlNode* local =
+        UniqueChild(node, "local", "urn:dang:kea:ha", error);
+    if (!mode || !local) {
+      if (error && error->empty())
+        *error = "Kea HA operational state omits local identity";
+      return false;
+    }
+    const auto local_name = required_text(local, "server-name");
+    const auto local_role = required_text(local, "role");
+    const auto local_state = required_text(local, "state");
+    const auto local_scopes = LeafListValues(local, "scope", error);
+    const auto expected_local_scopes =
+        ExpectedValues(policy.local_scopes, "local scope", error);
+    if (!local_name || !local_role || !local_state || !local_scopes ||
+        !expected_local_scopes || *mode != configured.mode ||
+        *local_name != configured.server_name ||
+        *local_role != configured.role || *local_state != policy.local_state ||
+        *local_scopes != *expected_local_scopes) {
+      if (error && error->empty())
+        *error = policy.module_name +
+            ": local HA identity, state, or scopes are unhealthy";
+      return false;
+    }
+    const xmlNode* remote =
+        UniqueChild(node, "remote", "urn:dang:kea:ha", error);
+    if (!remote && error && !error->empty()) return false;
+    if (!policy.require_active_remote) {
+      if (remote) {
+        if (error)
+          *error = policy.module_name +
+              ": HA relationship unexpectedly has an active remote";
+        return false;
+      }
+      continue;
+    }
+    if (!remote || !configured.remote_server_name || !configured.remote_role) {
+      if (error && error->empty())
+        *error = policy.module_name + ": active HA remote is missing";
+      return false;
+    }
+    const auto remote_name = required_text(remote, "server-name");
+    const auto remote_role = required_text(remote, "role");
+    const auto last_state = required_text(remote, "last-state");
+    const auto remote_scopes = LeafListValues(remote, "last-scope", error);
+    const auto expected_remote_scopes =
+        ExpectedValues(policy.remote_last_scopes, "remote last-scope", error);
+    const auto in_touch = BooleanXml(
+        UniqueChild(remote, "in-touch", "urn:dang:kea:ha", error));
+    const auto interrupted = BooleanXml(UniqueChild(
+        remote, "communication-interrupted", "urn:dang:kea:ha", error));
+    const auto age = UnsignedXml(
+        UniqueChild(remote, "age", "urn:dang:kea:ha", error));
+    if (!remote_name || !remote_role || !last_state || !remote_scopes ||
+        !expected_remote_scopes || !in_touch || !interrupted || !age ||
+        *remote_name != *configured.remote_server_name ||
+        *remote_role != *configured.remote_role || !*in_touch ||
+        *interrupted || *age > policy.maximum_peer_age_seconds ||
+        *last_state != policy.remote_last_state ||
+        *remote_scopes != *expected_remote_scopes) {
+      if (error && error->empty())
+        *error = policy.module_name +
+            ": active HA remote identity, freshness, state, or scopes are "
+            "unhealthy";
+      return false;
+    }
   }
   return true;
 }

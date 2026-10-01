@@ -287,6 +287,17 @@ roles, relationship, scopes, synchronization, and peer freshness. A peer with
 an uncertain outcome must retain the transaction's pending marker; another
 transaction or a no-op callback must not clear it.
 
+`VerifyPeerTransactionReplies` now implements that strict Kea-side health
+decision once the controller supplies the complete proposed daemon images and
+policy. It compares the authenticated running reply with every proposed DHCPv4
+and DHCPv6 image, binds each operational relationship to the configured mode
+and member identities, and requires exact stable states and scopes. An active
+remote must be in touch, uninterrupted, and no older than the caller's limit.
+The helper rejects stale, disconnected, drifted, duplicate, malformed,
+DTD-bearing, and cross-member replies. The remaining work is to construct the
+two members' complete dangd candidates and invoke this helper from the
+production transaction entry point.
+
 A production pair controller must treat the peers as one transaction group:
 
 1. translate the authoritative candidate into explicit per-peer images;

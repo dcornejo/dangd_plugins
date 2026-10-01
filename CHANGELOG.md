@@ -9,6 +9,17 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Added a strict Kea HA peer-transaction verifier for dangd's authenticated
+  running and operational replies. It binds every official Kea configuration
+  readback to the complete proposed managed image, binds every `dang-kea-ha`
+  relationship back to that configuration's mode and member identities, and
+  requires exact stable states and scopes, an in-touch uninterrupted active
+  peer, and a caller-bounded status age. Duplicate, missing, stale, malformed,
+  DTD-bearing, cross-member, and configuration-drifted replies fail closed.
+  Portable tests cover healthy, stale, disconnected, drifted, and XML-unsafe
+  results. Production transaction initiation still needs to construct the
+  per-member candidates and invoke this verifier through dangd.
+
 - Updated the Kea HA deployment boundary for dangd's transport-neutral peer
   transaction coordinator and private crash-safe journal. The guide
   records fail-closed startup and `SIGHUP` journal inspection and distinguishes

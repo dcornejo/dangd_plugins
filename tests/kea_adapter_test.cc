@@ -348,6 +348,104 @@ int main() {
                      ha_relationship->at("peers").at(1).at("role") ==
                          "standby",
                  "HA member parameters were not preserved as native JSON");
+  const std::string peer_running_reply =
+      "<rpc-reply xmlns='urn:ietf:params:xml:ns:netconf:base:1.0' "
+      "message-id='running'><data>" +
+      std::string(ha_member_xml) + "</data></rpc-reply>";
+  const std::string peer_operational_reply = R"xml(
+    <rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"
+               message-id="operational"><data>
+      <high-availability xmlns="urn:dang:kea:ha">
+        <relationship>
+          <address-family>dhcpv4</address-family><relationship-id>0</relationship-id>
+          <mode>hot-standby</mode>
+          <local><server-name>primary</server-name><role>primary</role>
+            <state>hot-standby</state><scope>primary</scope></local>
+          <remote><server-name>standby</server-name><role>standby</role>
+            <in-touch>true</in-touch><communication-interrupted>false</communication-interrupted>
+            <age>2</age><last-state>hot-standby</last-state>
+            <last-scope>primary</last-scope></remote>
+        </relationship>
+      </high-availability>
+    </data></rpc-reply>)xml";
+  const std::vector<dang::plugins::kea::HaPeerHealthExpectation> peer_health{
+      {.module_name = "kea-dhcp4-server",
+       .relationship_id = 0,
+       .local_state = "hot-standby",
+       .local_scopes = {"primary"},
+       .remote_last_state = "hot-standby",
+       .remote_last_scopes = {"primary"},
+       .maximum_peer_age_seconds = 5}};
+  error.clear();
+  valid &= Check(
+      ha_member && dang::plugins::kea::VerifyPeerTransactionReplies(
+                       {*ha_member}, peer_health, peer_running_reply,
+                       peer_operational_reply, &error),
+      "healthy authenticated Kea peer replies were rejected");
+  auto rejects_peer_reply = [&](std::string running, std::string operational,
+                                std::string_view expected_error,
+                                const char* description) {
+    error.clear();
+    const bool accepted = ha_member &&
+        dang::plugins::kea::VerifyPeerTransactionReplies(
+            {*ha_member}, peer_health, running, operational, &error);
+    return Check(!accepted && error.find(expected_error) != std::string::npos,
+                 description);
+  };
+  std::string stale_peer = peer_operational_reply;
+  stale_peer.replace(stale_peer.find("<age>2</age>"),
+                     std::string("<age>2</age>").size(), "<age>6</age>");
+  valid &= rejects_peer_reply(peer_running_reply, stale_peer, "unhealthy",
+                              "stale HA peer status was accepted");
+  std::string disconnected_peer = peer_operational_reply;
+  disconnected_peer.replace(disconnected_peer.find("<in-touch>true</in-touch>"),
+                             std::string("<in-touch>true</in-touch>").size(),
+                             "<in-touch>false</in-touch>");
+  valid &= rejects_peer_reply(peer_running_reply, disconnected_peer,
+                              "unhealthy",
+                              "disconnected HA peer status was accepted");
+  std::string interrupted_peer = peer_operational_reply;
+  interrupted_peer.replace(
+      interrupted_peer.find("<communication-interrupted>false"
+                            "</communication-interrupted>"),
+      std::string("<communication-interrupted>false"
+                  "</communication-interrupted>").size(),
+      "<communication-interrupted>true</communication-interrupted>");
+  valid &= rejects_peer_reply(peer_running_reply, interrupted_peer, "unhealthy",
+                              "interrupted HA peer status was accepted");
+  std::string synchronizing_peer = peer_operational_reply;
+  synchronizing_peer.replace(
+      synchronizing_peer.find("<state>hot-standby</state>"),
+      std::string("<state>hot-standby</state>").size(),
+      "<state>synchronizing</state>");
+  valid &= rejects_peer_reply(peer_running_reply, synchronizing_peer,
+                              "unhealthy",
+                              "unstable local HA state was accepted");
+  std::string wrong_scopes = peer_operational_reply;
+  wrong_scopes.replace(wrong_scopes.find("<scope>primary</scope>"),
+                       std::string("<scope>primary</scope>").size(),
+                       "<scope>standby</scope>");
+  valid &= rejects_peer_reply(peer_running_reply, wrong_scopes, "unhealthy",
+                              "wrong local HA scopes were accepted");
+  std::string cross_member = peer_operational_reply;
+  cross_member.replace(cross_member.find("<server-name>standby</server-name>"),
+                       std::string("<server-name>standby</server-name>").size(),
+                       "<server-name>other</server-name>");
+  valid &= rejects_peer_reply(peer_running_reply, cross_member, "unhealthy",
+                              "cross-member HA status was accepted");
+  std::string wrong_running = peer_running_reply;
+  wrong_running.replace(wrong_running.find("18125"), 5, "19125");
+  valid &= rejects_peer_reply(wrong_running, peer_operational_reply,
+                              "running readback failed",
+                              "different running Kea configuration was accepted");
+  valid &= rejects_peer_reply(
+      "<!DOCTYPE rpc-reply [<!ENTITY x 'bad'>]>" + peer_running_reply,
+      peer_operational_reply, "forbidden DTD",
+      "DTD-bearing running peer reply was accepted");
+  valid &= rejects_peer_reply(
+      peer_running_reply,
+      "<!DOCTYPE rpc-reply [<!ENTITY x 'bad'>]>" + peer_operational_reply,
+      "forbidden DTD", "DTD-bearing operational peer reply was accepted");
   const nlohmann::json ha_status = nlohmann::json::parse(R"json({
     "result": 0,
     "arguments": {"high-availability": [{

@@ -36,6 +36,26 @@ struct PageLimits {
   std::chrono::milliseconds maximum_duration{30000};
 };
 
+/** Expected healthy state for one Kea HA relationship after peer commit. */
+struct HaPeerHealthExpectation {
+  /** Official Kea server module that owns the relationship. */
+  std::string module_name;
+  /** Zero-based relationship identity published by dang-kea-ha. */
+  std::uint32_t relationship_id = 0;
+  /** Exact stable local HA state, such as `hot-standby`. */
+  std::string local_state;
+  /** Exact system-ordered scopes the local member must currently own. */
+  std::vector<std::string> local_scopes;
+  /** Exact stable state last observed from the active remote member. */
+  std::string remote_last_state;
+  /** Exact system-ordered scopes last observed from the remote member. */
+  std::vector<std::string> remote_last_scopes;
+  /** Maximum acceptable age of the active remote member's status sample. */
+  std::uint64_t maximum_peer_age_seconds = 30;
+  /** False only for modes such as passive-backup without one active remote. */
+  bool require_active_remote = true;
+};
+
 /** Injectable control query used to test page boundaries and failures. */
 using ControlQuery = std::function<std::optional<nlohmann::json>(
     std::string_view socket_path, std::string_view command,
@@ -91,6 +111,22 @@ using ConfigurationCommand = std::function<bool(
  */
 [[nodiscard]] bool VerifyRequiredControlCommands(
     const ServerConfiguration& expected, const ControlQuery& query,
+    std::string* error);
+
+/**
+ * Verifies one peer transaction's authenticated NETCONF readback.
+ *
+ * Every expected official Kea configuration must be present in the running
+ * reply and contain the complete proposed managed image. The operational reply
+ * must contain exactly the expected dang-kea-ha relationships, bound back to
+ * those accepted configurations. Active peers must be in touch, uninterrupted,
+ * fresh, in the expected stable states, and own exactly the expected scopes.
+ * Both replies are parsed with network and DTD processing disabled.
+ */
+[[nodiscard]] bool VerifyPeerTransactionReplies(
+    const std::vector<ServerConfiguration>& expected,
+    const std::vector<HaPeerHealthExpectation>& health,
+    std::string_view running_reply, std::string_view operational_reply,
     std::string* error);
 
 /** Returns a supported (3.2.0+) three-component live daemon version. */
