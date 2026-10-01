@@ -1797,6 +1797,240 @@ std::optional<std::set<std::string, std::less<>>> ExpectedValues(
   return result;
 }
 
+struct HaRosterEntry {
+  std::string name;
+  std::string role;
+};
+
+std::optional<std::string> ConfiguredHaMode(
+    const ServerConfiguration& server, std::string* error) {
+  try {
+    const auto& hooks =
+        server.arguments.at(server.service_name).at("hooks-libraries");
+    const nlohmann::json* availability = nullptr;
+    for (const auto& hook : hooks) {
+      if (!hook.is_object()) continue;
+      const auto library = hook.find("library");
+      if (library == hook.end() || !library->is_string() ||
+          BaseName(library->get_ref<const std::string&>()) !=
+              "libdhcp_ha.so")
+        continue;
+      if (availability)
+        throw std::runtime_error("multiple HA hook entries are configured");
+      availability = &hook.at("parameters").at("high-availability");
+    }
+    if (!availability || !availability->is_array() ||
+        availability->size() != 1 ||
+        !availability->at(0).at("mode").is_string())
+      throw std::runtime_error(
+          "exactly one HA relationship with a mode is required");
+    return availability->at(0).at("mode").get<std::string>();
+  } catch (const std::exception& exception) {
+    if (error)
+      *error = server.module_name + ": cannot construct peer plan: " +
+          exception.what();
+    return std::nullopt;
+  }
+}
+
+bool ValidPeerIdentity(std::string_view value) {
+  if (value.empty() || value.size() > 128) return false;
+  return std::all_of(value.begin(), value.end(), [](unsigned char byte) {
+    return (byte >= 'a' && byte <= 'z') ||
+        (byte >= 'A' && byte <= 'Z') ||
+        (byte >= '0' && byte <= '9') || byte == '.' || byte == '_' ||
+        byte == '-';
+  });
+}
+
+std::optional<std::vector<HaRosterEntry>> HotStandbyRoster(
+    const ServerConfiguration& server, std::string* error) {
+  try {
+    const auto& hooks =
+        server.arguments.at(server.service_name).at("hooks-libraries");
+    const nlohmann::json* availability = nullptr;
+    for (const auto& hook : hooks) {
+      if (!hook.is_object()) continue;
+      const auto library = hook.find("library");
+      if (library == hook.end() || !library->is_string() ||
+          BaseName(library->get_ref<const std::string&>()) !=
+              "libdhcp_ha.so")
+        continue;
+      if (availability)
+        throw std::runtime_error("multiple HA hook entries are configured");
+      availability = &hook.at("parameters").at("high-availability");
+    }
+    if (!availability || !availability->is_array() ||
+        availability->size() != 1)
+      throw std::runtime_error(
+          "exactly one HA relationship is required");
+    const auto& relationship = availability->at(0);
+    if (!relationship.is_object() || relationship.at("mode") != "hot-standby")
+      throw std::runtime_error(
+          "peer transactions currently require hot-standby mode");
+    const auto& peers = relationship.at("peers");
+    if (!peers.is_array() || peers.size() != 2)
+      throw std::runtime_error(
+          "hot-standby peer transactions require exactly two members");
+    std::vector<HaRosterEntry> roster;
+    roster.reserve(2);
+    for (const auto& peer : peers) {
+      const auto& name = peer.at("name");
+      const auto& role = peer.at("role");
+      if (!peer.is_object() || !name.is_string() || !role.is_string())
+        throw std::runtime_error("HA peer identity is malformed");
+      HaRosterEntry entry{name.get<std::string>(), role.get<std::string>()};
+      if (!ValidPeerIdentity(entry.name))
+        throw std::runtime_error(
+            "HA peer name is not a portable dangd participant identity");
+      if (entry.role != "primary" && entry.role != "standby")
+        throw std::runtime_error(
+            "hot-standby roster must contain primary and standby roles");
+      roster.push_back(std::move(entry));
+    }
+    std::ranges::sort(roster, {}, &HaRosterEntry::role);
+    if (roster[0].role != "primary" || roster[1].role != "standby" ||
+        roster[0].name == roster[1].name)
+      throw std::runtime_error(
+          "hot-standby roster must contain unique primary and standby members");
+    return roster;
+  } catch (const std::exception& exception) {
+    if (error)
+      *error = server.module_name + ": cannot construct peer plan: " +
+          exception.what();
+    return std::nullopt;
+  }
+}
+
+std::string PeerGroupId(const std::vector<HaRosterEntry>& roster) {
+  std::uint64_t hash = UINT64_C(14695981039346656037);
+  for (const auto& entry : roster) {
+    for (const char byte : entry.role + ":" + entry.name + "\n") {
+      hash ^= static_cast<unsigned char>(byte);
+      hash *= UINT64_C(1099511628211);
+    }
+  }
+  constexpr char digits[] = "0123456789abcdef";
+  std::string result = "kea-ha-0000000000000000";
+  for (std::size_t index = 0; index < 16; ++index) {
+    result[result.size() - 1 - index] = digits[hash & 0xfU];
+    hash >>= 4U;
+  }
+  return result;
+}
+
+xmlNode* UniqueMutableChild(xmlNode* parent, std::string_view name,
+                            std::string_view xml_namespace) {
+  xmlNode* result = nullptr;
+  for (xmlNode* child = parent ? parent->children : nullptr; child;
+       child = child->next) {
+    if (child->type != XML_ELEMENT_NODE || LocalName(child) != name ||
+        Namespace(child) != xml_namespace)
+      continue;
+    if (result) return nullptr;
+    result = child;
+  }
+  return result;
+}
+
+std::optional<std::string> ModuleCandidateXml(
+    std::string_view datastore_xml, std::string_view module_name,
+    std::string_view participant, std::string* error) {
+  XmlDocument source(
+      xmlReadMemory(datastore_xml.data(), static_cast<int>(datastore_xml.size()),
+                    "datastore.xml", nullptr,
+                    XML_PARSE_NONET | XML_PARSE_NOBLANKS),
+      xmlFreeDoc);
+  if (!source || source->intSubset || source->extSubset) {
+    if (error) *error = "cannot parse Kea peer candidate datastore";
+    return std::nullopt;
+  }
+  const std::string module_namespace =
+      "urn:ietf:params:xml:ns:yang:" + std::string(module_name);
+  const xmlNode* configuration = nullptr;
+  std::size_t count = 0;
+  FindConfigurations(xmlDocGetRootElement(source.get()), module_namespace,
+                     &configuration, &count);
+  if (count != 1 ||
+      !IsTopLevelConfiguration(configuration,
+                               xmlDocGetRootElement(source.get()))) {
+    if (error)
+      *error = std::string(module_name) +
+          ": peer candidate requires one top-level configuration";
+    return std::nullopt;
+  }
+
+  XmlDocument candidate(xmlNewDoc(BAD_CAST "1.0"), xmlFreeDoc);
+  xmlNode* root = xmlNewNode(nullptr, BAD_CAST "config");
+  if (!candidate || !root) {
+    if (root) xmlFreeNode(root);
+    if (error) *error = "cannot allocate Kea peer candidate XML";
+    return std::nullopt;
+  }
+  xmlDocSetRootElement(candidate.get(), root);
+  xmlNs* netconf = xmlNewNs(root, BAD_CAST kNetconfBaseNamespace.data(), nullptr);
+  xmlSetNs(root, netconf);
+  xmlNode* copy = xmlDocCopyNode(const_cast<xmlNode*>(configuration),
+                                candidate.get(), 1);
+  if (!copy || !xmlAddChild(root, copy)) {
+    if (copy) xmlFreeNode(copy);
+    if (error) *error = "cannot copy Kea peer module image";
+    return std::nullopt;
+  }
+
+  xmlNode* parameters = nullptr;
+  for (xmlNode* hook = copy->children; hook; hook = hook->next) {
+    if (hook->type != XML_ELEMENT_NODE || LocalName(hook) != "hook-library" ||
+        Namespace(hook) != module_namespace)
+      continue;
+    xmlNode* library =
+        UniqueMutableChild(hook, "library", module_namespace);
+    if (!library || BaseName(Text(library)) != "libdhcp_ha.so") continue;
+    if (parameters) {
+      if (error)
+        *error = std::string(module_name) +
+            ": peer candidate has multiple HA hook entries";
+      return std::nullopt;
+    }
+    parameters = UniqueMutableChild(hook, "parameters", module_namespace);
+  }
+  if (!parameters) {
+    if (error)
+      *error = std::string(module_name) +
+          ": peer candidate omits HA parameters";
+    return std::nullopt;
+  }
+  try {
+    nlohmann::json value = nlohmann::json::parse(Text(parameters));
+    auto& relationships = value.at("high-availability");
+    if (!relationships.is_array() || relationships.size() != 1)
+      throw std::runtime_error("exactly one HA relationship is required");
+    relationships.at(0)["this-server-name"] = participant;
+    const std::string serialized = value.dump();
+    xmlNodeSetContent(parameters, BAD_CAST serialized.c_str());
+  } catch (const std::exception& exception) {
+    if (error)
+      *error = std::string(module_name) +
+          ": cannot specialize HA parameters: " + exception.what();
+    return std::nullopt;
+  }
+
+  xmlBufferPtr buffer = xmlBufferCreate();
+  if (!buffer || xmlNodeDump(buffer, candidate.get(), root, 0, 0) < 0) {
+    if (buffer) xmlBufferFree(buffer);
+    if (error) *error = "cannot serialize Kea peer candidate XML";
+    return std::nullopt;
+  }
+  std::string serialized(reinterpret_cast<const char*>(buffer->content),
+                         buffer->use);
+  xmlBufferFree(buffer);
+  if (serialized.size() > kMaximumDatastoreBytes) {
+    if (error) *error = "Kea peer candidate exceeds the plugin byte limit";
+    return std::nullopt;
+  }
+  return serialized;
+}
+
 }  // namespace
 
 std::optional<ServerConfiguration> TranslateConfiguration(
@@ -1915,6 +2149,106 @@ std::optional<ServerConfiguration> TranslateConfiguration(
   return ServerConfiguration{std::string(module_name), service,
                              std::string(socket_path),
                              nlohmann::json{{service, std::move(body)}}};
+}
+
+std::optional<std::vector<PeerTransactionCandidate>>
+BuildPeerTransactionCandidates(
+    std::string_view datastore_xml,
+    const std::vector<ServerConfiguration>& proposed, std::string* error) {
+  if (error) error->clear();
+  if (proposed.empty()) {
+    if (error) *error = "Kea peer plan requires a managed configuration";
+    return std::nullopt;
+  }
+  std::vector<const ServerConfiguration*> coordinated;
+  for (const ServerConfiguration& server : proposed)
+    if (HasHaHook(server)) coordinated.push_back(&server);
+  if (coordinated.empty()) return std::vector<PeerTransactionCandidate>{};
+  // Passive-backup has no active remote readback, and load-balancing needs a
+  // separately validated scope policy. Preserve their existing local plugin
+  // behavior while declining to advertise a coordinated ABI v9 plan.
+  std::optional<std::string> mode;
+  for (const ServerConfiguration* server : coordinated) {
+    auto module_mode = ConfiguredHaMode(*server, error);
+    if (!module_mode) return std::nullopt;
+    if (!mode) {
+      mode = std::move(module_mode);
+    } else if (*mode != *module_mode) {
+      if (error)
+        *error = server->module_name +
+            ": HA mode does not match the other managed families";
+      return std::nullopt;
+    }
+  }
+  if (*mode != "hot-standby")
+    return std::vector<PeerTransactionCandidate>{};
+  std::optional<std::vector<HaRosterEntry>> roster;
+  for (const ServerConfiguration* server : coordinated) {
+    auto module_roster = HotStandbyRoster(*server, error);
+    if (!module_roster) return std::nullopt;
+    if (!roster) {
+      roster = std::move(module_roster);
+    } else if (roster->size() != module_roster->size() ||
+               !std::equal(roster->begin(), roster->end(),
+                           module_roster->begin(),
+                           [](const HaRosterEntry& left,
+                              const HaRosterEntry& right) {
+                             return left.name == right.name &&
+                                 left.role == right.role;
+                           })) {
+      if (error)
+        *error = server->module_name +
+            ": HA roster does not match the other managed families";
+      return std::nullopt;
+    }
+  }
+
+  const std::string group_id = PeerGroupId(*roster);
+  const std::string& primary_name = roster->at(0).name;
+  std::vector<PeerTransactionCandidate> candidates;
+  candidates.reserve(roster->size());
+  for (const HaRosterEntry& member : *roster) {
+    PeerTransactionCandidate candidate;
+    candidate.group_id = group_id;
+    candidate.participant_id = member.name;
+    candidate.primary = member.role == "primary";
+    candidate.modules.reserve(coordinated.size());
+    candidate.health.reserve(coordinated.size());
+    const HaRosterEntry& remote = member.name == roster->at(0).name
+        ? roster->at(1) : roster->at(0);
+    for (const ServerConfiguration* server : coordinated) {
+      auto image = ModuleCandidateXml(datastore_xml, server->module_name,
+                                      member.name, error);
+      if (!image) return std::nullopt;
+      std::string translation_error;
+      auto expected = TranslateConfiguration(*image, server->module_name,
+                                             server->socket_path,
+                                             &translation_error);
+      if (!expected) {
+        if (error)
+          *error = server->module_name +
+              ": generated peer image is invalid: " + translation_error;
+        return std::nullopt;
+      }
+      candidate.modules.push_back(
+          {server->module_name, std::move(*image), std::move(*expected)});
+      candidate.health.push_back(
+          {.module_name = server->module_name,
+           .relationship_id = 0,
+           .local_state = "hot-standby",
+           .local_scopes = candidate.primary
+               ? std::vector<std::string>{primary_name}
+               : std::vector<std::string>{},
+           .remote_last_state = "hot-standby",
+           .remote_last_scopes = remote.role == "primary"
+               ? std::vector<std::string>{primary_name}
+               : std::vector<std::string>{},
+           .maximum_peer_age_seconds = 30,
+           .require_active_remote = true});
+    }
+    candidates.push_back(std::move(candidate));
+  }
+  return candidates;
 }
 
 std::optional<nlohmann::json> SendControlCommand(

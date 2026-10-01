@@ -56,6 +56,30 @@ struct HaPeerHealthExpectation {
   bool require_active_remote = true;
 };
 
+/** Complete module image and native readback expectation for one HA member. */
+struct PeerModuleCandidate {
+  /** Implemented official Kea module represented by this complete image. */
+  std::string module_name;
+  /** NETCONF config document containing only this module's top-level data. */
+  std::string configuration_xml;
+  /** Native form retained for strict post-commit running comparison. */
+  ServerConfiguration expected_configuration;
+};
+
+/** One member of a transport-neutral coordinated Kea peer transaction. */
+struct PeerTransactionCandidate {
+  /** Stable group derived from the canonical role/name roster. */
+  std::string group_id;
+  /** Kea peer name, also used as dangd's stable participant identity. */
+  std::string participant_id;
+  /** True only for the unique hot-standby primary. */
+  bool primary = false;
+  /** Complete image for every HA-enabled managed address family. */
+  std::vector<PeerModuleCandidate> modules;
+  /** Exact steady-state readback policy corresponding to `modules`. */
+  std::vector<HaPeerHealthExpectation> health;
+};
+
 /** Injectable control query used to test page boundaries and failures. */
 using ControlQuery = std::function<std::optional<nlohmann::json>(
     std::string_view socket_path, std::string_view command,
@@ -127,6 +151,21 @@ using ConfigurationCommand = std::function<bool(
     const std::vector<ServerConfiguration>& expected,
     const std::vector<HaPeerHealthExpectation>& health,
     std::string_view running_reply, std::string_view operational_reply,
+    std::string* error);
+
+/**
+ * Builds complete per-member module images for a safe Kea HA transaction.
+ *
+ * The first contract revision deliberately accepts only one two-member
+ * hot-standby roster shared by every managed DHCP family. Each generated
+ * image differs only in the Kea `this-server-name` selector. More complex or
+ * inconsistent layouts fail closed instead of being assigned guessed commit
+ * or health semantics.
+ */
+[[nodiscard]] std::optional<std::vector<PeerTransactionCandidate>>
+BuildPeerTransactionCandidates(
+    std::string_view datastore_xml,
+    const std::vector<ServerConfiguration>& proposed,
     std::string* error);
 
 /** Returns a supported (3.2.0+) three-component live daemon version. */

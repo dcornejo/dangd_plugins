@@ -9,6 +9,20 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Upgraded the Kea provider to the generic ABI-v9 peer transaction contract.
+  One authoritative two-member hot-standby change now produces complete,
+  member-specific DHCPv4 and DHCPv6 module images and an opaque verifier
+  identity without exposing endpoints, credentials, sessions, or transport to
+  the plugin. Managed families must agree on one portable primary/standby
+  roster; unsafe identities, role or roster ambiguity, multiple HA hooks, and
+  unsupported relationship counts fail closed. Authenticated running and
+  operational replies are routed through the existing strict image and health
+  verifier. Portable tests cover dual-stack plans, participant specialization,
+  exact steady-state scopes, altered verifier identity, mismatched rosters,
+  unsafe names, and duplicate primary roles. Load-balancing and passive-backup
+  remain local-member modes until their distinct coordinated health policies
+  are defined.
+
 - Added a strict Kea HA peer-transaction verifier for dangd's authenticated
   running and operational replies. It binds every official Kea configuration
   readback to the complete proposed managed image, binds every `dang-kea-ha`

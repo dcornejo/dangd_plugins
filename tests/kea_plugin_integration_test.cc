@@ -276,13 +276,15 @@ int main(int argc, char** argv) {
       std::getenv("DANG_KEA_EXPECT_INVENTORY_ERROR");
   const char* remove_host_hook = std::getenv("DANG_KEA_REMOVE_HOST_HOOK");
   void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
-  auto initialize = library ? reinterpret_cast<DangPluginInitV6>(
-      dlsym(library, "dang_plugin_init_v6")) : nullptr;
-  const DangPluginV6* plugin6 = initialize ? initialize() : nullptr;
+  auto initialize_v9 = library ? reinterpret_cast<DangPluginInitV9>(
+      dlsym(library, "dang_plugin_init_v9")) : nullptr;
+  const DangPluginV9* plugin9 = initialize_v9 ? initialize_v9() : nullptr;
+  const DangPluginV6* plugin6 = plugin9 ? &plugin9->v8.v7.v6 : nullptr;
   const DangPluginV5* plugin5 = plugin6 ? &plugin6->v5 : nullptr;
   const DangPluginV1* plugin = plugin5 ? &plugin5->v4.v3.v2.v1 : nullptr;
-  if (!plugin6) {
-    std::cerr << (library ? "missing plugin initializer" : dlerror()) << '\n';
+  if (!plugin9 || !plugin6) {
+    std::cerr << (library ? "missing ABI v9 plugin initializer" : dlerror())
+              << '\n';
     return 1;
   }
   valid = valid && CheckCallbackOutputContracts(*plugin6);
@@ -396,6 +398,112 @@ int main(int argc, char** argv) {
   if (valid)
     valid = plugin->prepare(plugin->context, &transaction, &prepared, &error)
         || Report("prepare", error);
+  const bool hot_standby_plan =
+      proposed.find("\"mode\":\"hot-standby\"") != std::string::npos;
+  if (valid) {
+    const std::size_t expected_modules =
+        static_cast<std::size_t>(dhcp4_enabled) +
+        static_cast<std::size_t>(dhcp6_enabled);
+    const std::size_t candidate_count =
+        plugin9->peer_candidate_count(plugin->context, prepared);
+    valid = candidate_count == (hot_standby_plan ? 2 * expected_modules : 0);
+    std::string primary_group;
+    std::string primary_context;
+    std::string primary_modules;
+    std::vector<std::string> primary_module_names;
+    for (std::size_t index = 0; valid && index < candidate_count; ++index) {
+      DangPeerCandidateV1 candidate{};
+      valid = plugin9->peer_candidate_at(plugin->context, prepared, index,
+                                          &candidate, &error) ||
+          Report("peer candidate", error);
+      if (!valid) break;
+      const bool primary = index < expected_modules;
+      valid = candidate.group_id && candidate.participant_id &&
+          candidate.module_name && candidate.configuration_xml &&
+          candidate.verification_context_json &&
+          candidate.confirmed_timeout_seconds == 60 &&
+          candidate.role == (primary ? DANG_PEER_PRIMARY_V1
+                                     : DANG_PEER_STANDBY_V1) &&
+          std::string_view(candidate.participant_id) ==
+              (primary ? "local-primary" : "remote-standby") &&
+          std::string_view(candidate.configuration_xml).find(
+              primary ? "\"this-server-name\":\"local-primary\""
+                      : "\"this-server-name\":\"remote-standby\"") !=
+              std::string_view::npos;
+      if (primary) {
+        if (primary_group.empty()) {
+          primary_group = candidate.group_id;
+          primary_context = candidate.verification_context_json;
+        } else {
+          valid = primary_group == candidate.group_id &&
+              primary_context == candidate.verification_context_json;
+        }
+        const std::string_view image(candidate.configuration_xml);
+        const std::size_t content = image.find('>');
+        const std::size_t close = image.rfind("</config>");
+        valid = valid && content != std::string_view::npos &&
+            close != std::string_view::npos && close > content;
+        if (valid) {
+          primary_modules.append(image.substr(content + 1,
+                                               close - content - 1));
+          primary_module_names.emplace_back(candidate.module_name);
+        }
+      }
+    }
+    if (valid && hot_standby_plan) {
+      const std::string running =
+          "<rpc-reply xmlns='urn:ietf:params:xml:ns:netconf:base:1.0'>"
+          "<data>" + primary_modules + "</data></rpc-reply>";
+      std::string relationships;
+      for (const std::string& module : primary_module_names) {
+        const std::string family = module == "kea-dhcp4-server"
+            ? "dhcpv4" : "dhcpv6";
+        relationships +=
+            "<relationship><address-family>" + family +
+            "</address-family><relationship-id>0</relationship-id>"
+            "<mode>hot-standby</mode><local>"
+            "<server-name>local-primary</server-name><role>primary</role>"
+            "<state>hot-standby</state><scope>local-primary</scope></local>"
+            "<remote><server-name>remote-standby</server-name>"
+            "<role>standby</role><in-touch>true</in-touch>"
+            "<communication-interrupted>false</communication-interrupted>"
+            "<age>1</age><last-state>hot-standby</last-state></remote>"
+            "</relationship>";
+      }
+      const std::string operational =
+          "<rpc-reply xmlns='urn:ietf:params:xml:ns:netconf:base:1.0'>"
+          "<data><high-availability xmlns='urn:dang:kea:ha'>" +
+          relationships + "</high-availability></data></rpc-reply>";
+      DangPeerVerificationV1 verification{
+          primary_group.c_str(), "local-primary", primary_context.c_str(),
+          running.c_str(), operational.c_str()};
+      valid = plugin9->verify_peer(plugin->context, prepared, &verification,
+                                   &error) ||
+          Report("healthy peer verification", error);
+      verification.verification_context_json = "{}";
+      DangPluginErrorV1 identity_error{};
+      valid = valid && !plugin9->verify_peer(plugin->context, prepared,
+                                             &verification, &identity_error) &&
+          identity_error.message && identity_error.instance_path &&
+          std::string_view(identity_error.message).find("identity is unknown") !=
+              std::string_view::npos &&
+          std::string_view(identity_error.instance_path) == "/";
+      if (!valid) Report("unknown peer identity rejection", identity_error);
+    }
+    DangPeerCandidateV1 stale_candidate{
+        "stale", "stale", 99, 99, "stale", "stale", "stale"};
+    DangPluginErrorV1 range_error{};
+    valid = valid && !plugin9->peer_candidate_at(
+                         plugin->context, prepared, candidate_count,
+                         &stale_candidate, &range_error) &&
+        stale_candidate.group_id == nullptr &&
+        stale_candidate.participant_id == nullptr && stale_candidate.role == 0 &&
+        stale_candidate.confirmed_timeout_seconds == 0 &&
+        stale_candidate.module_name == nullptr &&
+        stale_candidate.configuration_xml == nullptr &&
+        stale_candidate.verification_context_json == nullptr;
+    if (!valid) std::cerr << "ABI v9 Kea peer plan is incorrect\n";
+  }
   if (expect_prepared_mismatch) {
     DangAppliedConfigurationV1 mismatched{"stale", nullptr, 1};
     const bool accepted = valid && plugin6->reconcile_applied_configuration(

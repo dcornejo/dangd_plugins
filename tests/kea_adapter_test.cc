@@ -34,6 +34,16 @@ std::optional<nlohmann::json> OptionalJson(nlohmann::json value) {
   return std::optional<nlohmann::json>(value);
 }
 
+std::string ReplaceAll(std::string value, std::string_view from,
+                       std::string_view to) {
+  std::size_t offset = 0;
+  while ((offset = value.find(from, offset)) != std::string::npos) {
+    value.replace(offset, from.size(), to);
+    offset += to.size();
+  }
+  return value;
+}
+
 }  // namespace
 
 int main() {
@@ -348,6 +358,90 @@ int main() {
                      ha_relationship->at("peers").at(1).at("role") ==
                          "standby",
                  "HA member parameters were not preserved as native JSON");
+  const std::string ha6_member_xml = ReplaceAll(
+      ReplaceAll(ha_member_xml, "kea-dhcp4-server", "kea-dhcp6-server"),
+      "kea4.sock", "kea6.sock");
+  error.clear();
+  auto ha6_member = dang::plugins::kea::TranslateConfiguration(
+      ha6_member_xml, "kea-dhcp6-server", "/tmp/kea6.sock", &error);
+  const std::string dual_ha_xml =
+      "<config xmlns='urn:ietf:params:xml:ns:netconf:base:1.0'>" +
+      std::string(ha_member_xml) + ha6_member_xml + "</config>";
+  error.clear();
+  auto peer_candidates = ha_member && ha6_member
+      ? dang::plugins::kea::BuildPeerTransactionCandidates(
+            dual_ha_xml, {*ha_member, *ha6_member}, &error)
+      : std::nullopt;
+  valid &= Check(peer_candidates && peer_candidates->size() == 2 &&
+                     peer_candidates->at(0).primary &&
+                     peer_candidates->at(0).participant_id == "primary" &&
+                     peer_candidates->at(0).modules.size() == 2 &&
+                     peer_candidates->at(0).health.size() == 2 &&
+                     peer_candidates->at(0).health.at(0).local_scopes ==
+                         std::vector<std::string>{"primary"} &&
+                     peer_candidates->at(0).health.at(0)
+                         .remote_last_scopes.empty() &&
+                     !peer_candidates->at(1).primary &&
+                     peer_candidates->at(1).participant_id == "standby" &&
+                     peer_candidates->at(1).health.at(0).local_scopes.empty() &&
+                     peer_candidates->at(1).health.at(0).remote_last_scopes ==
+                         std::vector<std::string>{"primary"} &&
+                     peer_candidates->at(0).modules.at(0).configuration_xml
+                             .find("\"this-server-name\":\"primary\"") !=
+                         std::string::npos &&
+                     peer_candidates->at(1).modules.at(1).expected_configuration
+                             .arguments["Dhcp6"]["hooks-libraries"][3]
+                                       ["parameters"]["high-availability"][0]
+                                       ["this-server-name"] == "standby",
+                 "complete dual-stack hot-standby peer plans are incorrect");
+  std::string mismatched_ha6 = ReplaceAll(
+      ha6_member_xml, "\"name\":\"standby\"",
+      "\"name\":\"other-standby\"");
+  auto mismatched_ha6_configuration =
+      dang::plugins::kea::TranslateConfiguration(
+          mismatched_ha6, "kea-dhcp6-server", "/tmp/kea6.sock", &error);
+  error.clear();
+  const std::string mismatched_dual_ha_xml =
+      "<config xmlns='urn:ietf:params:xml:ns:netconf:base:1.0'>" +
+      std::string(ha_member_xml) + mismatched_ha6 + "</config>";
+  auto mismatched_plan = mismatched_ha6_configuration && ha_member
+      ? dang::plugins::kea::BuildPeerTransactionCandidates(
+            mismatched_dual_ha_xml,
+            {*ha_member, *mismatched_ha6_configuration}, &error)
+      : std::nullopt;
+  valid &= Check(!mismatched_plan && error.find("roster does not match") !=
+                                           std::string::npos,
+                 "inconsistent DHCPv4/DHCPv6 HA rosters were accepted");
+  const std::string unsafe_peer_xml = ReplaceAll(
+      ha_member_xml, "\"name\":\"standby\"",
+      "\"name\":\"standby/site\"");
+  auto unsafe_peer_configuration =
+      dang::plugins::kea::TranslateConfiguration(
+          unsafe_peer_xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  error.clear();
+  auto unsafe_peer_plan = unsafe_peer_configuration
+      ? dang::plugins::kea::BuildPeerTransactionCandidates(
+            unsafe_peer_xml, {*unsafe_peer_configuration}, &error)
+      : std::nullopt;
+  valid &= Check(!unsafe_peer_plan &&
+                     error.find("portable dangd participant identity") !=
+                         std::string::npos,
+                 "unsafe HA participant identity was accepted");
+  const std::string duplicate_primary_xml = ReplaceAll(
+      ha_member_xml, "\"role\":\"standby\"",
+      "\"role\":\"primary\"");
+  auto duplicate_primary_configuration =
+      dang::plugins::kea::TranslateConfiguration(
+          duplicate_primary_xml, "kea-dhcp4-server", "/tmp/kea4.sock",
+          &error);
+  error.clear();
+  auto duplicate_primary_plan = duplicate_primary_configuration
+      ? dang::plugins::kea::BuildPeerTransactionCandidates(
+            duplicate_primary_xml, {*duplicate_primary_configuration}, &error)
+      : std::nullopt;
+  valid &= Check(!duplicate_primary_plan &&
+                     error.find("primary and standby") != std::string::npos,
+                 "duplicate hot-standby primary role was accepted");
   const std::string peer_running_reply =
       "<rpc-reply xmlns='urn:ietf:params:xml:ns:netconf:base:1.0' "
       "message-id='running'><data>" +

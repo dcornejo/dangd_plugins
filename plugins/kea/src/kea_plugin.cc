@@ -32,11 +32,13 @@ namespace {
 
 using dang::plugins::kea::ApplyWithCompensation;
 using dang::plugins::kea::BuildInstanceOperationalXml;
+using dang::plugins::kea::BuildPeerTransactionCandidates;
 using dang::plugins::kea::CollectAuthoritativeOperationalState;
 using dang::plugins::kea::CommandSucceeded;
 using dang::plugins::kea::ExtractSubnetIds;
 using dang::plugins::kea::GuardPluginCallback;
 using dang::plugins::kea::PageLimits;
+using dang::plugins::kea::PeerTransactionCandidate;
 using dang::plugins::kea::ReadDaemonVersion;
 using dang::plugins::kea::ReadLiveConfiguration;
 using dang::plugins::kea::RollbackChanged;
@@ -45,6 +47,7 @@ using dang::plugins::kea::SendControlQuery;
 using dang::plugins::kea::ServerConfiguration;
 using dang::plugins::kea::TranslateConfiguration;
 using dang::plugins::kea::VerifyLiveConfiguration;
+using dang::plugins::kea::VerifyPeerTransactionReplies;
 using dang::plugins::kea::VerifyRequiredControlCommands;
 using dang::plugins::kea::VerifyRestoredConfigurations;
 using dang::plugins::kea::ValidInstanceId;
@@ -55,6 +58,14 @@ struct Prepared {
   // apply, including single-stack deployments.
   std::vector<ServerConfiguration> before;
   std::vector<ServerConfiguration> proposed;
+  struct PeerPlan {
+    PeerTransactionCandidate candidate;
+    // Opaque identity is echoed by dangd only to this plugin. Keeping the
+    // authoritative expected images in Prepared avoids trusting serialized
+    // JSON to reconstruct a safety decision.
+    std::string verification_context;
+  };
+  std::vector<PeerPlan> peers;
 };
 
 /** One enabled local Kea daemon captured for this plugin process. */
@@ -465,8 +476,25 @@ int PrepareConfigurationImpl(void* opaque_context,
   if (!before) return 0;
   auto proposed = TranslateTargets(context, transaction->proposed_xml, error);
   if (!proposed) return 0;
+  std::string peer_error;
+  auto peer_candidates = BuildPeerTransactionCandidates(
+      transaction->proposed_xml, *proposed, &peer_error);
+  if (!peer_candidates) {
+    SetError(error, std::move(peer_error), "/");
+    return 0;
+  }
+  std::vector<Prepared::PeerPlan> peers;
+  peers.reserve(peer_candidates->size());
+  for (PeerTransactionCandidate& candidate : *peer_candidates) {
+    const std::string context_json =
+        nlohmann::json{{"version", 1},
+                       {"group_id", candidate.group_id},
+                       {"participant_id", candidate.participant_id}}
+            .dump();
+    peers.push_back({std::move(candidate), context_json});
+  }
   auto* prepared = new (std::nothrow)
-      Prepared{std::move(*before), std::move(*proposed)};
+      Prepared{std::move(*before), std::move(*proposed), std::move(peers)};
   if (!prepared) {
     SetError(error, "cannot retain the Kea transaction plan");
     return 0;
@@ -928,8 +956,125 @@ int ReconcileAppliedConfiguration(
   });
 }
 
-const DangPluginV6 kPlugin{
-    .v5 = {.v4 = {.v3 = {.v2 = {.v1 = {.abi_version = DANG_PLUGIN_ABI_V6,
+int NextNotification(void*, DangNotificationV1* notification,
+                     DangPluginErrorV1* error) noexcept {
+  return Guard("notification", error, [&]() {
+    if (!notification) {
+      SetError(error, "the notification output is missing");
+      return -1;
+    }
+    *notification = {};
+    return 0;
+  });
+}
+
+/** Returns the flattened module contribution count for all planned members. */
+size_t PeerCandidateCount(void*, void* opaque) {
+  const auto* prepared = static_cast<const Prepared*>(opaque);
+  if (!prepared) return 0;
+  std::size_t count = 0;
+  for (const auto& peer : prepared->peers)
+    count += peer.candidate.modules.size();
+  return count;
+}
+
+/** Borrows one retained module image through the public ABI-v9 descriptor. */
+int PeerCandidateAtImpl(void*, void* opaque, size_t index,
+                        DangPeerCandidateV1* result,
+                        DangPluginErrorV1* error) {
+  if (!result) {
+    SetError(error, "the peer candidate output is missing");
+    return 0;
+  }
+  *result = {};
+  const auto* prepared = static_cast<const Prepared*>(opaque);
+  if (!prepared) {
+    SetError(error, "the prepared Kea transaction is missing");
+    return 0;
+  }
+  for (const auto& peer : prepared->peers) {
+    if (index >= peer.candidate.modules.size()) {
+      index -= peer.candidate.modules.size();
+      continue;
+    }
+    const auto& module = peer.candidate.modules[index];
+    result->group_id = peer.candidate.group_id.c_str();
+    result->participant_id = peer.candidate.participant_id.c_str();
+    result->role = peer.candidate.primary ? DANG_PEER_PRIMARY_V1
+                                          : DANG_PEER_STANDBY_V1;
+    result->confirmed_timeout_seconds = 60;
+    result->module_name = module.module_name.c_str();
+    result->configuration_xml = module.configuration_xml.c_str();
+    result->verification_context_json = peer.verification_context.c_str();
+    return 1;
+  }
+  SetError(error, "the peer candidate index is out of range");
+  return 0;
+}
+
+int PeerCandidateAt(void* context, void* opaque, size_t index,
+                    DangPeerCandidateV1* result,
+                    DangPluginErrorV1* error) noexcept {
+  return Guard("peer candidate", error, [&]() {
+    return PeerCandidateAtImpl(context, opaque, index, result, error);
+  });
+}
+
+/** Verifies authenticated replies against the retained member-specific plan. */
+int VerifyPeerImpl(void*, void* opaque,
+                   const DangPeerVerificationV1* verification,
+                   DangPluginErrorV1* error) {
+  const auto* prepared = static_cast<const Prepared*>(opaque);
+  if (!prepared || !verification || !verification->group_id ||
+      !verification->participant_id ||
+      !verification->verification_context_json ||
+      !verification->running_reply_xml || !verification->operational_reply_xml) {
+    SetError(error, "the Kea peer verification input is incomplete", "/");
+    return 0;
+  }
+  const Prepared::PeerPlan* selected = nullptr;
+  for (const auto& peer : prepared->peers) {
+    if (peer.candidate.group_id != verification->group_id ||
+        peer.candidate.participant_id != verification->participant_id)
+      continue;
+    if (selected) {
+      SetError(error, "the Kea peer verification identity is ambiguous", "/");
+      return 0;
+    }
+    selected = &peer;
+  }
+  if (!selected ||
+      selected->verification_context != verification->verification_context_json) {
+    SetError(error, "the Kea peer verification identity is unknown", "/");
+    return 0;
+  }
+  std::vector<ServerConfiguration> expected;
+  expected.reserve(selected->candidate.modules.size());
+  for (const auto& module : selected->candidate.modules)
+    expected.push_back(module.expected_configuration);
+  std::string reason;
+  if (!VerifyPeerTransactionReplies(
+          expected, selected->candidate.health, verification->running_reply_xml,
+          verification->operational_reply_xml, &reason)) {
+    SetError(error, "Kea peer " + selected->candidate.participant_id +
+                        " verification failed: " + reason,
+             "/");
+    return 0;
+  }
+  return 1;
+}
+
+int VerifyPeer(void* context, void* opaque,
+               const DangPeerVerificationV1* verification,
+               DangPluginErrorV1* error) noexcept {
+  return Guard("peer verification", error, [&]() {
+    return VerifyPeerImpl(context, opaque, verification, error);
+  });
+}
+
+const DangPluginV9 kPlugin{
+    .v8 = {.v7 = {.v6 = {.v5 = {.v4 = {.v3 = {.v2 = {.v1 = {
+                  .abi_version = DANG_PLUGIN_ABI_V9,
                   .plugin_name = "dang-kea",
                   .context = &plugin_context,
                   .yang_source_count = SourceCount,
@@ -949,15 +1094,14 @@ const DangPluginV6 kPlugin{
            .apply_hardware_action = ApplyHardwareAction,
            .rollback_hardware_action = RollbackHardwareAction},
     .get_operational_data_v2 = OperationalV2},
-    .reconcile_applied_configuration = ReconcileAppliedConfiguration};
+    .reconcile_applied_configuration = ReconcileAppliedConfiguration},
+    .resource_domain_count = nullptr,
+    .resource_domain_at = nullptr},
+    .next_notification = NextNotification},
+    .peer_candidate_count = PeerCandidateCount,
+    .peer_candidate_at = PeerCandidateAt,
+    .verify_peer = VerifyPeer};
 
 }  // namespace
 
-extern "C" const DangPluginV6* dang_plugin_init_v6() { return &kPlugin; }
-extern "C" const DangPluginV5* dang_plugin_init_v5() { return &kPlugin.v5; }
-extern "C" const DangPluginV3* dang_plugin_init_v3() {
-  return &kPlugin.v5.v4.v3;
-}
-extern "C" const DangPluginV1* dang_plugin_init_v1() {
-  return &kPlugin.v5.v4.v3.v2.v1;
-}
+extern "C" const DangPluginV9* dang_plugin_init_v9() { return &kPlugin; }

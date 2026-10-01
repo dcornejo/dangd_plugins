@@ -246,12 +246,14 @@ Kea's portable status reply does not contain a synchronization percentage, so
 that detail remains unavailable.
 
 The second is pair-wide management: one logical commit controls both peers.
-That is not operational. Dangd now contains a tested, transport-neutral
+It is not yet reachable from the production commit path. Dangd contains a
+tested, transport-neutral
 [peer transaction coordinator](https://github.com/dcornejo/dang/blob/main/docs/PEER_TRANSACTIONS.md)
 that prepares every peer before mutation, applies standbys before the primary,
 verifies the group, establishes a durable decision boundary, reverses
 pre-decision cancellation, and resumes post-decision confirmation. The Kea
-plugin is not connected to that coordinator. Dangd now also has the private
+plugin exports ABI-v9 plan and verification callbacks for that generic
+contract. Dangd also has the private
 crash-safe journal and distinguishes a definite pre-decision failure from an
 unknown post-replacement outcome. Configured application startup and `SIGHUP`
 reload now load and validate that record, then fail closed with a token-free
@@ -274,16 +276,19 @@ blocks startup; recovery never contradicts durable COMMIT by cancelling. An
 exclusive private sibling lock prevents concurrent daemons from replaying the
 same journal.
 
-This completes the generic transport and recovery mechanics, not Kea pair-wide
-transaction initiation. The stateful participant locks candidate, transfers a
+This completes the generic transport, recovery, and provider-planning pieces,
+not production Kea pair-wide transaction initiation. The stateful participant
+locks candidate, transfers a
 complete configuration with `copy-config`, validates it, starts a persistent
 confirmed commit, retrieves both running configuration and operational state
 for a supplied health callback, confirms or reconnects to cancel, and releases
 candidate and session resources. Live two-peer commit and live rollback tests
-cover that generic adapter. The Kea
-plugin still must translate one authoritative change into each member's
-complete candidate and supply a pair-health callback that proves the expected
-roles, relationship, scopes, synchronization, and peer freshness. A peer with
+cover that generic adapter. The Kea plugin translates a shared hot-standby
+change into complete per-member module images and supplies a strict pair-health
+callback that proves the expected roles, relationship, scopes, and peer
+freshness. All managed families must use one two-member roster. Load-balancing
+and passive-backup deliberately publish no coordinated plan until their
+distinct scope policy is implemented. A peer with
 an uncertain outcome must retain the transaction's pending marker; another
 transaction or a no-op callback must not clear it.
 
@@ -294,9 +299,10 @@ and DHCPv6 image, binds each operational relationship to the configured mode
 and member identities, and requires exact stable states and scopes. An active
 remote must be in touch, uninterrupted, and no older than the caller's limit.
 The helper rejects stale, disconnected, drifted, duplicate, malformed,
-DTD-bearing, and cross-member replies. The remaining work is to construct the
-two members' complete dangd candidates and invoke this helper from the
-production transaction entry point.
+DTD-bearing, and cross-member replies. ABI v9 invokes it with an opaque member
+identity that the plugin validates against the retained prepared plan. The
+remaining work is to invoke the composed plan from the production transaction
+entry point.
 
 A production pair controller must treat the peers as one transaction group:
 
