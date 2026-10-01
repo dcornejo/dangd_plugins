@@ -14,9 +14,10 @@ All notable changes to the external dangd plugin collection are recorded here.
   records fail-closed startup and `SIGHUP` journal inspection and distinguishes
   those tested building blocks from the new confirmation-only mutual-TLS
   recovery adapter and the private, validated participant-to-endpoint and trust
-  mapping. It also identifies the still-missing automatic lifecycle recovery,
-  non-confirmation transaction operations, and Kea pair-health integration,
-  and records the safe behavior on each side of the durable group decision.
+  mapping. Startup and reload now use that mapping to finish a durable COMMIT
+  decision before serving requests. The guide identifies the still-missing
+  non-confirmation transaction operations and Kea pair-health integration, and
+  records the safe behavior on each side of the durable group decision.
 
 - Raised the managed Kea baseline to 3.2.0. Reconciliation now rejects older
   daemon identities, portable tests cover that boundary, Linux validation uses

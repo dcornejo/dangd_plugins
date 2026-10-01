@@ -267,13 +267,19 @@ Startup and reload validate that complete mapping, including safe ownership and
 permissions, before accepting it. Relative credential paths resolve from the
 mapping file.
 
-Those pieces are not automatic recovery: dangd does not yet use the validated
-mapping to reconstruct peer sessions and replay the journal during startup.
-Prepare, candidate transfer, validation, apply, readback/health verification,
-cancellation, and release also still need transport adapters, and the Kea
-pair-health check is not connected. A peer with an uncertain outcome must
-retain the transaction's pending marker; another transaction or a no-op
-callback must not clear it.
+Startup and reload now use the validated mapping to retry only pending
+confirmations, atomically persist each acknowledgement, and remove the journal
+before serving requests. A failed peer leaves the reduced journal in place and
+blocks startup; recovery never contradicts durable COMMIT by cancelling. An
+exclusive private sibling lock prevents concurrent daemons from replaying the
+same journal.
+
+This completes post-decision confirmation recovery, not pair-wide transaction
+initiation. Prepare, candidate transfer, validation, apply,
+readback/health verification, cancellation, and release still need transport
+adapters, and the Kea pair-health check is not connected. A peer with an
+uncertain outcome must retain the transaction's pending marker; another
+transaction or a no-op callback must not clear it.
 
 A production pair controller must treat the peers as one transaction group:
 
