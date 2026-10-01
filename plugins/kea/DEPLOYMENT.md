@@ -246,22 +246,29 @@ Kea's portable status reply does not contain a synchronization percentage, so
 that detail remains unavailable.
 
 The second is pair-wide management: one logical commit controls both peers.
-That is not implemented. It requires authenticated remote control, stable peer
-identity, role-aware ordering, a prepare result from every required peer,
-post-apply pair-health verification, and durable recovery when a reply is lost
-or one peer becomes unreachable. A peer with an uncertain outcome must retain
-the transaction's pending marker; another transaction or a no-op callback must
-not clear it.
+That is not operational. Dangd now contains a tested, transport-neutral
+[peer transaction coordinator](https://github.com/dcornejo/dang/blob/main/docs/PEER_TRANSACTIONS.md)
+that prepares every peer before mutation, applies standbys before the primary,
+verifies the group, establishes a durable decision boundary, reverses
+pre-decision cancellation, and resumes post-decision confirmation. The Kea
+plugin is not connected to that coordinator, and dangd does not yet provide its
+authenticated remote control, stable peer identity, crash-safe journal,
+startup recovery, or pair-health adapter. A peer with an uncertain outcome
+must retain the transaction's pending marker; another transaction or a no-op
+callback must not clear it.
 
-A future pair controller should treat the peers as one transaction group:
+A production pair controller must treat the peers as one transaction group:
 
 1. translate the authoritative candidate into explicit per-peer images;
 2. validate every image without mutation;
-3. record the complete group proposal durably;
-4. apply in a role-aware order that preserves service;
-5. read back every peer and verify HA health before accepting the commit; and
-6. compensate in reverse order, retaining unresolved state if any peer cannot
-   prove restoration.
+3. apply persistent confirmed commits in a role-aware order that preserves
+   service;
+4. read back every peer and verify HA health;
+5. durably record the group COMMIT decision before confirming any member;
+6. before that decision, cancel every attempted apply in reverse order and
+   retain unresolved state if any peer cannot prove restoration; and
+7. after that decision, retry pending confirmations without attempting a
+   contradictory rollback.
 
 The controller must also define whether a degraded pair may accept a commit.
 The safe default is no. Any exception needs an explicit policy, a surfaced

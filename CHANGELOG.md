@@ -9,6 +9,12 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Updated the Kea HA deployment boundary for dangd's transport-neutral peer
+  transaction coordinator. The guide distinguishes the tested core state
+  machine from the still-missing NETCONF transport, durable journal, startup
+  recovery, and Kea pair-health integration, and records the safe behavior on
+  each side of the durable group decision.
+
 - Raised the managed Kea baseline to 3.2.0. Reconciliation now rejects older
   daemon identities, portable tests cover that boundary, Linux validation uses
   ISC's supported `kea-3-2` packages and their required `/var/run/kea` socket
