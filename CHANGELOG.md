@@ -9,6 +9,16 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Synchronized the Kea pair-wide deployment guide with dangd's version-2 peer
+  endpoint identity and generic execution controller. Endpoint mappings now
+  use exact group/participant pairs, and the core can bind one composed group
+  to authenticated participants, cryptographic persistent tokens, retained
+  plugin verifiers, and the crash-safe journal. The guide now identifies the
+  precise remaining production boundaries: authenticated recursion
+  suppression for participant commits, ordering local snapshot durability with
+  the distributed decision, and atomic handling or rejection of multi-group
+  commits.
+
 - Upgraded the Kea provider to the generic ABI-v9 peer transaction contract.
   One authoritative two-member hot-standby change now produces complete,
   member-specific DHCPv4 and DHCPv6 module images and an opaque verifier
@@ -38,7 +48,7 @@ All notable changes to the external dangd plugin collection are recorded here.
   transaction coordinator and private crash-safe journal. The guide
   records fail-closed startup and `SIGHUP` journal inspection and distinguishes
   those tested building blocks from the mutual-TLS recovery adapter and the
-  private, validated participant-to-endpoint and trust
+  private, validated group-and-participant-to-endpoint and trust
   mapping. Startup and reload now use that mapping to finish a durable COMMIT
   decision before serving requests. A reusable authenticated session now
   retains locks and framing across candidate RPCs. The guide now records the

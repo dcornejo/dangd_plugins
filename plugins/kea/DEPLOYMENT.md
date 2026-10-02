@@ -263,11 +263,14 @@ validate, and persistent confirmed-commit capabilities before sending an RPC,
 bounds individual I/O waits and message sizes, correlates every reply, and
 safely serializes persistent commit tokens. It invokes no shell command.
 
-The private, versioned `--peer-recovery` file now maps exact journal identities
-to hosts, ports, client credentials, trust anchors, and per-I/O timeouts.
-Startup and reload validate that complete mapping, including safe ownership and
-permissions, before accepting it. Relative credential paths resolve from the
-mapping file.
+The private `--peer-recovery` version 2 file maps each exact generic
+`(group-id, participant-id)` pair to a host, port, client credentials, trust
+anchor, and per-I/O timeout. Dangd owns the canonical
+`group-id/participant-id` journal identity; participant names may repeat in
+different groups, while duplicate pairs and legacy participant-only version 1
+mappings fail closed. Startup and reload validate the complete mapping,
+including safe ownership and permissions, before accepting it. Relative
+credential paths resolve from the mapping file.
 
 Startup and reload now use the validated mapping to retry only pending
 confirmations, atomically persist each acknowledgement, and remove the journal
@@ -276,8 +279,13 @@ blocks startup; recovery never contradicts durable COMMIT by cancelling. An
 exclusive private sibling lock prevents concurrent daemons from replaying the
 same journal.
 
-This completes the generic transport, recovery, and provider-planning pieces,
-not production Kea pair-wide transaction initiation. The stateful participant
+This completes the generic transport, recovery, provider-planning, and
+single-group execution-materialization pieces, not production Kea pair-wide
+transaction initiation. Dangd's generic controller now resolves every target
+before session construction, creates independent cryptographic persistent
+commit tokens, routes authenticated readback to only the contributing plugin
+verifiers, creates the crash-safe journal, and invokes the coordinator. The
+stateful participant
 locks candidate, transfers a
 complete configuration with `copy-config`, validates it, starts a persistent
 confirmed commit, retrieves both running configuration and operational state
@@ -301,8 +309,11 @@ remote must be in touch, uninterrupted, and no older than the caller's limit.
 The helper rejects stale, disconnected, drifted, duplicate, malformed,
 DTD-bearing, and cross-member replies. ABI v9 invokes it with an opaque member
 identity that the plugin validates against the retained prepared plan. The
-remaining work is to invoke the composed plan from the production transaction
-entry point.
+remaining work is to connect that generic controller to a safe production
+transaction lifecycle. Participant commits must not recursively initiate
+another peer plan, local snapshot durability must be ordered with the
+distributed decision, and a commit affecting several peer groups must use one
+atomic journal or fail closed rather than commit groups sequentially.
 
 A production pair controller must treat the peers as one transaction group:
 

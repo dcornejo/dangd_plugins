@@ -405,7 +405,13 @@ and have an age at or below the configured limit. Duplicate relationships,
 partial or malformed values, stale identity, wrong scopes, drifted running
 configuration, an altered opaque identity, DTDs, and oversized replies all fail
 closed. Dangd still must connect its generic composed plan to the production
-NETCONF commit path before pair-wide atomicity can be advertised.
+NETCONF commit path before pair-wide atomicity can be advertised. The generic
+core controller now binds one composed group to exact version-2 endpoint
+mappings, authenticated TLS participants, cryptographic persistent tokens,
+these plugin verifiers, and the crash-safe journal. The remaining boundary is
+the commit lifecycle: controller-issued participant commits must suppress
+recursive planning, datastore durability must be ordered with the distributed
+decision, and multi-group commits must be journaled atomically or rejected.
 
 The plugin deliberately exposes one ABI-v4 hardware action for the entire Kea
 transaction. This preserves atomic compensation across Kea's own
