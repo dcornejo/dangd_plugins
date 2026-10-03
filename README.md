@@ -43,6 +43,8 @@ APIs over invoking command-line tools. If no suitable interface exists, the
 exception must be documented and use fixed validated argv without a shell,
 with explicit failure and rollback tests. This includes investigating netlink
 on both Linux and FreeBSD before adding command-driven route or interface code.
+The live inventory and ordered removal work are maintained in
+[`COMMAND_EXECUTION_AUDIT.md`](COMMAND_EXECUTION_AUDIT.md).
 
 ## Build and test
 

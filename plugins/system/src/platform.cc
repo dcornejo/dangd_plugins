@@ -10,6 +10,12 @@
 
 #include "plugins/system/src/platform.h"
 
+#include <libxml/parser.h>
+#include <libxml/tree.h>
+#include <sys/stat.h>
+#include <sys/utsname.h>
+#include <unistd.h>
+
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -17,12 +23,6 @@
 #include <fstream>
 #include <iomanip>
 #include <sstream>
-
-#include <libxml/parser.h>
-#include <libxml/tree.h>
-#include <sys/stat.h>
-#include <sys/utsname.h>
-#include <unistd.h>
 
 namespace dang::system {
 namespace {
@@ -40,11 +40,16 @@ std::filesystem::path Below(const std::filesystem::path& root,
 std::string EscapeXml(std::string_view value) {
   std::string result;
   for (const char byte : value) {
-    if (byte == '&') result += "&amp;";
-    else if (byte == '<') result += "&lt;";
-    else if (byte == '>') result += "&gt;";
-    else if (byte == '\"') result += "&quot;";
-    else result += byte;
+    if (byte == '&')
+      result += "&amp;";
+    else if (byte == '<')
+      result += "&lt;";
+    else if (byte == '>')
+      result += "&gt;";
+    else if (byte == '\"')
+      result += "&quot;";
+    else
+      result += byte;
   }
   return result;
 }
@@ -120,7 +125,8 @@ bool Snapshot(const std::filesystem::path& path, FileSnapshot* snapshot,
   if (std::filesystem::is_symlink(path, filesystem_error)) {
     snapshot->existed = true;
     snapshot->symbolic_link = true;
-    snapshot->link_target = std::filesystem::read_symlink(path, filesystem_error);
+    snapshot->link_target =
+        std::filesystem::read_symlink(path, filesystem_error);
     if (!filesystem_error) return true;
     *error = "cannot inspect symbolic link " + path.string();
     return false;
@@ -156,8 +162,8 @@ bool WriteAtomic(const std::filesystem::path& path, std::string_view contents,
   std::filesystem::rename(temporary, path, filesystem_error);
   if (filesystem_error) {
     std::filesystem::remove(temporary);
-    *error = "cannot replace " + path.string() + ": " +
-             filesystem_error.message();
+    *error =
+        "cannot replace " + path.string() + ": " + filesystem_error.message();
     return false;
   }
   return true;
@@ -175,7 +181,8 @@ bool Restore(const FileSnapshot& snapshot, std::string* error) {
              filesystem_error.message();
     return false;
   }
-  if (snapshot.existed) return WriteAtomic(snapshot.path, snapshot.contents, error);
+  if (snapshot.existed)
+    return WriteAtomic(snapshot.path, snapshot.contents, error);
   std::error_code filesystem_error;
   std::filesystem::remove(snapshot.path, filesystem_error);
   if (filesystem_error) {
@@ -218,9 +225,9 @@ bool PreparePlatform(const Config& before, const Config& proposed,
 bool ValidatePlatform(const PreparedPlatform& prepared, std::string* error,
                       std::string* path) {
   if (prepared.proposed.timezone_name) {
-    const auto timezone = Below(prepared.root,
-        std::filesystem::path("/usr/share/zoneinfo") /
-        *prepared.proposed.timezone_name);
+    const auto timezone =
+        Below(prepared.root, std::filesystem::path("/usr/share/zoneinfo") /
+                                 *prepared.proposed.timezone_name);
     if (!std::filesystem::is_regular_file(timezone)) {
       *error = "timezone is not present in the host TZ database";
       *path = "/ietf-system:system/clock/timezone-name";
@@ -237,14 +244,16 @@ bool ValidatePlatform(const PreparedPlatform& prepared, std::string* error,
   if (RealRoot(prepared) &&
       (prepared.before.dns_present || prepared.proposed.dns_present) &&
       std::filesystem::is_symlink("/etc/resolv.conf")) {
-    *error = "refusing to replace a resolver-manager symbolic link; native "
-             "systemd-resolved/resolvconf integration is required";
+    *error =
+        "refusing to replace a resolver-manager symbolic link; native "
+        "systemd-resolved/resolvconf integration is required";
     *path = "/ietf-system:system/dns-resolver";
     return false;
   }
   if (prepared.before.hostname && !prepared.proposed.hostname) {
-    *error = "removing hostname is not supported because the native default "
-             "hostname is platform policy";
+    *error =
+        "removing hostname is not supported because the native default "
+        "hostname is platform policy";
     *path = "/ietf-system:system/hostname";
     return false;
   }
@@ -252,8 +261,9 @@ bool ValidatePlatform(const PreparedPlatform& prepared, std::string* error,
        prepared.before.timezone_offset_minutes) &&
       !prepared.proposed.timezone_name &&
       !prepared.proposed.timezone_offset_minutes) {
-    *error = "removing timezone configuration is not supported because the "
-             "native default timezone is platform policy";
+    *error =
+        "removing timezone configuration is not supported because the "
+        "native default timezone is platform policy";
     *path = "/ietf-system:system/clock";
     return false;
   }
@@ -276,11 +286,10 @@ bool ApplyPlatform(PreparedPlatform* prepared, std::string* error,
     return false;
   }
   if (prepared->proposed.hostname &&
-      !WriteAtomic(Below(prepared->root,
-                         prepared->layout.hostname_configuration),
-                   PersistentHostname(prepared->layout,
-                                      *prepared->proposed.hostname),
-                   error)) {
+      !WriteAtomic(
+          Below(prepared->root, prepared->layout.hostname_configuration),
+          PersistentHostname(prepared->layout, *prepared->proposed.hostname),
+          error)) {
     *path = "/ietf-system:system/hostname";
     (void)RollbackPlatform(prepared, error, path);
     return false;
@@ -289,13 +298,14 @@ bool ApplyPlatform(PreparedPlatform* prepared, std::string* error,
       prepared->proposed.timezone_offset_minutes) {
     std::string timezone;
     if (prepared->proposed.timezone_name) {
-      std::ifstream input(Below(prepared->root,
-          std::filesystem::path("/usr/share/zoneinfo") /
-          *prepared->proposed.timezone_name), std::ios::binary);
+      std::ifstream input(
+          Below(prepared->root, std::filesystem::path("/usr/share/zoneinfo") /
+                                    *prepared->proposed.timezone_name),
+          std::ios::binary);
       timezone.assign(std::istreambuf_iterator<char>(input), {});
     } else {
-      timezone = FixedOffsetTimezone(
-          *prepared->proposed.timezone_offset_minutes);
+      timezone =
+          FixedOffsetTimezone(*prepared->proposed.timezone_offset_minutes);
     }
     if (timezone.empty() ||
         !WriteAtomic(Below(prepared->root, "/etc/localtime"), timezone,
@@ -337,8 +347,8 @@ bool ApplyPlatform(PreparedPlatform* prepared, std::string* error,
 bool RollbackPlatform(PreparedPlatform* prepared, std::string* error,
                       std::string* path) {
   bool okay = true;
-  for (auto snapshot = prepared->files.rbegin(); snapshot != prepared->files.rend();
-       ++snapshot) {
+  for (auto snapshot = prepared->files.rbegin();
+       snapshot != prepared->files.rend(); ++snapshot) {
     std::string restore_error;
     if (!Restore(*snapshot, &restore_error)) {
       okay = false;
@@ -386,16 +396,16 @@ std::string OperationalStateXml() {
          << "</os-name><os-release>" << EscapeXml(identity.release)
          << "</os-release><os-version>" << EscapeXml(identity.version)
          << "</os-version><machine>" << EscapeXml(identity.machine)
-         << "</machine></platform><clock><current-datetime>"
-         << FormatTime(now) << "</current-datetime><boot-datetime>"
-         << FormatTime(boot) << "</boot-datetime></clock></system-state>";
+         << "</machine></platform><clock><current-datetime>" << FormatTime(now)
+         << "</current-datetime><boot-datetime>" << FormatTime(boot)
+         << "</boot-datetime></clock></system-state>";
   return output.str();
 }
 
 bool SetCurrentDatetime(std::string_view xml, std::string* error) {
-  xmlDocPtr document = xmlReadMemory(xml.data(), static_cast<int>(xml.size()),
-                                     "rpc.xml", nullptr,
-                                     XML_PARSE_NONET | XML_PARSE_NOBLANKS);
+  xmlDocPtr document =
+      xmlReadMemory(xml.data(), static_cast<int>(xml.size()), "rpc.xml",
+                    nullptr, XML_PARSE_NONET | XML_PARSE_NOBLANKS);
   if (!document) {
     *error = "invalid set-current-datetime input";
     return false;
@@ -435,21 +445,20 @@ bool SetCurrentDatetime(std::string_view xml, std::string* error) {
   return true;
 }
 
-bool RequestPowerOperation(bool restart, std::string* error) {
+bool RequestPowerOperation(bool restart, std::string* error,
+                           const PowerOperator& power_operator) {
   const char* allowed = std::getenv("DANG_SYSTEM_ALLOW_POWER");
   if (!allowed || std::string_view(allowed) != "1") {
-    *error = "power operations are disabled; set DANG_SYSTEM_ALLOW_POWER=1 "
-             "for a deliberately privileged deployment";
+    *error =
+        "power operations are disabled; set DANG_SYSTEM_ALLOW_POWER=1 "
+        "for a deliberately privileged deployment";
     return false;
   }
-  const PlatformLayout layout = NativePlatformLayout();
-  const int status = std::system(
-      (restart ? layout.restart_command : layout.shutdown_command).c_str());
-  if (status != 0) {
-    *error = restart ? "restart command failed" : "shutdown command failed";
+  if (!power_operator) {
+    *error = "native power operation is unavailable";
     return false;
   }
-  return true;
+  return power_operator(restart, error);
 }
 
 }  // namespace dang::system

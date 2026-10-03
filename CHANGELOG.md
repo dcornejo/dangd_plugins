@@ -9,6 +9,17 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Started the production command-execution audit with a provider-by-provider
+  inventory and ordered Linux/FreeBSD remediation plan. RFC 7317 restart and
+  shutdown now use the documented native PID 1 signal interfaces on Linux and
+  FreeBSD behind the existing deployment guard instead of passing
+  service-manager commands through a shell. This preserves orderly service and
+  filesystem shutdown rather than invoking an immediate kernel reboot.
+  Injectable policy tests cover guard enforcement, restart/power-off selection,
+  and native error propagation. The remaining NTP service commands and RFC
+  8431 route utility executor are explicitly tracked rather than treated as
+  acceptable final implementations.
+
 - Added a separately packaged RFC 9249 NTP provider to the roadmap. The plan
   pins `ietf-ntp@2022-07-05`, requires Linux and FreeBSD validation, prefers
   native programmatic daemon APIs, and requires explicit exclusive ownership

@@ -643,6 +643,20 @@ if(BUILD_TESTING)
     target_compile_options(system_config_test PRIVATE
       -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
     add_test(NAME system_configuration_translation COMMAND system_config_test)
+    add_executable(system_platform_policy_test
+      tests/system_platform_policy_test.cc
+      plugins/system/src/platform.cc
+      plugins/system/src/system_config.cc
+      ${DANG_SYSTEM_PLATFORM_SOURCE})
+    target_compile_features(system_platform_policy_test PRIVATE cxx_std_20)
+    target_include_directories(system_platform_policy_test PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(system_platform_policy_test PRIVATE
+      GTest::gtest_main LibXml2::LibXml2 ${DANG_CRYPT_LIBRARY})
+    target_compile_options(system_platform_policy_test PRIVATE
+      -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    add_test(NAME system_platform_power_policy
+      COMMAND system_platform_policy_test)
     add_executable(system_plugin_integration_test
       tests/system_plugin_integration_test.cc)
     target_compile_features(system_plugin_integration_test PRIVATE cxx_std_20)

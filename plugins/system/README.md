@@ -71,8 +71,9 @@ restarting the service.
 - platform identity, current time, and estimated boot time are published as
   `system-state` operational data.
 - `set-current-datetime`, `system-restart`, and `system-shutdown` are owned by
-  the plugin. Power operations require the explicit
-  `DANG_SYSTEM_ALLOW_POWER=1` deployment guard.
+  the plugin. Power operations signal the native PID 1 service manager for an
+  orderly shutdown rather than invoking a command, and require the explicit
+  `DANG_SYSTEM_ALLOW_POWER=1` deployment guard plus appropriate host privilege.
 - every file modified during a configuration transaction is snapshotted and
   restored on failure or dangd rollback. Symbolic links are restored as links.
 
@@ -132,9 +133,10 @@ not a PAM operation and remains separate.
    `yang:date-and-time` are not translated. The plugin ABI cannot return RFC
    7317's exact `ntp-active` NETCONF error-app-tag, so it includes that token in
    the attributed error message.
-7. Restart and shutdown use guarded native service commands. dangd currently
-   invokes plugin RPCs synchronously, so it cannot guarantee the RFC's
-   recommended reply-before-power-transition sequencing.
+7. Restart and shutdown use guarded native PID 1 signals: systemd's documented
+   real-time signals on Linux and init's documented signals on FreeBSD. dangd
+   currently invokes plugin RPCs synchronously, so it cannot guarantee the
+   RFC's recommended reply-before-power-transition sequencing.
 8. Operational data is published through ABI v3. Its contents are complete,
    but ABI v5 completeness cannot be selected without also implementing the
    complete ABI v4 fine-grained hardware action contract.
@@ -179,6 +181,12 @@ advertised `system-state`. Apply hostname, DNS, timezone, and NTP one category
 at a time with local console recovery available. Leave
 `DANG_SYSTEM_ALLOW_POWER` unset unless remote power RPCs are explicitly needed
 and restricted by NACM.
+
+NTP reload and stop currently remain fixed host-owned service commands and are
+the system plugin's only production shell boundary. They do not include model
+data, but they are tracked for replacement with the Linux systemd D-Bus API and
+the safest supported FreeBSD service interface in the collection-wide
+[`COMMAND_EXECUTION_AUDIT.md`](../../COMMAND_EXECUTION_AUDIT.md).
 
 Before uninstalling, remove the plugin option and migrate or delete all
 `ietf-system` datastore nodes. Remove `dangd-pam` and its PAM policy first.

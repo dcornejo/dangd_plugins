@@ -4,23 +4,22 @@
 #ifndef DANG_PLUGINS_SYSTEM_PLATFORM_H_
 #define DANG_PLUGINS_SYSTEM_PLATFORM_H_
 
-#include "plugins/system/src/system_config.h"
-
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "plugins/system/src/system_config.h"
+
 namespace dang::system {
 
-/** OS-specific files and service-control commands used by the portable layer. */
+/** OS-specific files and NTP service commands used by the portable layer. */
 struct PlatformLayout {
   std::filesystem::path ntp_configuration;
   std::filesystem::path hostname_configuration;
   std::string ntp_reload_command;
   std::string ntp_stop_command;
-  std::string restart_command;
-  std::string shutdown_command;
 };
 
 /** Native layout selected by the Linux or FreeBSD translation unit. */
@@ -62,10 +61,17 @@ struct PreparedPlatform {
 [[nodiscard]] std::string OperationalStateXml();
 
 /** Implements set-current-datetime after parsing its RFC 3339 input leaf. */
-[[nodiscard]] bool SetCurrentDatetime(std::string_view xml,
-                                      std::string* error);
-/** Requests restart or shutdown through the platform-specific service command. */
-[[nodiscard]] bool RequestPowerOperation(bool restart, std::string* error);
+[[nodiscard]] bool SetCurrentDatetime(std::string_view xml, std::string* error);
+/** Injectable native power boundary used to test policy without rebooting. */
+using PowerOperator = std::function<bool(bool restart, std::string* error)>;
+
+/** Requests orderly restart or power-off through the native service manager. */
+[[nodiscard]] bool NativePowerOperation(bool restart, std::string* error);
+
+/** Enforces the deployment guard before invoking a native power operation. */
+[[nodiscard]] bool RequestPowerOperation(
+    bool restart, std::string* error,
+    const PowerOperator& power_operator = NativePowerOperation);
 
 }  // namespace dang::system
 
