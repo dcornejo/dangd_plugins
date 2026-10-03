@@ -9,6 +9,17 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Replaced Linux RFC 7317 NTP service commands with the systemd manager's
+  native sd-bus API. The provider subscribes before enqueueing a chrony job,
+  correlates the returned object path with `JobRemoved`, accepts only `done`,
+  and bounds the wait to 30 seconds. Enabled state now uses
+  `ReloadOrRestartUnit`, which also corrects rollback after a prior stop;
+  disabled state uses `StopUnit`. Injectable policy tests cover dispatch and
+  error fidelity, while an opt-in live test enables, disables, verifies, and
+  restores chrony's initial state. The source and package metadata now require
+  libsystemd on Linux, and the obsolete RIB `iproute2` package dependency was
+  removed after both RIB backends moved to route netlink.
+
 - Replaced the RFC 8431 FreeBSD production `route(8)` executor with bounded
   route-netlink mutation. IPv4 and IPv6 installs and deletions now carry an
   explicit FIB attribute and require the correlated kernel acknowledgement;
@@ -37,9 +48,9 @@ All notable changes to the external dangd plugin collection are recorded here.
   service-manager commands through a shell. This preserves orderly service and
   filesystem shutdown rather than invoking an immediate kernel reboot.
   Injectable policy tests cover guard enforcement, restart/power-off selection,
-  and native error propagation. The remaining NTP service commands and RFC
-  8431 route utility executor are explicitly tracked rather than treated as
-  acceptable final implementations.
+  and native error propagation. The remaining FreeBSD NTP service boundary is
+  explicitly tracked; the Linux NTP and both RFC 8431 route utility executors
+  have since been removed.
 
 - Added a separately packaged RFC 9249 NTP provider to the roadmap. The plan
   pins `ietf-ntp@2022-07-05`, requires Linux and FreeBSD validation, prefers

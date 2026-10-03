@@ -58,7 +58,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(CPACK_DEBIAN_PAM_PACKAGE_NAME "dangd-pam")
   set(CPACK_DEBIAN_RIB_PACKAGE_NAME "dangd-plugin-rib")
   set(CPACK_DEBIAN_RIB_PACKAGE_DEPENDS
-    "dangd (>= ${PROJECT_VERSION}), iproute2")
+    "dangd (>= ${PROJECT_VERSION})")
   set(CPACK_DEBIAN_RIB_PACKAGE_CONFLICTS "dangd-plugin-frr")
   set(CPACK_DEBIAN_FRR_PACKAGE_CONFLICTS "dangd-plugin-rib")
   set(CPACK_DEBIAN_FRR_PACKAGE_NAME "dangd-plugin-frr")

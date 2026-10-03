@@ -8,6 +8,8 @@ option(DANG_RIB_NATIVE_TESTS
   "Run privileged RFC 8431 tests in disposable network isolation" OFF)
 option(DANG_FRR_NATIVE_TESTS
   "Run privileged FRR tests against a disposable mgmtd pathspace" OFF)
+option(DANG_SYSTEM_NATIVE_TESTS
+  "Run privileged RFC 7317 service-manager tests against chrony" OFF)
 
 include(CTest)
 find_package(LibXml2 REQUIRED)
@@ -238,10 +240,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(DANG_SYSTEM_PLATFORM_SOURCE
       plugins/system/src/linux/platform_linux.cc)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(DANG_SYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
+    set(DANG_SYSTEM_PLATFORM_LIBRARIES PkgConfig::DANG_SYSTEMD)
     find_library(DANG_CRYPT_LIBRARY crypt REQUIRED)
   else()
     set(DANG_SYSTEM_PLATFORM_SOURCE
       plugins/system/src/freebsd/platform_freebsd.cc)
+    set(DANG_SYSTEM_PLATFORM_LIBRARIES "")
     find_library(DANG_CRYPT_LIBRARY crypt REQUIRED)
   endif()
   add_library(dangd_system_plugin MODULE
@@ -255,7 +261,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
     "${DANGD_INCLUDE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/generated"
     "${CMAKE_CURRENT_SOURCE_DIR}")
   target_link_libraries(dangd_system_plugin PRIVATE
-    LibXml2::LibXml2 ${DANG_CRYPT_LIBRARY})
+    LibXml2::LibXml2 ${DANG_CRYPT_LIBRARY}
+    ${DANG_SYSTEM_PLATFORM_LIBRARIES})
   target_compile_options(dangd_system_plugin PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   set_target_properties(dangd_system_plugin PROPERTIES PREFIX "")
@@ -655,11 +662,29 @@ if(BUILD_TESTING)
     target_include_directories(system_platform_policy_test PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}")
     target_link_libraries(system_platform_policy_test PRIVATE
-      GTest::gtest_main LibXml2::LibXml2 ${DANG_CRYPT_LIBRARY})
+      GTest::gtest_main LibXml2::LibXml2 ${DANG_CRYPT_LIBRARY}
+      ${DANG_SYSTEM_PLATFORM_LIBRARIES})
     target_compile_options(system_platform_policy_test PRIVATE
       -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
     add_test(NAME system_platform_power_policy
       COMMAND system_platform_policy_test)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+      add_executable(system_ntp_native_test
+        tests/system_ntp_native_test.cc
+        plugins/system/src/linux/platform_linux.cc)
+      target_compile_features(system_ntp_native_test PRIVATE cxx_std_20)
+      target_include_directories(system_ntp_native_test PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}")
+      target_link_libraries(system_ntp_native_test PRIVATE
+        ${DANG_SYSTEM_PLATFORM_LIBRARIES})
+      target_compile_options(system_ntp_native_test PRIVATE
+        -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+      if(DANG_SYSTEM_NATIVE_TESTS)
+        add_test(NAME systemd_ntp_service_lifecycle
+          COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_systemd_ntp_native.sh"
+            $<TARGET_FILE:system_ntp_native_test>)
+      endif()
+    endif()
     add_executable(system_plugin_integration_test
       tests/system_plugin_integration_test.cc)
     target_compile_features(system_plugin_integration_test PRIVATE cxx_std_20)

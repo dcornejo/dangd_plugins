@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
 
 #include "plugins/system/src/platform.h"
@@ -15,9 +16,20 @@ namespace dang::system {
 
 PlatformLayout NativePlatformLayout() {
   return {.ntp_configuration = "/etc/ntp.conf",
-          .hostname_configuration = "/etc/rc.conf.d/dangd-hostname",
-          .ntp_reload_command = "service ntpd onerestart",
-          .ntp_stop_command = "service ntpd onestop"};
+          .hostname_configuration = "/etc/rc.conf.d/dangd-hostname"};
+}
+
+bool NativeNtpServiceOperation(bool enabled, std::string* error) {
+  // FreeBSD's supported ntpd lifecycle remains the audited rc.d boundary.
+  // The command is fixed host policy and contains no modeled input. A later
+  // audit increment will replace the shell or document the narrow argv-only
+  // exception after checking the service-management interfaces available in
+  // supported FreeBSD releases.
+  const char* command = enabled ? "service ntpd onerestart"
+                                : "service ntpd onestop";
+  if (std::system(command) == 0) return true;
+  if (error) *error = "FreeBSD ntpd service command failed";
+  return false;
 }
 
 bool NativePowerOperation(bool restart, std::string* error) {

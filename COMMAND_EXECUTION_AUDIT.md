@@ -22,13 +22,14 @@ failure and rollback tests.
   interface ioctls and route netlink.
 - `vpp`: no process creation. Inventory uses system interfaces and mutations
   use VPP's generated VAPI client.
-- `system`: restart and shutdown now request an orderly transition through the
+- `system`: restart and shutdown request an orderly transition through the
   documented PID 1 signal interface on each platform: systemd real-time
   signals on Linux and init signals on FreeBSD. The existing explicit
-  deployment guard remains. Two `std::system()` sites remain for NTP
-  reload/stop during apply and rollback. The command text is host-owned and
-  fixed rather than derived from modeled input, but it still invokes a shell
-  and must be removed.
+  deployment guard remains. Linux NTP service control now calls the systemd
+  manager over sd-bus, subscribes before enqueueing the unit job, correlates
+  its object path with `JobRemoved`, and accepts only the `done` result under a
+  bounded timeout. FreeBSD NTP service control retains one fixed,
+  host-controlled `std::system()` boundary pending the next audit item.
 - `rib`: no process creation. Linux and FreeBSD production mutation construct
   bounded route-netlink requests, resolve interfaces to native indexes, and
   wait for the matching kernel acknowledgement under a receive timeout.
@@ -49,17 +50,21 @@ failure and rollback tests.
    slice, so no routing-socket fallback is required. Native VNET tests cover
    IPv4, IPv6, interface-only mutation on an unnumbered interface, plugin
    integration, deletion, and attributed preflight rejection.
-3. [ ] Replace Linux NTP service control with the systemd D-Bus manager API. This
-   must not make the RFC 7317 provider silently claim ownership when the future
-   RFC 9249 plugin owns the same service.
+3. [x] Replace Linux NTP service control with the systemd D-Bus manager API.
+   The provider uses `ReloadOrRestartUnit` when enabled and `StopUnit` when
+   disabled, waits for the correlated completion signal, and propagates both
+   method and job-result failures. The lifecycle test restores chrony's exact
+   initial active state. This does not change the documented requirement for
+   exclusive ownership and migration when the future RFC 9249 plugin arrives.
 4. [ ] Determine whether FreeBSD exposes a stable service-management interface for
    ntpd. If rc scripts remain the only supported boundary, replace
    `std::system()` with an absolute, fixed argv execution helper and document
    that narrow exception, its exit/signal behavior, and rollback coverage.
 5. [ ] Re-run the source scan and native Linux/FreeBSD suites after each removal.
-   The current scan finds only the two recorded RFC 7317 NTP `std::system()`
-   calls. The audit is complete only when every remaining process boundary is
-   listed here with evidence that no suitable programmatic interface exists.
+   The current scan finds only the one recorded FreeBSD RFC 7317 NTP
+   `std::system()` call. The audit is complete only when every remaining
+   process boundary is listed here with evidence that no suitable programmatic
+   interface exists.
 
 Core dangd worker supervision is outside this plugin audit: it intentionally
 uses `posix_spawn(3)` as the programmatic process API for privilege and crash

@@ -270,8 +270,20 @@ bool ValidatePlatform(const PreparedPlatform& prepared, std::string* error,
   return true;
 }
 
+bool RequestNtpServiceOperation(
+    bool enabled, std::string* error,
+    const NtpServiceOperator& service_operator) {
+  if (!error) return false;
+  if (!service_operator) {
+    *error = "native NTP service operator is unavailable";
+    return false;
+  }
+  return service_operator(enabled, error);
+}
+
 bool ApplyPlatform(PreparedPlatform* prepared, std::string* error,
-                   std::string* path) {
+                   std::string* path,
+                   const NtpServiceOperator& service_operator) {
   if ((prepared->before.dns_present || prepared->proposed.dns_present) &&
       !WriteAtomic(Below(prepared->root, "/etc/resolv.conf"),
                    Resolver(prepared->proposed), error)) {
@@ -291,7 +303,7 @@ bool ApplyPlatform(PreparedPlatform* prepared, std::string* error,
           PersistentHostname(prepared->layout, *prepared->proposed.hostname),
           error)) {
     *path = "/ietf-system:system/hostname";
-    (void)RollbackPlatform(prepared, error, path);
+    (void)RollbackPlatform(prepared, error, path, service_operator);
     return false;
   }
   if (prepared->proposed.timezone_name ||
@@ -311,7 +323,7 @@ bool ApplyPlatform(PreparedPlatform* prepared, std::string* error,
         !WriteAtomic(Below(prepared->root, "/etc/localtime"), timezone,
                      error)) {
       *path = "/ietf-system:system/clock";
-      (void)RollbackPlatform(prepared, error, path);
+      (void)RollbackPlatform(prepared, error, path, service_operator);
       return false;
     }
   }
@@ -324,20 +336,24 @@ bool ApplyPlatform(PreparedPlatform* prepared, std::string* error,
 #endif
     *error = "sethostname failed";
     *path = "/ietf-system:system/hostname";
-    (void)RollbackPlatform(prepared, error, path);
+    (void)RollbackPlatform(prepared, error, path, service_operator);
     return false;
   }
   prepared->applied = true;
   if (RealRoot(*prepared) &&
       (prepared->before.ntp_present || prepared->proposed.ntp_present)) {
-    const std::string& command =
-        prepared->proposed.ntp_present && prepared->proposed.ntp_enabled
-            ? prepared->layout.ntp_reload_command
-            : prepared->layout.ntp_stop_command;
-    if (std::system(command.c_str()) != 0) {
-      *error = "cannot apply native NTP service state";
+    const bool enabled = prepared->proposed.ntp_present &&
+                         prepared->proposed.ntp_enabled;
+    std::string service_error;
+    if (!RequestNtpServiceOperation(enabled, &service_error,
+                                    service_operator)) {
+      *error = "cannot apply native NTP service state: " + service_error;
       *path = "/ietf-system:system/ntp";
-      (void)RollbackPlatform(prepared, error, path);
+      std::string rollback_error;
+      std::string rollback_path;
+      if (!RollbackPlatform(prepared, &rollback_error, &rollback_path,
+                            service_operator))
+        *error += "; rollback failed: " + rollback_error;
       return false;
     }
   }
@@ -345,7 +361,8 @@ bool ApplyPlatform(PreparedPlatform* prepared, std::string* error,
 }
 
 bool RollbackPlatform(PreparedPlatform* prepared, std::string* error,
-                      std::string* path) {
+                      std::string* path,
+                      const NtpServiceOperator& service_operator) {
   bool okay = true;
   for (auto snapshot = prepared->files.rbegin();
        snapshot != prepared->files.rend(); ++snapshot) {
@@ -370,13 +387,13 @@ bool RollbackPlatform(PreparedPlatform* prepared, std::string* error,
   prepared->applied = false;
   if (RealRoot(*prepared) &&
       (prepared->before.ntp_present || prepared->proposed.ntp_present)) {
-    const std::string& command =
-        prepared->before.ntp_present && prepared->before.ntp_enabled
-            ? prepared->layout.ntp_reload_command
-            : prepared->layout.ntp_stop_command;
-    if (std::system(command.c_str()) != 0) {
+    const bool enabled =
+        prepared->before.ntp_present && prepared->before.ntp_enabled;
+    std::string service_error;
+    if (!RequestNtpServiceOperation(enabled, &service_error,
+                                    service_operator)) {
       okay = false;
-      *error = "cannot restore native NTP service state";
+      *error = "cannot restore native NTP service state: " + service_error;
       *path = "/ietf-system:system/ntp";
     }
   }

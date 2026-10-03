@@ -14,12 +14,10 @@
 
 namespace dang::system {
 
-/** OS-specific files and NTP service commands used by the portable layer. */
+/** OS-specific files used by the portable layer. */
 struct PlatformLayout {
   std::filesystem::path ntp_configuration;
   std::filesystem::path hostname_configuration;
-  std::string ntp_reload_command;
-  std::string ntp_stop_command;
 };
 
 /** Native layout selected by the Linux or FreeBSD translation unit. */
@@ -48,14 +46,33 @@ struct PreparedPlatform {
 [[nodiscard]] bool PreparePlatform(const Config& before, const Config& proposed,
                                    PreparedPlatform* prepared,
                                    std::string* error, std::string* path);
-/** Checks paths, values, and command availability without changing the host. */
+/** Checks paths and modeled values without changing the host. */
 [[nodiscard]] bool ValidatePlatform(const PreparedPlatform& prepared,
                                     std::string* error, std::string* path);
+
+/** Injectable native NTP service boundary used by transaction tests. */
+using NtpServiceOperator =
+    std::function<bool(bool enabled, std::string* error)>;
+
+/** Starts/reloads or stops the platform NTP service without modeled input. */
+[[nodiscard]] bool NativeNtpServiceOperation(bool enabled,
+                                             std::string* error);
+
+/** Validates and dispatches one NTP service-state request. */
+[[nodiscard]] bool RequestNtpServiceOperation(
+    bool enabled, std::string* error,
+    const NtpServiceOperator& service_operator = NativeNtpServiceOperation);
+
+/** Applies snapshotted files and native runtime state as one transaction. */
 [[nodiscard]] bool ApplyPlatform(PreparedPlatform* prepared, std::string* error,
-                                 std::string* path);
+                                 std::string* path,
+                                 const NtpServiceOperator& service_operator =
+                                     NativeNtpServiceOperation);
 /** Restores all captured files and runtime values after a completed apply. */
 [[nodiscard]] bool RollbackPlatform(PreparedPlatform* prepared,
-                                    std::string* error, std::string* path);
+                                    std::string* error, std::string* path,
+                                    const NtpServiceOperator& service_operator =
+                                        NativeNtpServiceOperation);
 
 /** RFC 7317 system-state XML populated from uname(2), clock_gettime(2). */
 [[nodiscard]] std::string OperationalStateXml();

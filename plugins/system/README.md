@@ -16,7 +16,7 @@ tests.
 ## Dependencies, privileges, and installation
 
 The runtime requires dangd 0.1.0 or newer, libxml2, the platform `crypt(3)`
-library, and either chrony on Linux or base ntpd on FreeBSD. Production changes
+library, and either chrony plus libsystemd on Linux or base ntpd on FreeBSD. Production changes
 to hostname, clock, resolver, accounts, and services require the privileged
 dangd deployment identity. Protect NETCONF with authenticated transport and
 NACM; do not reuse this identity for ordinary shell or application access.
@@ -38,8 +38,9 @@ pkg info -l dangd-plugin-system
 ```
 
 Source builds also need CMake 3.24+, a C++20 compiler, PAM/crypt/libxml2
-development headers, nlohmann-json 3.11+, and GoogleTest. Install only this
-component with:
+development headers, nlohmann-json 3.11+, and GoogleTest. Linux builds also
+need `pkg-config` and the `libsystemd-dev` package. Install only this component
+with:
 
 ```sh
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -61,8 +62,10 @@ restarting the service.
   FreeBSD).
 - named timezones copy a validated TZ database file to `/etc/localtime`;
   UTC offsets generate a fixed-offset TZif file, including minute offsets.
-- NTP configuration is rendered for chrony on Linux and ntpd on FreeBSD. The
-  native service is restarted when enabled and stopped when disabled.
+- NTP configuration is rendered for chrony on Linux and ntpd on FreeBSD. Linux
+  asks systemd to reload or restart chrony over D-Bus when enabled and to stop
+  it when disabled, then waits for the correlated job completion. FreeBSD
+  currently performs the equivalent base-ntpd lifecycle through rc.d.
 - DNS search domains, servers, timeout, and attempts are rendered to a static
   `/etc/resolv.conf`. Non-default DNS ports are not advertised.
 - local users, SHA-256/SHA-512 crypt password hashes, and authorized SSH key
@@ -126,8 +129,10 @@ not a PAM operation and remains separate.
    tested platforms.
    Removing an explicitly managed hostname or timezone is rejected because
    RFC 7317 does not define which platform default should replace it.
-5. Linux NTP integration targets chrony and FreeBSD targets base ntpd. Other
-   daemons require a platform adapter. The `ntp-udp-port` feature is disabled.
+5. Linux NTP integration targets chrony through the systemd D-Bus manager and
+   FreeBSD targets base ntpd. Other daemons require a platform adapter. The
+   `ntp-udp-port` feature is disabled. FreeBSD rc.d execution remains the
+   system provider's only production shell boundary.
 6. `set-current-datetime` currently accepts canonical UTC values ending in
    `Z`; fractional seconds and explicit numeric offsets allowed by
    `yang:date-and-time` are not translated. The plugin ABI cannot return RFC
@@ -167,6 +172,11 @@ Each script checks successful and failed password authentication through the
 host PAM framework, verifies generated DNS and NTP files, reads live platform
 state, rolls the transaction back, and removes its temporary PAM policy.
 
+Linux additionally has an opt-in live service-manager check. Configure with
+`-DDANG_SYSTEM_NATIVE_TESTS=ON`; the test records chrony's initial state,
+enables and disables it through sd-bus, verifies each completed state, and
+restores the initial state even after failure.
+
 Native packages deliberately do not enable a PAM policy or alter sshd. The
 administrator must opt into the local verification path described above.
 
@@ -182,10 +192,11 @@ at a time with local console recovery available. Leave
 `DANG_SYSTEM_ALLOW_POWER` unset unless remote power RPCs are explicitly needed
 and restricted by NACM.
 
-NTP reload and stop currently remain fixed host-owned service commands and are
-the system plugin's only production shell boundary. They do not include model
-data, but they are tracked for replacement with the Linux systemd D-Bus API and
-the safest supported FreeBSD service interface in the collection-wide
+Linux NTP reload/restart and stop use the systemd D-Bus manager and wait for
+the exact asynchronous job outcome. FreeBSD's fixed host-owned rc.d command is
+the system plugin's only remaining production shell boundary. It does not
+include model data, but it is tracked for replacement with the safest supported
+FreeBSD service interface in the collection-wide
 [`COMMAND_EXECUTION_AUDIT.md`](../../COMMAND_EXECUTION_AUDIT.md).
 
 Before uninstalling, remove the plugin option and migrate or delete all

@@ -73,5 +73,29 @@ TEST(SystemPlatformPolicyTest, PreservesNativeApiFailureDiagnostic) {
   EXPECT_EQ(error, "injected reboot API failure");
 }
 
+TEST(SystemPlatformPolicyTest, RoutesNtpStateToNativeApi) {
+  std::vector<bool> operations;
+  const NtpServiceOperator capture =
+      [&operations](bool enabled, std::string*) {
+        operations.push_back(enabled);
+        return true;
+      };
+  std::string error;
+
+  EXPECT_TRUE(RequestNtpServiceOperation(true, &error, capture));
+  EXPECT_TRUE(RequestNtpServiceOperation(false, &error, capture));
+  EXPECT_EQ(operations, (std::vector<bool>{true, false}));
+}
+
+TEST(SystemPlatformPolicyTest, PreservesNtpApiFailureDiagnostic) {
+  std::string error;
+  EXPECT_FALSE(RequestNtpServiceOperation(
+      true, &error, [](bool, std::string* native_error) {
+        *native_error = "injected NTP API failure";
+        return false;
+      }));
+  EXPECT_EQ(error, "injected NTP API failure");
+}
+
 }  // namespace
 }  // namespace dang::system
