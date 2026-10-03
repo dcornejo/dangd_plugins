@@ -314,20 +314,20 @@ int Invoke(void* raw_context, const DangOperationV1* operation,
   bool invoked = false;
   if (std::string_view(operation->operation_name) == "route-add")
     invoked = InvokeRouteAdd(kPlatform, operation->input_xml, &rpc_output_xml,
-                             &why, &where, RunNativeCommand,
+                             &why, &where, CommandRunner{},
                              Resolver(static_cast<Context*>(raw_context)),
                              &owner->nexthops, Writer(owner), EventSink(owner),
                              NativeRib(owner));
   else if (std::string_view(operation->operation_name) == "route-delete")
     invoked = InvokeRouteDelete(kPlatform, operation->input_xml,
                                 &rpc_output_xml, &why, &where,
-                                RunNativeCommand, Observer(owner),
+                                CommandRunner{}, Observer(owner),
                                 &owner->nexthops, Writer(owner), EventSink(owner),
                                 NativeRib(owner));
   else if (std::string_view(operation->operation_name) == "route-update")
     invoked = InvokeRouteUpdate(kPlatform, operation->input_xml,
                                 &rpc_output_xml, &why, &where,
-                                RunNativeCommand, Observer(owner),
+                                CommandRunner{}, Observer(owner),
                                 Resolver(static_cast<Context*>(raw_context)),
                                 &owner->nexthops, Writer(owner), EventSink(owner),
                                 NativeRib(owner));
@@ -337,7 +337,7 @@ int Invoke(void* raw_context, const DangOperationV1* operation,
                            NativeRib(owner));
   else if (std::string_view(operation->operation_name) == "rib-delete")
     invoked = InvokeRibDelete(kPlatform, operation->input_xml, &rpc_output_xml,
-                              &why, &where, RunNativeCommand, Observer(owner),
+                              &why, &where, CommandRunner{}, Observer(owner),
                               &owner->nexthops, Writer(owner), EventSink(owner),
                               NativeRib(owner));
   else if (std::string_view(operation->operation_name) == "nh-add")

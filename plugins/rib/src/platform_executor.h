@@ -15,7 +15,7 @@ namespace dang::rib {
 /** Supported host command dialects; selected at plugin build time. */
 enum class NativePlatform { kLinux, kFreeBsd };
 
-/** Injectable process boundary used to exercise partial failures safely. */
+/** Injectable argv boundary used to exercise partial failures safely. */
 using CommandRunner =
     std::function<bool(const NativeCommand&, std::string* error)>;
 
@@ -27,18 +27,19 @@ struct ExecutionResult {
   std::vector<std::string> rollback_failures;
 };
 
-/** Executes argv directly with posix_spawnp(3), never through a shell. */
+/** Executes fixed argv directly for the remaining FreeBSD route boundary. */
 [[nodiscard]] bool RunNativeCommand(const NativeCommand& command,
                                     std::string* error);
 
 /**
  * Applies a prepared plan and compensates completed changes in reverse order.
- * A caller-provided runner makes every failure boundary deterministic in unit
- * tests; production passes RunNativeCommand.
+ * A caller-provided argv runner makes every failure boundary deterministic in
+ * portable unit tests. With no runner, production uses acknowledged rtnetlink
+ * on Linux and the audited route(8) argv boundary on FreeBSD.
  */
-[[nodiscard]] ExecutionResult ExecuteChanges(
-    NativePlatform platform, const std::vector<Change>& changes,
-    const CommandRunner& runner = RunNativeCommand);
+[[nodiscard]] ExecutionResult ExecuteChanges(NativePlatform platform,
+                                             const std::vector<Change>& changes,
+                                             const CommandRunner& runner = {});
 
 }  // namespace dang::rib
 

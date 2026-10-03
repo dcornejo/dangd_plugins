@@ -9,6 +9,17 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Replaced the RFC 8431 Linux production `ip(8)` executor with bounded direct
+  rtnetlink mutation. Each install or deletion resolves its interface index,
+  sends one sequenced request, and requires the correlated kernel ACK under a
+  receive timeout; kernel rejection enters the existing reverse-compensation
+  path. The namespace suite now covers plugin mutation with a combined gateway
+  and interface, direct IPv4 and IPv6 mutation, observation, rollback,
+  deletion, and an unreachable-gateway rejection that leaves no route behind.
+  The Linux argv builder remains only for deterministic validation and
+  unit-test injection. FreeBSD `route(8)` execution is the RIB provider's
+  remaining production process boundary.
+
 - Started the production command-execution audit with a provider-by-provider
   inventory and ordered Linux/FreeBSD remediation plan. RFC 7317 restart and
   shutdown now use the documented native PID 1 signal interfaces on Linux and

@@ -4,17 +4,17 @@
 /**
  * @file
  * Executes prepared RIB changes and compensates a partial failure in reverse
- * order.  Commands are argv vectors passed directly to posix_spawnp(3); model
- * content is never interpreted by a shell.
+ * order. Linux production mutations use acknowledged rtnetlink. FreeBSD still
+ * passes fixed argv directly to posix_spawnp(3); neither path invokes a shell.
  */
 
 #include "plugins/rib/src/platform_executor.h"
 
-#include <cerrno>
-#include <cstring>
 #include <spawn.h>
 #include <sys/wait.h>
 
+#include <cerrno>
+#include <cstring>
 #include <sstream>
 
 extern char** environ;
@@ -34,6 +34,13 @@ Change Inverse(const Change& change) {
   return {change.kind == ChangeKind::kDelete ? ChangeKind::kInstall
                                              : ChangeKind::kDelete,
           change.route};
+}
+
+bool RunNativeChange(NativePlatform platform, const Change& change,
+                     const NativeCommand& command, std::string* error) {
+  if (platform == NativePlatform::kLinux)
+    return ApplyLinuxRouteChange(change, error);
+  return RunNativeCommand(command, error);
 }
 
 }  // namespace
@@ -58,14 +65,17 @@ bool RunNativeCommand(const NativeCommand& command, std::string* error) {
   int status = 0;
   while (waitpid(child, &status, 0) < 0) {
     if (errno == EINTR) continue;
-    *error = "cannot wait for route command: " + std::string(std::strerror(errno));
+    *error =
+        "cannot wait for route command: " + std::string(std::strerror(errno));
     return false;
   }
   if (WIFEXITED(status) && WEXITSTATUS(status) == 0) return true;
   std::ostringstream message;
   message << command.arguments.front() << " failed";
-  if (WIFEXITED(status)) message << " with exit status " << WEXITSTATUS(status);
-  else if (WIFSIGNALED(status)) message << " after signal " << WTERMSIG(status);
+  if (WIFEXITED(status))
+    message << " with exit status " << WEXITSTATUS(status);
+  else if (WIFSIGNALED(status))
+    message << " after signal " << WTERMSIG(status);
   *error = message.str();
   return false;
 }
@@ -81,10 +91,13 @@ ExecutionResult ExecuteChanges(NativePlatform platform,
   std::size_t completed = 0;
   for (; completed < commands.size(); ++completed) {
     std::string command_error;
-    if (runner(commands[completed], &command_error)) continue;
+    const bool changed =
+        runner ? runner(commands[completed], &command_error)
+               : RunNativeChange(platform, changes[completed],
+                                 commands[completed], &command_error);
+    if (changed) continue;
     result.error = "route change failed: " + command_error;
-    result.error_path =
-        "/ietf-i2rs-rib:routing-instance/rib-list/route-list";
+    result.error_path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list";
     break;
   }
   if (completed == commands.size()) {
@@ -104,7 +117,11 @@ ExecutionResult ExecuteChanges(NativePlatform platform,
       continue;
     }
     std::string rollback_error;
-    if (!runner(compensation.front(), &rollback_error))
+    const bool restored =
+        runner ? runner(compensation.front(), &rollback_error)
+               : RunNativeChange(platform, inverse, compensation.front(),
+                                 &rollback_error);
+    if (!restored)
       result.rollback_failures.push_back(Describe(inverse) + ": " +
                                          rollback_error);
   }

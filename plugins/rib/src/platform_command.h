@@ -22,19 +22,21 @@ using InterfaceAddressResolver = std::function<bool(
     const std::string& interface, const std::string& address_family,
     std::string* address, std::string* error)>;
 
-/** Maps a checked portable plan to Linux iproute2 argv vectors. */
+/** Maps a checked Linux plan to deterministic argv for validation/unit tests. */
 [[nodiscard]] bool BuildLinuxCommands(const std::vector<Change>& changes,
                                       std::vector<NativeCommand>* commands,
                                       std::string* error,
                                       std::string* error_path);
 
+/** Applies one Linux route change through rtnetlink and waits for its ACK. */
+[[nodiscard]] bool ApplyLinuxRouteChange(const Change& change,
+                                         std::string* error);
+
 /** Maps a checked portable plan to FreeBSD route(8) argv vectors. */
-[[nodiscard]] bool BuildFreeBsdCommands(const std::vector<Change>& changes,
-                                        std::vector<NativeCommand>* commands,
-                                        std::string* error,
-                                        std::string* error_path,
-                                        const InterfaceAddressResolver&
-                                            resolver = {});
+[[nodiscard]] bool BuildFreeBsdCommands(
+    const std::vector<Change>& changes, std::vector<NativeCommand>* commands,
+    std::string* error, std::string* error_path,
+    const InterfaceAddressResolver& resolver = {});
 
 }  // namespace dang::rib
 

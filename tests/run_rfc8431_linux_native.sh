@@ -17,12 +17,14 @@ trap cleanup EXIT INT TERM
 sudo ip netns add "$namespace"
 sudo ip -n "$namespace" link add dummy0 type dummy
 sudo ip -n "$namespace" link set dummy0 up
+sudo ip -n "$namespace" address add 192.0.2.1/24 dev dummy0
+sudo ip -n "$namespace" -6 address add 2001:db8:1::1/64 dev dummy0
 sudo ip -n "$namespace" link add dummy1 type dummy
 sudo ip -n "$namespace" link set dummy1 up
 if [ -n "$plugin_test" ] && [ -n "$plugin" ]; then
   sudo ip netns exec "$namespace" env DANG_RIB_REGISTRY_FILE="$registry" \
     "$plugin_test" "$plugin" \
-    100 198.18.1.0/24 dummy0
+    100 198.18.1.0/24 dummy0 192.0.2.2
   test -z "$(sudo ip -n "$namespace" route show table 100)"
 fi
 sudo ip -n "$namespace" route replace 198.18.2.0/24 table 101 \
@@ -37,3 +39,16 @@ sudo ip -n "$namespace" route show table 100 |
 sudo ip netns exec "$namespace" "$binary" \
   linux delete 100 198.18.0.0/24 dummy0
 test -z "$(sudo ip -n "$namespace" route show table 100)"
+sudo ip netns exec "$namespace" "$binary" \
+  linux install 103 2001:db8:103::/64 dummy0
+sudo ip -6 -n "$namespace" route show table 103 |
+  grep -F "2001:db8:103::/64 dev dummy0"
+sudo ip netns exec "$namespace" "$binary" \
+  linux delete 103 2001:db8:103::/64 dummy0
+test -z "$(sudo ip -6 -n "$namespace" route show table 103)"
+if sudo ip netns exec "$namespace" "$binary" \
+  linux install 102 198.18.3.0/24 dummy0 203.0.113.1; then
+  echo "unreachable gateway unexpectedly passed rtnetlink validation" >&2
+  exit 1
+fi
+test -z "$(sudo ip -n "$namespace" route show table 102)"

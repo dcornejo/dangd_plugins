@@ -29,28 +29,31 @@ failure and rollback tests.
   reload/stop during apply and rollback. The command text is host-owned and
   fixed rather than derived from modeled input, but it still invokes a shell
   and must be removed.
-- `rib`: route mutation still passes validated argv to `posix_spawnp(3)` for
-  `ip` on Linux and `route` on FreeBSD. It never invokes a shell and has
-  deterministic failure and compensation tests, but remains an interim
-  exception rather than the desired implementation.
+- `rib`: Linux production mutation now constructs bounded rtnetlink requests,
+  resolves interfaces to native indexes, and waits for the matching kernel
+  acknowledgement under a receive timeout. Kernel rejection is returned as
+  the transaction failure and completed work is still compensated in reverse
+  order. The Linux argv builder remains only as a deterministic validation and
+  unit-test adapter; production never executes `ip`. FreeBSD mutation still
+  passes validated `route` argv to `posix_spawnp(3)` without a shell and is the
+  provider's remaining process boundary.
 
 ## Ordered remediation
 
-1. Replace Linux RIB mutation with rtnetlink requests and correlated kernel
-   acknowledgements, reusing the existing family-aware mapping and native
-   observer. Preserve action ordering, exact error attribution, and reverse
-   compensation.
-2. Prototype FreeBSD route netlink mutation for the same operation set. Use a
+1. [x] Replace Linux RIB mutation with bounded rtnetlink requests and
+   correlated kernel acknowledgements while preserving action ordering, error
+   attribution, and reverse compensation.
+2. [ ] Prototype FreeBSD route netlink mutation for the same operation set. Use a
    routing socket only where the installed FreeBSD netlink ABI cannot express
    a required route, and record that variance with native tests.
-3. Replace Linux NTP service control with the systemd D-Bus manager API. This
+3. [ ] Replace Linux NTP service control with the systemd D-Bus manager API. This
    must not make the RFC 7317 provider silently claim ownership when the future
    RFC 9249 plugin owns the same service.
-4. Determine whether FreeBSD exposes a stable service-management interface for
+4. [ ] Determine whether FreeBSD exposes a stable service-management interface for
    ntpd. If rc scripts remain the only supported boundary, replace
    `std::system()` with an absolute, fixed argv execution helper and document
    that narrow exception, its exit/signal behavior, and rollback coverage.
-5. Re-run the source scan and native Linux/FreeBSD suites after each removal.
+5. [ ] Re-run the source scan and native Linux/FreeBSD suites after each removal.
    The audit is complete only when every remaining process boundary is listed
    here with evidence that no suitable programmatic interface exists.
 

@@ -90,12 +90,15 @@ than being applied to the host default instance. It
 requires the RFC 8431 route preference and local-only fields, rejects source,
 MPLS, MAC, interface-match, chained, replicated, protected, load-balanced, and
 tunnel routes with an attributed model path, and computes replacements as an
-old-route deletion followed by a new-route installation. Separate Linux `ip`
-and FreeBSD `route` argv planners require numeric RIB/FIB names and never invoke
-a shell. The shared executor uses `posix_spawnp(3)`, stops on the first failed
-operation, and compensates completed changes in reverse order. Linux state is
-read through rtnetlink and FreeBSD state through `NET_RT_DUMP`; command output
-is never parsed. Installed observations are `active`; an explicitly
+old-route deletion followed by a new-route installation. Linux production
+mutation uses bounded rtnetlink messages and waits for the correlated kernel
+acknowledgement; its retained argv planner is only a deterministic validation
+and unit-test adapter. FreeBSD currently passes fixed `route(8)` argv directly
+to `posix_spawnp(3)`. Neither path invokes a shell. The shared executor stops
+on the first failed operation and compensates completed changes in reverse
+order. Linux state is read through rtnetlink and FreeBSD state through
+`NET_RT_DUMP`; command output is never parsed. Installed observations are
+`active`; an explicitly
 uninstalled observation is `inactive`, so contradictory status pairs are never
 emitted. Kernel routes receive deterministic synthetic `route-index`
 values because neither native API exposes the model's list key. Unit tests cover
