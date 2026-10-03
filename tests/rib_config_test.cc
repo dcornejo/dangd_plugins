@@ -281,6 +281,21 @@ TEST(RibConfigTest, ProducesShellFreeLinuxAndFreeBsdCommands) {
   EXPECT_NE(path.find("/nexthop"), std::string::npos);
 }
 
+TEST(RibConfigTest, NativeFreeBsdValidationAcceptsUnnumberedInterface) {
+  Config config;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(ParseConfig(kBefore, &config, &error, &path));
+  Route directly_connected = config.routes[0];
+  directly_connected.gateway.reset();
+
+  // Native route netlink uses the interface index directly. Validation must
+  // not retain route(8)'s unrelated requirement for a local gateway address.
+  EXPECT_TRUE(ValidateFreeBsdChanges(
+      {{ChangeKind::kInstall, directly_connected}}, &error, &path))
+      << error;
+}
+
 TEST(RibConfigTest, CompensatesCompletedCommandsInReverseAfterFailure) {
   Config before;
   std::string error;

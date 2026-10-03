@@ -99,7 +99,7 @@ using RibNameResolver =
                                   std::string* output_xml,
                                   std::string* error,
                                   std::string* error_path,
-                                  const CommandRunner& runner = RunNativeCommand,
+                                  const CommandRunner& runner = {},
                                   const NexthopResolver& resolver = {},
                                   NexthopRegistry* registry = nullptr,
                                   const RegistryWriter& writer = {},
@@ -114,7 +114,7 @@ using RouteObserver =
 [[nodiscard]] bool InvokeRouteDelete(
     NativePlatform platform, const char* input_xml, std::string* output_xml,
     std::string* error, std::string* error_path,
-    const CommandRunner& runner = RunNativeCommand,
+    const CommandRunner& runner = {},
     const RouteObserver& observer = {}, NexthopRegistry* registry = nullptr,
     const RegistryWriter& writer = {}, const RouteEventSink& events = {},
     const RibNameResolver& native_rib = {});
@@ -123,7 +123,7 @@ using RouteObserver =
 [[nodiscard]] bool InvokeRouteUpdate(
     NativePlatform platform, const char* input_xml, std::string* output_xml,
     std::string* error, std::string* error_path,
-    const CommandRunner& runner = RunNativeCommand,
+    const CommandRunner& runner = {},
     const RouteObserver& observer = {},
     const NexthopResolver& resolver = {},
     NexthopRegistry* registry = nullptr,
@@ -142,7 +142,7 @@ using RouteObserver =
 [[nodiscard]] bool InvokeRibDelete(
     NativePlatform platform, const char* input_xml, std::string* output_xml,
     std::string* error, std::string* error_path,
-    const CommandRunner& runner = RunNativeCommand,
+    const CommandRunner& runner = {},
     const RouteObserver& observer = {}, NexthopRegistry* registry = nullptr,
     const RegistryWriter& writer = {}, const RouteEventSink& events = {},
     const RibNameResolver& native_rib = {});

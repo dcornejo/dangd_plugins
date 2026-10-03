@@ -79,8 +79,10 @@ sudo cmake --install build --component rib
 ```
 
 Load `dangd_rib_plugin.so` from dangd's plugin directory. The backend requires
-Linux `iproute2` or FreeBSD base `route(8)`, route-management privilege, and
-numeric RIB/FIB names. It must not be loaded together with the FRR plugin.
+route-management privilege and numeric native RIB/FIB mappings. Production
+mutation uses the kernel route-netlink API directly and does not require
+Linux `iproute2` or FreeBSD `route(8)`. It must not be loaded together with the
+FRR plugin.
 
 The runtime foundation currently parses destination-prefix IPv4 and IPv6
 routes whose base nexthop is a gateway, an outgoing interface, or both. It
@@ -90,11 +92,10 @@ than being applied to the host default instance. It
 requires the RFC 8431 route preference and local-only fields, rejects source,
 MPLS, MAC, interface-match, chained, replicated, protected, load-balanced, and
 tunnel routes with an attributed model path, and computes replacements as an
-old-route deletion followed by a new-route installation. Linux production
-mutation uses bounded rtnetlink messages and waits for the correlated kernel
-acknowledgement; its retained argv planner is only a deterministic validation
-and unit-test adapter. FreeBSD currently passes fixed `route(8)` argv directly
-to `posix_spawnp(3)`. Neither path invokes a shell. The shared executor stops
+old-route deletion followed by a new-route installation. Linux and FreeBSD
+production mutation use bounded route-netlink messages and wait for the
+correlated kernel acknowledgement. Retained argv planners are deterministic
+unit-test adapters and are never executed by production. The shared executor stops
 on the first failed operation and compensates completed changes in reverse
 order. Linux state is read through rtnetlink and FreeBSD state through
 `NET_RT_DUMP`; command output is never parsed. Installed observations are
@@ -276,15 +277,14 @@ route-binding identities against the active platform mapping and fails with a
 migration message instead of loading ambiguous state. An unused registry may
 instead be removed while dangd is stopped.
 
-FreeBSD interface-only nexthops resolve the interface's local address through
-`getifaddrs(3)` because `route(8)` requires that address as the gateway argument
-for an Ethernet route. Resolution is restricted to the route's address family,
-ignores unspecified, multicast, and automatic IPv6 link-local addresses, and
-requires exactly one candidate. An unnumbered or multihomed interface fails at
-the modeled nexthop path rather than choosing an arbitrary address. A live
-FreeBSD 16.0-CURRENT test installed and removed an IPv4 interface route through
-the isolated `vtnet0`; adding a second IPv4 address produced the expected
-ambiguity failure without changing the FIB.
+FreeBSD interface-only nexthops encode the selected interface index directly
+as `RTA_OIF`; they neither guess a local gateway address nor require the
+interface to be numbered. The retained `route(8)` argv adapter still exercises
+legacy address-resolution behavior in portable unit tests, but production
+never calls it. A FreeBSD 16.0-CURRENT VNET test installs and removes IPv4 and
+IPv6 gateway routes, an interface-only IPv4 route after removing every address
+from the epair, and verifies that a nonexistent interface fails before a
+netlink request is sent.
 
 Tests must use Linux network namespaces or FreeBSD VNET jails with only
 disposable loopback/epair interfaces. They must never add, remove, or replace a

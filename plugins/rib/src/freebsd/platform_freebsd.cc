@@ -1,7 +1,7 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
-/** @file FreeBSD route(8) mapping for the portable RFC 8431 route plan. */
+/** @file FreeBSD validation, route(8) test mapping, and route observation. */
 
 #include "plugins/rib/src/platform_command.h"
 #include "plugins/rib/src/route_observer.h"
@@ -142,6 +142,15 @@ bool BuildFreeBsdCommands(const std::vector<Change>& changes,
                                {"-ifp", *change.route.interface});
     }
     commands->push_back(std::move(command));
+  }
+  return true;
+}
+
+bool ValidateFreeBsdChanges(const std::vector<Change>& changes,
+                            std::string* error, std::string* error_path) {
+  if (!error || !error_path) return false;
+  for (const Change& change : changes) {
+    if (!SafeFibAndInterface(change.route, error, error_path)) return false;
   }
   return true;
 }

@@ -32,11 +32,25 @@ using InterfaceAddressResolver = std::function<bool(
 [[nodiscard]] bool ApplyLinuxRouteChange(const Change& change,
                                          std::string* error);
 
+/** Validates the platform-specific fields consumed by Linux rtnetlink. */
+[[nodiscard]] bool ValidateLinuxChanges(const std::vector<Change>& changes,
+                                        std::string* error,
+                                        std::string* error_path);
+
 /** Maps a checked portable plan to FreeBSD route(8) argv vectors. */
 [[nodiscard]] bool BuildFreeBsdCommands(
     const std::vector<Change>& changes, std::vector<NativeCommand>* commands,
     std::string* error, std::string* error_path,
     const InterfaceAddressResolver& resolver = {});
+
+/** Applies one FreeBSD route change through route netlink and waits for ACK. */
+[[nodiscard]] bool ApplyFreeBsdRouteChange(const Change& change,
+                                           std::string* error);
+
+/** Validates the fields consumed by the native FreeBSD route-netlink path. */
+[[nodiscard]] bool ValidateFreeBsdChanges(const std::vector<Change>& changes,
+                                          std::string* error,
+                                          std::string* error_path);
 
 }  // namespace dang::rib
 

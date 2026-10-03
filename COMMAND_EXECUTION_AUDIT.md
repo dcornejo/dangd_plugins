@@ -29,23 +29,26 @@ failure and rollback tests.
   reload/stop during apply and rollback. The command text is host-owned and
   fixed rather than derived from modeled input, but it still invokes a shell
   and must be removed.
-- `rib`: Linux production mutation now constructs bounded rtnetlink requests,
-  resolves interfaces to native indexes, and waits for the matching kernel
-  acknowledgement under a receive timeout. Kernel rejection is returned as
-  the transaction failure and completed work is still compensated in reverse
-  order. The Linux argv builder remains only as a deterministic validation and
-  unit-test adapter; production never executes `ip`. FreeBSD mutation still
-  passes validated `route` argv to `posix_spawnp(3)` without a shell and is the
-  provider's remaining process boundary.
+- `rib`: no process creation. Linux and FreeBSD production mutation construct
+  bounded route-netlink requests, resolve interfaces to native indexes, and
+  wait for the matching kernel acknowledgement under a receive timeout.
+  Kernel rejection is returned as the transaction failure and completed work
+  is still compensated in reverse order. The argv builders remain only as
+  deterministic unit-test adapters; production executes neither `ip(8)` nor
+  `route(8)`. FreeBSD interface-only routes now use `RTA_OIF` directly and no
+  longer require a local address on the selected interface.
 
 ## Ordered remediation
 
 1. [x] Replace Linux RIB mutation with bounded rtnetlink requests and
    correlated kernel acknowledgements while preserving action ordering, error
    attribution, and reverse compensation.
-2. [ ] Prototype FreeBSD route netlink mutation for the same operation set. Use a
-   routing socket only where the installed FreeBSD netlink ABI cannot express
-   a required route, and record that variance with native tests.
+2. [x] Replace FreeBSD RIB mutation with bounded route-netlink requests and
+   correlated acknowledgements. The installed ABI expresses destinations,
+   FIBs, gateways, interface indexes, and preference for the complete supported
+   slice, so no routing-socket fallback is required. Native VNET tests cover
+   IPv4, IPv6, interface-only mutation on an unnumbered interface, plugin
+   integration, deletion, and attributed preflight rejection.
 3. [ ] Replace Linux NTP service control with the systemd D-Bus manager API. This
    must not make the RFC 7317 provider silently claim ownership when the future
    RFC 9249 plugin owns the same service.
@@ -54,8 +57,9 @@ failure and rollback tests.
    `std::system()` with an absolute, fixed argv execution helper and document
    that narrow exception, its exit/signal behavior, and rollback coverage.
 5. [ ] Re-run the source scan and native Linux/FreeBSD suites after each removal.
-   The audit is complete only when every remaining process boundary is listed
-   here with evidence that no suitable programmatic interface exists.
+   The current scan finds only the two recorded RFC 7317 NTP `std::system()`
+   calls. The audit is complete only when every remaining process boundary is
+   listed here with evidence that no suitable programmatic interface exists.
 
 Core dangd worker supervision is outside this plugin audit: it intentionally
 uses `posix_spawn(3)` as the programmatic process API for privilege and crash

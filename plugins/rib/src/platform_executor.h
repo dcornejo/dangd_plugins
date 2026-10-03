@@ -27,15 +27,11 @@ struct ExecutionResult {
   std::vector<std::string> rollback_failures;
 };
 
-/** Executes fixed argv directly for the remaining FreeBSD route boundary. */
-[[nodiscard]] bool RunNativeCommand(const NativeCommand& command,
-                                    std::string* error);
-
 /**
  * Applies a prepared plan and compensates completed changes in reverse order.
  * A caller-provided argv runner makes every failure boundary deterministic in
- * portable unit tests. With no runner, production uses acknowledged rtnetlink
- * on Linux and the audited route(8) argv boundary on FreeBSD.
+ * portable unit tests. With no runner, production uses acknowledged route
+ * netlink on Linux and FreeBSD and does not create a child process.
  */
 [[nodiscard]] ExecutionResult ExecuteChanges(NativePlatform platform,
                                              const std::vector<Change>& changes,

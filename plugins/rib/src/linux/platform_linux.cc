@@ -223,6 +223,15 @@ bool BuildLinuxCommands(const std::vector<Change>& changes,
   return true;
 }
 
+bool ValidateLinuxChanges(const std::vector<Change>& changes,
+                          std::string* error, std::string* error_path) {
+  if (!error || !error_path) return false;
+  for (const Change& change : changes) {
+    if (!SafeTableAndInterface(change.route, error, error_path)) return false;
+  }
+  return true;
+}
+
 bool ApplyLinuxRouteChange(const Change& change, std::string* error) {
 #if !defined(__linux__)
   (void)change;

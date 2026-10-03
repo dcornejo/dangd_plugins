@@ -249,8 +249,12 @@ int Prepare(void* raw_context, const DangTransactionV1* tx, void** out, DangPlug
 }
 int Validate(void*, void* raw, DangPluginErrorV1* error) {
   auto* prepared = static_cast<Prepared*>(raw); if (!prepared) return Fail(error, "RIB transaction plan is missing");
-  std::vector<NativeCommand> commands; std::string why, where;
-  const bool ok = kPlatform == NativePlatform::kLinux ? BuildLinuxCommands(prepared->native_changes, &commands, &why, &where) : BuildFreeBsdCommands(prepared->native_changes, &commands, &why, &where);
+  std::string why, where;
+  const bool ok = kPlatform == NativePlatform::kLinux
+                      ? ValidateLinuxChanges(prepared->native_changes, &why,
+                                             &where)
+                      : ValidateFreeBsdChanges(prepared->native_changes, &why,
+                                               &where);
   return ok ? 1 : Fail(error, why, where);
 }
 int Apply(void*, void* raw, DangPluginErrorV1* error) {

@@ -9,6 +9,16 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Replaced the RFC 8431 FreeBSD production `route(8)` executor with bounded
+  route-netlink mutation. IPv4 and IPv6 installs and deletions now carry an
+  explicit FIB attribute and require the correlated kernel acknowledgement;
+  gateways, interface indexes, and preference remain native attributes.
+  Interface-only routes no longer require a local address, and the VNET suite
+  verifies an unnumbered epair, both address families, plugin integration,
+  deletion, and preflight rejection. Together with the Linux rtnetlink path,
+  this removes all production process creation from the RIB provider while
+  preserving injectable argv planning for deterministic unit tests.
+
 - Replaced the RFC 8431 Linux production `ip(8)` executor with bounded direct
   rtnetlink mutation. Each install or deletion resolves its interface index,
   sends one sequenced request, and requires the correlated kernel ACK under a
@@ -17,8 +27,8 @@ All notable changes to the external dangd plugin collection are recorded here.
   and interface, direct IPv4 and IPv6 mutation, observation, rollback,
   deletion, and an unreachable-gateway rejection that leaves no route behind.
   The Linux argv builder remains only for deterministic validation and
-  unit-test injection. FreeBSD `route(8)` execution is the RIB provider's
-  remaining production process boundary.
+  unit-test injection. FreeBSD is now covered by the native route-netlink
+  implementation recorded above.
 
 - Started the production command-execution audit with a provider-by-provider
   inventory and ordered Linux/FreeBSD remediation plan. RFC 7317 restart and
