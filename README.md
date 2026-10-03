@@ -130,3 +130,14 @@ only with one another. Packaging does not weaken dangd's duplicate-owner check.
   claims the
   `routing` resource against FRR, and applies its supported route slice on Linux
   and FreeBSD. RPC, notification, and operational work remains in progress.
+
+## Planned plugins
+
+- `ntp` will implement the pinned RFC 9249
+  `ietf-ntp@2022-07-05` configuration and NMDA operational model for Linux and
+  FreeBSD. Its package must declare exclusive ownership of the native NTP
+  service and configuration resources, define migration from the RFC 7317
+  `system` plugin's NTP subtree, and fail closed if both providers would manage
+  the same daemon. Native programmatic daemon APIs are preferred; unsupported
+  model features and daemon-specific behavior will be documented and tested on
+  both operating systems.

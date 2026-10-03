@@ -9,6 +9,11 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Added a separately packaged RFC 9249 NTP provider to the roadmap. The plan
+  pins `ietf-ntp@2022-07-05`, requires Linux and FreeBSD validation, prefers
+  native programmatic daemon APIs, and requires explicit exclusive ownership
+  and migration relative to the RFC 7317 system plugin's NTP support.
+
 - Synchronized the Kea pair-wide deployment guide with dangd's version-2 peer
   endpoint identity and generic execution controller. Endpoint mappings now
   use exact group/participant pairs, and the core can bind one composed group
