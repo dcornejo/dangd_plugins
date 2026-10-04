@@ -404,14 +404,17 @@ sets. An active peer must be in touch, report no communication interruption,
 and have an age at or below the configured limit. Duplicate relationships,
 partial or malformed values, stale identity, wrong scopes, drifted running
 configuration, an altered opaque identity, DTDs, and oversized replies all fail
-closed. Dangd still must connect its generic composed plan to the production
-NETCONF commit path before pair-wide atomicity can be advertised. The generic
-core controller now binds one composed group to exact version-2 endpoint
+closed. Dangd's normal NETCONF commit path now consumes this composed plan.
+The generic core controller binds one group to exact version-2 endpoint
 mappings, authenticated TLS participants, cryptographic persistent tokens,
-these plugin verifiers, and the crash-safe journal. The remaining boundary is
-the commit lifecycle: controller-issued participant commits must suppress
-recursive planning, datastore durability must be ordered with the distributed
-decision, and multi-group commits must be journaled atomically or rejected.
+these plugin verifiers, and the crash-safe journal. Controller-issued
+participant commits carry a host-owned context that suppresses recursive
+planning, datastore durability is ordered before distributed COMMIT, and
+multi-group proposals fail before mutation. A degraded or unreachable member
+has no permissive mode: failure cancels every attempted remote confirmed
+commit before local apply and leaves local running unchanged. Production
+status still requires packaging, `dangctl` workflow integration, and live
+Linux/FreeBSD NETCONF interoperability evidence.
 
 The plugin deliberately exposes one ABI-v4 hardware action for the entire Kea
 transaction. This preserves atomic compensation across Kea's own

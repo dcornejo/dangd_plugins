@@ -246,8 +246,8 @@ Kea's portable status reply does not contain a synchronization percentage, so
 that detail remains unavailable.
 
 The second is pair-wide management: one logical commit controls both peers.
-It is not yet reachable from the production commit path. Dangd contains a
-tested, transport-neutral
+It is now connected to dangd's normal NETCONF commit path through the tested,
+transport-neutral
 [peer transaction coordinator](https://github.com/dcornejo/dang/blob/main/docs/PEER_TRANSACTIONS.md)
 that prepares every peer before mutation, applies standbys before the primary,
 verifies the group, establishes a durable decision boundary, reverses
@@ -279,15 +279,14 @@ blocks startup; recovery never contradicts durable COMMIT by cancelling. An
 exclusive private sibling lock prevents concurrent daemons from replaying the
 same journal.
 
-This completes the generic transport, recovery, provider-planning, and
-single-group execution-materialization pieces, not production Kea pair-wide
-transaction initiation. Dangd's generic controller now resolves every target
-before session construction, creates independent cryptographic persistent
-commit tokens, routes authenticated readback to only the contributing plugin
-verifiers, creates the crash-safe journal, and invokes the coordinator. The
-stateful participant
-locks candidate, transfers a
-complete configuration with `copy-config`, validates it, starts a persistent
+This completes the generic transport, recovery, provider-planning,
+single-group execution-materialization, and production commit-path initiation
+pieces. Dangd's generic controller resolves every target before session
+construction, creates independent cryptographic persistent commit tokens,
+routes authenticated readback to only the contributing plugin verifiers,
+creates the crash-safe journal, and invokes the coordinator. The stateful
+participant locks candidate, transfers a complete configuration with
+`copy-config`, validates it, starts a persistent
 confirmed commit, retrieves both running configuration and operational state
 for a supplied health callback, confirms or reconnects to cancel, and releases
 candidate and session resources. Live two-peer commit and live rollback tests
@@ -309,13 +308,18 @@ remote must be in touch, uninterrupted, and no older than the caller's limit.
 The helper rejects stale, disconnected, drifted, duplicate, malformed,
 DTD-bearing, and cross-member replies. ABI v9 invokes it with an opaque member
 identity that the plugin validates against the retained prepared plan. The
-remaining work is to connect that generic controller to a safe production
-transaction lifecycle. Participant commits must not recursively initiate
-another peer plan, local snapshot durability must be ordered with the
-distributed decision, and a commit affecting several peer groups must use one
-atomic journal or fail closed rather than commit groups sequentially.
+normal commit path now supplies the safe production lifecycle: participant
+commits cannot recursively initiate another peer plan, the local snapshot is
+durable before the distributed COMMIT decision, and a commit affecting several
+peer groups fails before mutation rather than committing groups sequentially.
+A transport or health-verification failure cancels every attempted remote
+confirmed commit before local apply, sends no confirmation, removes a fully
+cancelled PREPARED journal, and leaves local running unchanged. Packaging,
+`dangctl` workflow integration, and live cross-platform pair-wide NETCONF
+evidence remain.
 
-A production pair controller must treat the peers as one transaction group:
+The implemented production pair controller treats the peers as one transaction
+group:
 
 1. translate the authoritative candidate into explicit per-peer images;
 2. validate every image without mutation;
@@ -328,7 +332,6 @@ A production pair controller must treat the peers as one transaction group:
 7. after that decision, retry pending confirmations without attempting a
    contradictory rollback.
 
-The controller must also define whether a degraded pair may accept a commit.
-The safe default is no. Any exception needs an explicit policy, a surfaced
-degraded outcome, and recovery behavior that cannot silently overwrite the
-returning peer.
+The controller does not permit a degraded pair to accept a commit. This
+fail-closed policy is deliberate: there is no exception mode that could
+silently overwrite a returning peer.
