@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <string>
 #include <string_view>
 
 int main(int argc, char** argv) {
@@ -40,6 +41,26 @@ int main(int argc, char** argv) {
       state.complete == 0 && state.data_xml &&
       std::string_view(state.data_xml).find("routing-instance") != std::string_view::npos;
   if (prepared) base.release(base.context, prepared);
+
+  std::string unsupported(proposed);
+  const std::string local_only = "<local-only>false</local-only>";
+  const std::size_t local_only_position = unsupported.find(local_only);
+  if (local_only_position == std::string::npos) {
+    valid = false;
+  } else {
+    unsupported.replace(local_only_position, local_only.size(),
+                        "<local-only>true</local-only>");
+    DangTransactionV1 unsupported_transaction{before, unsupported.c_str(),
+                                               "[]"};
+    void* unsupported_prepared = nullptr;
+    error = {};
+    valid = valid &&
+        !base.prepare(base.context, &unsupported_transaction,
+                      &unsupported_prepared, &error) &&
+        unsupported_prepared == nullptr && error.instance_path &&
+        std::string_view(error.instance_path).ends_with(
+            "/route-attributes/local-only");
+  }
 
   constexpr char nh_add_xml[] = R"(<nh-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>ipv4-100</rib-name><nexthop-base><ipv4-address>192.0.2.1</ipv4-address></nexthop-base></nh-add>)";
   DangOperationV1 operation{"ietf-i2rs-rib", "nh-add",

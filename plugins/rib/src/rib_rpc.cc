@@ -784,6 +784,10 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
         failed.emplace_back(index, 3U); continue;
       }
       local_only = local == "true" || local == "1";
+      if (local_only) {
+        failed.emplace_back(index, 3U);
+        continue;
+      }
       replacement.local_only = local_only;
     } else {
       failed.emplace_back(index, 3U); continue;

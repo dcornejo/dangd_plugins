@@ -84,6 +84,12 @@ bool ResolveInterfaceAddress(const std::string& interface,
 
 bool SafeFibAndInterface(const Route& route, std::string* error,
                          std::string* path) {
+  if (route.local_only) {
+    *error = "FreeBSD cannot safely map a configured RFC 8431 local-only route";
+    *path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list/"
+            "route-attributes/local-only";
+    return false;
+  }
   unsigned fib = 0;
   const auto parsed = std::from_chars(route.rib.data(),
                                       route.rib.data() + route.rib.size(), fib);

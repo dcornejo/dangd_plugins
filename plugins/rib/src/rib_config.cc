@@ -203,6 +203,12 @@ bool ParseConfig(const char* xml, Config* config, std::string* error,
         return Fail("local-only is required and must be boolean",
                     "/ietf-i2rs-rib:routing-instance/rib-list/route-list/route-attributes/local-only",
                     error, error_path);
+      if (route.local_only)
+        return Fail(
+            "the portable native backend cannot configure local-only routes; "
+            "kernel-owned receive routes are published as read-only state",
+            "/ietf-i2rs-rib:routing-instance/rib-list/route-list/route-attributes/local-only",
+            error, error_path);
       config->routes.push_back(std::move(route));
     }
   }

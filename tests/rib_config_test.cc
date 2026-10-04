@@ -187,6 +187,23 @@ TEST(RibConfigTest, ParsesPortableDestinationRoute) {
   EXPECT_EQ(config.routes[0].preference, 10U);
 }
 
+TEST(RibConfigTest, RejectsConfiguredLocalOnlyRouteWithAttributedPath) {
+  std::string xml(kBefore);
+  const std::string supported = "<local-only>false</local-only>";
+  const auto position = xml.find(supported);
+  ASSERT_NE(position, std::string::npos);
+  xml.replace(position, supported.size(), "<local-only>true</local-only>");
+  Config config;
+  std::string error;
+  std::string path;
+  EXPECT_FALSE(ParseConfig(xml.c_str(), &config, &error, &path));
+  EXPECT_NE(error.find("cannot configure local-only"), std::string::npos);
+  EXPECT_EQ(path,
+            "/ietf-i2rs-rib:routing-instance/rib-list/route-list/"
+            "route-attributes/local-only");
+  EXPECT_TRUE(config.routes.empty());
+}
+
 TEST(RibConfigTest, RejectsUnmappedRoutingInstanceInsteadOfUsingDefault) {
   std::string xml(kBefore);
   const std::string modeled_name = "<name>default</name>";
@@ -294,6 +311,27 @@ TEST(RibConfigTest, NativeFreeBsdValidationAcceptsUnnumberedInterface) {
   EXPECT_TRUE(ValidateFreeBsdChanges(
       {{ChangeKind::kInstall, directly_connected}}, &error, &path))
       << error;
+}
+
+TEST(RibConfigTest, NativeBackendsRejectUnrepresentableLocalOnlyRoute) {
+  Config config;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(ParseConfig(kBefore, &config, &error, &path));
+  Route local_only = config.routes.front();
+  local_only.local_only = true;
+  const std::vector<Change> changes{{ChangeKind::kInstall, local_only}};
+
+  EXPECT_FALSE(ValidateLinuxChanges(changes, &error, &path));
+  EXPECT_NE(error.find("local-only"), std::string::npos);
+  EXPECT_EQ(path,
+            "/ietf-i2rs-rib:routing-instance/rib-list/route-list/"
+            "route-attributes/local-only");
+  EXPECT_FALSE(ValidateFreeBsdChanges(changes, &error, &path));
+  EXPECT_NE(error.find("local-only"), std::string::npos);
+  EXPECT_EQ(path,
+            "/ietf-i2rs-rib:routing-instance/rib-list/route-list/"
+            "route-attributes/local-only");
 }
 
 TEST(RibConfigTest, CompensatesCompletedCommandsInReverseAfterFailure) {
@@ -661,6 +699,24 @@ TEST(RibConfigTest, RouteAddReportsMixedBatchResults) {
   EXPECT_EQ(events[0].index, 7U);
 }
 
+TEST(RibConfigTest, RouteAddRejectsUnrepresentableLocalOnlyAttribute) {
+  constexpr char input[] = R"xml(<route-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><return-failure-detail>true</return-failure-detail><rib-name>100</rib-name><routes><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><route-attributes><route-preference>10</route-preference><local-only>true</local-only></route-attributes><nexthop><nexthop-base><ipv4-address>198.51.100.1</ipv4-address></nexthop-base></nexthop></route-list></routes></route-add>)xml";
+  unsigned commands = 0;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRouteAdd(
+      NativePlatform::kLinux, input, &output, &error, &path,
+      [&](const NativeCommand&, std::string*) {
+        ++commands;
+        return true;
+      })) << error;
+  EXPECT_EQ(commands, 0U);
+  EXPECT_NE(output.find(">0</success-count>"), std::string::npos);
+  EXPECT_NE(output.find(">1</failed-count>"), std::string::npos);
+  EXPECT_NE(output.find("<error-code>3</error-code>"), std::string::npos);
+}
+
 TEST(RibConfigTest, RouteRpcUsesNativeMappingAndPreservesModeledEventName) {
   std::vector<NativeCommand> commands;
   std::vector<Route> events;
@@ -781,7 +837,7 @@ TEST(RibConfigTest, RouteDeleteRefusesObservedKernelOwnedSpecialRoute) {
 }
 
 TEST(RibConfigTest, RouteUpdateReplacesAttributesTransactionally) {
-  constexpr char input[] = R"xml(<route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><return-failure-detail>true</return-failure-detail><rib-name>100</rib-name><input-routes><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><updated-route-attr><route-preference>20</route-preference><local-only>true</local-only></updated-route-attr></route-list></input-routes></route-update>)xml";
+  constexpr char input[] = R"xml(<route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><return-failure-detail>true</return-failure-detail><rib-name>100</rib-name><input-routes><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><updated-route-attr><route-preference>20</route-preference><local-only>false</local-only></updated-route-attr></route-list></input-routes></route-update>)xml";
   ObservedRoute route;
   route.route = {.routing_instance = "default", .rib = "100",
                  .address_family = "ipv4", .index = 99,
@@ -806,6 +862,34 @@ TEST(RibConfigTest, RouteUpdateReplacesAttributesTransactionally) {
   EXPECT_NE(std::ranges::find(commands[1].arguments, "20"),
             commands[1].arguments.end());
   EXPECT_NE(output.find(">1</success-count>"), std::string::npos);
+}
+
+TEST(RibConfigTest, RouteUpdateRejectsUnrepresentableLocalOnlyAttribute) {
+  constexpr char input[] = R"xml(<route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><return-failure-detail>true</return-failure-detail><rib-name>100</rib-name><input-routes><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><updated-route-attr><route-preference>20</route-preference><local-only>true</local-only></updated-route-attr></route-list></input-routes></route-update>)xml";
+  ObservedRoute route;
+  route.route = {.routing_instance = "default", .rib = "100",
+                 .address_family = "ipv4", .index = 99,
+                 .destination = "192.0.2.0/24", .gateway = "192.0.2.1",
+                 .interface = "dummy0", .nexthop_ref = std::nullopt,
+                 .preference = 10};
+  unsigned commands = 0;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRouteUpdate(
+      NativePlatform::kLinux, input, &output, &error, &path,
+      [&](const NativeCommand&, std::string*) {
+        ++commands;
+        return true;
+      },
+      [&](std::vector<ObservedRoute>* routes, std::string*) {
+        *routes = {route};
+        return true;
+      })) << error;
+  EXPECT_EQ(commands, 0U);
+  EXPECT_NE(output.find(">0</success-count>"), std::string::npos);
+  EXPECT_NE(output.find(">1</failed-count>"), std::string::npos);
+  EXPECT_NE(output.find("<error-code>3</error-code>"), std::string::npos);
 }
 
 TEST(RibConfigTest, RouteUpdateRestoresOriginalAfterInstallFailure) {

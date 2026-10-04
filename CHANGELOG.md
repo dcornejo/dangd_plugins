@@ -9,6 +9,21 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Closed an RFC 8431 route-attribute fidelity hole on Linux and FreeBSD.
+  Configured routes, `route-add`, and `route-update` now reject
+  `local-only=true` before native mutation because neither portable backend can
+  safely create the kernel-owned receive-route semantics represented by that
+  value. Genuine `RT_SCOPE_HOST`/`RTF_LOCAL` routes remain available as
+  read-only operational state. Parser, platform validation, RPC, and loadable
+  plugin-contract tests cover the rejection and exact attributed path.
+
+- Reconfirmed the FRR 10.7 optional-daemon inventory on Linux and FreeBSD.
+  RIP and RIPng remain the only usable registered protocol backends and already
+  have bidirectional peer state and RPC evidence. BFD remains an
+  advertised-but-unapplied backend, while OSPFv2, IS-IS, PIM, EIGRP, Pathd,
+  VRRP, and BGP do not register their models with mgmtd; further live protocol
+  work is therefore gated on a newly usable upstream backend.
+
 - Completed the production command-execution audit by replacing the FreeBSD
   RFC 7317 NTP provider's `std::system()` call with `posix_spawn(3)` of the
   absolute service(8) path and fixed base-ntpd argv. Spawn, wait, exit-status,

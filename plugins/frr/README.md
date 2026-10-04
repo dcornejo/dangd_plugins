@@ -475,6 +475,14 @@ The clear side must expose a link-local RIPng neighbor and the peer `/128` in
 roles proves the behavior on both operating systems. Never use a production,
 management, or untrusted interface for this packet-emitting test.
 
+This is exhaustive for the conditional protocol backends registered by the
+current FRR 10.7 packages: RIP and RIPng pass the peer interactions above, and
+BFD remains blocked by its advertised-but-missing backend. OSPFv2, IS-IS, PIM,
+EIGRP, Pathd, VRRP, and BGP cannot be exercised through this provider until a
+running daemon registers the corresponding model with mgmtd. Re-run the
+inventory before adding another protocol interaction; installed YANG files or
+daemon binaries alone are not sufficient evidence.
+
 Inspect an installed candidate model closure with:
 
 ```sh

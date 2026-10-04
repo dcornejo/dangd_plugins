@@ -32,7 +32,11 @@ Gateway-plus-interface nexthops use the schema-defined combined IPv4 or IPv6
 container; generated examples for both address families are validated as YANG
 operational data with their interface leafrefs resolved.
 Observed `local-only` state comes from Linux `RT_SCOPE_HOST` and FreeBSD
-`RTF_LOCAL`; it is not guessed from prefix length or interface scope.
+`RTF_LOCAL`; it is not guessed from prefix length or interface scope. Those
+routes are kernel-owned receive paths. Portable configuration, `route-add`,
+and `route-update` therefore require `local-only=false` and reject `true`
+before mutation instead of installing an ordinary forwarding route with a
+false claim.
 Native receive, blackhole, and error-reject routes are published with the RFC
 8431 `receive`, `discard`, and `discard-with-error` special nexthop identities.
 This covers Linux `RTN_LOCAL`, `RTN_BLACKHOLE`, `RTN_UNREACHABLE`, and
@@ -89,10 +93,12 @@ routes whose base nexthop is a gateway, an outgoing interface, or both. It
 accepts only the routing instance named `default`; VRF/VNET instance mapping is
 not implemented, so any other name fails at `/routing-instance/name` rather
 than being applied to the host default instance. It
-requires the RFC 8431 route preference and local-only fields, rejects source,
-MPLS, MAC, interface-match, chained, replicated, protected, load-balanced, and
-tunnel routes with an attributed model path, and computes replacements as an
-old-route deletion followed by a new-route installation. Linux and FreeBSD
+requires the RFC 8431 route preference and local-only fields. The portable
+configuration slice accepts only `local-only=false`; native local receive
+routes remain observable read-only state. It rejects source, MPLS, MAC,
+interface-match, chained, replicated, protected, load-balanced, and tunnel
+routes with an attributed model path, and computes replacements as an old-route
+deletion followed by a new-route installation. Linux and FreeBSD
 production mutation use bounded route-netlink messages and wait for the
 correlated kernel acknowledgement. Retained argv planners are deterministic
 unit-test adapters and are never executed by production. The shared executor stops
@@ -132,10 +138,11 @@ gateway and interface, a missing route returns RFC error code 2, and an
 ambiguous multipath match fails closed with reserved code 0.
 
 `route-update` supports per-prefix replacement of a base nexthop or the complete
-portable route-attributes pair. It captures the matching observed route as the
-before-image, deletes it, installs the replacement, and restores that exact
-before-image if installation fails. Attribute-wide, nexthop-wide, and vendor
-selectors remain explicitly unsupported.
+portable route-attributes pair when `local-only` remains false. It captures the
+matching observed route as the before-image, rejects an unrepresentable
+local-only replacement before deletion, installs the supported replacement,
+and restores the exact before-image if installation fails. Attribute-wide,
+nexthop-wide, and vendor selectors remain explicitly unsupported.
 
 `rib-add` validates a numeric native namespace. Linux tables are created by
 their first route, while FreeBSD FIBs must already exist in `net.fibs`; no
