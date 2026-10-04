@@ -7,10 +7,10 @@
 #include <unistd.h>
 
 #include <cerrno>
-#include <cstdlib>
 #include <cstring>
 
 #include "plugins/system/src/platform.h"
+#include "plugins/system/src/freebsd/service_runner.h"
 
 namespace dang::system {
 
@@ -20,16 +20,7 @@ PlatformLayout NativePlatformLayout() {
 }
 
 bool NativeNtpServiceOperation(bool enabled, std::string* error) {
-  // FreeBSD's supported ntpd lifecycle remains the audited rc.d boundary.
-  // The command is fixed host policy and contains no modeled input. A later
-  // audit increment will replace the shell or document the narrow argv-only
-  // exception after checking the service-management interfaces available in
-  // supported FreeBSD releases.
-  const char* command = enabled ? "service ntpd onerestart"
-                                : "service ntpd onestop";
-  if (std::system(command) == 0) return true;
-  if (error) *error = "FreeBSD ntpd service command failed";
-  return false;
+  return RunFreeBsdNtpService(enabled, error);
 }
 
 bool NativePowerOperation(bool restart, std::string* error) {

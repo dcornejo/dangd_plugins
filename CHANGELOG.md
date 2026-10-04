@@ -9,6 +9,15 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Completed the production command-execution audit by replacing the FreeBSD
+  RFC 7317 NTP provider's `std::system()` call with `posix_spawn(3)` of the
+  absolute service(8) path and fixed base-ntpd argv. Spawn, wait, exit-status,
+  and signal failures are now attributed precisely. Unit coverage verifies
+  wait-status interpretation, and the opt-in FreeBSD lifecycle test starts,
+  stops, verifies, and restores the service's initial state. The final source
+  scan contains no shell execution; the only remaining production process
+  boundary is this documented FreeBSD rc.d fallback.
+
 - Replaced Linux RFC 7317 NTP service commands with the systemd manager's
   native sd-bus API. The provider subscribes before enqueueing a chrony job,
   correlates the returned object path with `JobRemoved`, accepts only `done`,

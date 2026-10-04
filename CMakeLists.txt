@@ -246,7 +246,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
     find_library(DANG_CRYPT_LIBRARY crypt REQUIRED)
   else()
     set(DANG_SYSTEM_PLATFORM_SOURCE
-      plugins/system/src/freebsd/platform_freebsd.cc)
+      plugins/system/src/freebsd/platform_freebsd.cc
+      plugins/system/src/freebsd/service_runner.cc)
     set(DANG_SYSTEM_PLATFORM_LIBRARIES "")
     find_library(DANG_CRYPT_LIBRARY crypt REQUIRED)
   endif()
@@ -668,22 +669,39 @@ if(BUILD_TESTING)
       -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
     add_test(NAME system_platform_power_policy
       COMMAND system_platform_policy_test)
-    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-      add_executable(system_ntp_native_test
-        tests/system_ntp_native_test.cc
-        plugins/system/src/linux/platform_linux.cc)
-      target_compile_features(system_ntp_native_test PRIVATE cxx_std_20)
-      target_include_directories(system_ntp_native_test PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}")
-      target_link_libraries(system_ntp_native_test PRIVATE
-        ${DANG_SYSTEM_PLATFORM_LIBRARIES})
-      target_compile_options(system_ntp_native_test PRIVATE
-        -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
-      if(DANG_SYSTEM_NATIVE_TESTS)
+    add_executable(system_ntp_native_test
+      tests/system_ntp_native_test.cc ${DANG_SYSTEM_PLATFORM_SOURCE})
+    target_compile_features(system_ntp_native_test PRIVATE cxx_std_20)
+    target_include_directories(system_ntp_native_test PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(system_ntp_native_test PRIVATE
+      ${DANG_SYSTEM_PLATFORM_LIBRARIES})
+    target_compile_options(system_ntp_native_test PRIVATE
+      -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    if(DANG_SYSTEM_NATIVE_TESTS)
+      if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         add_test(NAME systemd_ntp_service_lifecycle
           COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_systemd_ntp_native.sh"
             $<TARGET_FILE:system_ntp_native_test>)
+      else()
+        add_test(NAME freebsd_ntp_service_lifecycle
+          COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_freebsd_ntp_native.sh"
+            $<TARGET_FILE:system_ntp_native_test>)
       endif()
+    endif()
+    if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+      add_executable(freebsd_service_runner_test
+        tests/freebsd_service_runner_test.cc
+        plugins/system/src/freebsd/service_runner.cc)
+      target_compile_features(freebsd_service_runner_test PRIVATE cxx_std_20)
+      target_include_directories(freebsd_service_runner_test PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}")
+      target_link_libraries(freebsd_service_runner_test PRIVATE
+        GTest::gtest_main)
+      target_compile_options(freebsd_service_runner_test PRIVATE
+        -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+      add_test(NAME freebsd_service_process_status
+        COMMAND freebsd_service_runner_test)
     endif()
     add_executable(system_plugin_integration_test
       tests/system_plugin_integration_test.cc)

@@ -16,10 +16,11 @@ tests.
 ## Dependencies, privileges, and installation
 
 The runtime requires dangd 0.1.0 or newer, libxml2, the platform `crypt(3)`
-library, and either chrony plus libsystemd on Linux or base ntpd on FreeBSD. Production changes
-to hostname, clock, resolver, accounts, and services require the privileged
-dangd deployment identity. Protect NETCONF with authenticated transport and
-NACM; do not reuse this identity for ordinary shell or application access.
+library, and either chrony plus libsystemd on Linux or base ntpd on FreeBSD.
+Production changes to hostname, clock, resolver, accounts, and services require
+the privileged dangd deployment identity. Protect NETCONF with authenticated
+transport and NACM; do not reuse this identity for ordinary shell or
+application access.
 
 Debian/Ubuntu:
 
@@ -65,7 +66,9 @@ restarting the service.
 - NTP configuration is rendered for chrony on Linux and ntpd on FreeBSD. Linux
   asks systemd to reload or restart chrony over D-Bus when enabled and to stop
   it when disabled, then waits for the correlated job completion. FreeBSD
-  currently performs the equivalent base-ntpd lifecycle through rc.d.
+  performs the equivalent base-ntpd lifecycle through its documented
+  service(8)/rc.d boundary using an absolute executable path and fixed argv;
+  it does not invoke a shell.
 - DNS search domains, servers, timeout, and attempts are rendered to a static
   `/etc/resolv.conf`. Non-default DNS ports are not advertised.
 - local users, SHA-256/SHA-512 crypt password hashes, and authorized SSH key
@@ -131,8 +134,9 @@ not a PAM operation and remains separate.
    RFC 7317 does not define which platform default should replace it.
 5. Linux NTP integration targets chrony through the systemd D-Bus manager and
    FreeBSD targets base ntpd. Other daemons require a platform adapter. The
-   `ntp-udp-port` feature is disabled. FreeBSD rc.d execution remains the
-   system provider's only production shell boundary.
+   `ntp-udp-port` feature is disabled. Base ntpd exposes no service-manager
+   library or socket API on FreeBSD, so the provider uses the documented
+   service(8)/rc.d process boundary with fixed, host-owned arguments.
 6. `set-current-datetime` currently accepts canonical UTC values ending in
    `Z`; fractional seconds and explicit numeric offsets allowed by
    `yang:date-and-time` are not translated. The plugin ABI cannot return RFC
@@ -172,9 +176,10 @@ Each script checks successful and failed password authentication through the
 host PAM framework, verifies generated DNS and NTP files, reads live platform
 state, rolls the transaction back, and removes its temporary PAM policy.
 
-Linux additionally has an opt-in live service-manager check. Configure with
-`-DDANG_SYSTEM_NATIVE_TESTS=ON`; the test records chrony's initial state,
-enables and disables it through sd-bus, verifies each completed state, and
+Both platforms additionally have an opt-in live service-manager check.
+Configure with `-DDANG_SYSTEM_NATIVE_TESTS=ON`; the test records the native NTP
+service's initial state, enables and disables it through sd-bus on Linux or the
+fixed service(8) invocation on FreeBSD, verifies each completed state, and
 restores the initial state even after failure.
 
 Native packages deliberately do not enable a PAM policy or alter sshd. The
@@ -193,10 +198,10 @@ at a time with local console recovery available. Leave
 and restricted by NACM.
 
 Linux NTP reload/restart and stop use the systemd D-Bus manager and wait for
-the exact asynchronous job outcome. FreeBSD's fixed host-owned rc.d command is
-the system plugin's only remaining production shell boundary. It does not
-include model data, but it is tracked for replacement with the safest supported
-FreeBSD service interface in the collection-wide
+the exact asynchronous job outcome. FreeBSD uses `posix_spawn(3)` to execute
+the absolute `/usr/sbin/service` path with only `ntpd onerestart` or
+`ntpd onestop`. This is the documented base-system lifecycle interface; no
+modeled data enters its argv and no shell is involved. See the collection-wide
 [`COMMAND_EXECUTION_AUDIT.md`](../../COMMAND_EXECUTION_AUDIT.md).
 
 Before uninstalling, remove the plugin option and migrate or delete all

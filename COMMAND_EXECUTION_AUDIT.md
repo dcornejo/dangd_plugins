@@ -28,8 +28,11 @@ failure and rollback tests.
   deployment guard remains. Linux NTP service control now calls the systemd
   manager over sd-bus, subscribes before enqueueing the unit job, correlates
   its object path with `JobRemoved`, and accepts only the `done` result under a
-  bounded timeout. FreeBSD NTP service control retains one fixed,
-  host-controlled `std::system()` boundary pending the next audit item.
+  bounded timeout. FreeBSD base ntpd exposes no service-manager socket or
+  library API; its documented lifecycle boundary is service(8) and rc.d. The
+  provider therefore uses `posix_spawn(3)` with the absolute
+  `/usr/sbin/service` path and the fixed argv `ntpd onerestart` or
+  `ntpd onestop`. It never constructs or invokes a shell command.
 - `rib`: no process creation. Linux and FreeBSD production mutation construct
   bounded route-netlink requests, resolve interfaces to native indexes, and
   wait for the matching kernel acknowledgement under a receive timeout.
@@ -56,15 +59,17 @@ failure and rollback tests.
    method and job-result failures. The lifecycle test restores chrony's exact
    initial active state. This does not change the documented requirement for
    exclusive ownership and migration when the future RFC 9249 plugin arrives.
-4. [ ] Determine whether FreeBSD exposes a stable service-management interface for
-   ntpd. If rc scripts remain the only supported boundary, replace
-   `std::system()` with an absolute, fixed argv execution helper and document
-   that narrow exception, its exit/signal behavior, and rollback coverage.
-5. [ ] Re-run the source scan and native Linux/FreeBSD suites after each removal.
-   The current scan finds only the one recorded FreeBSD RFC 7317 NTP
-   `std::system()` call. The audit is complete only when every remaining
-   process boundary is listed here with evidence that no suitable programmatic
-   interface exists.
+4. [x] Inspect FreeBSD's base ntpd service boundary and replace `std::system()`.
+   FreeBSD provides service(8) and rc.d as the documented stable lifecycle
+   interface, not a service-manager library or socket API. The narrow fallback
+   now executes only the absolute path and fixed argv described above, reports
+   spawn, wait, exit-status, and signal failures, and is covered by status
+   interpretation and live start/stop/restore tests.
+5. [x] Re-run the source scan and native Linux/FreeBSD suites after the final
+   removal. The production scan finds no shell execution and exactly one
+   process boundary: the documented FreeBSD service(8) fallback above. The
+   complete suites pass on Linux and FreeBSD, including native route and NTP
+   lifecycle tests. The production plugin command-execution audit is complete.
 
 Core dangd worker supervision is outside this plugin audit: it intentionally
 uses `posix_spawn(3)` as the programmatic process API for privilege and crash
