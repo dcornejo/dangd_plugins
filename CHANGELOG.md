@@ -9,6 +9,16 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Expanded Linux routes backed by persistent nexthop object IDs. The observer
+  now inventories objects through `RTM_GETNEXTHOP`, recursively resolves simple
+  and grouped IDs, and publishes each representable gateway/interface path in
+  the existing RFC 8431 base-nexthop view. Missing, cyclic, encapsulated, FDB,
+  wrong-family, or interrupted results fail closed or remain omitted rather
+  than producing a partial route. The isolated namespace suite now verifies a
+  real weighted two-member nexthop group and its read-only safety boundary
+  while retaining the explicit variance that weights are not modeled without
+  the load-balance feature.
+
 - Closed an RFC 8431 route-attribute fidelity hole on Linux and FreeBSD.
   Configured routes, `route-add`, and `route-update` now reject
   `local-only=true` before native mutation because neither portable backend can

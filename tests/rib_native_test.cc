@@ -15,6 +15,8 @@ int main(int argc, char** argv) {
     std::cerr << "usage: rib_native_test linux|freebsd install|delete "
                  "RIB PREFIX INTERFACE [GATEWAY]\n"
                  "       rib_native_test linux observe-multipath "
+                 "RIB PREFIX INTERFACE INTERFACE\n"
+                 "       rib_native_test linux observe-nexthop-group "
                  "RIB PREFIX INTERFACE INTERFACE\n";
     return 2;
   }
@@ -22,9 +24,11 @@ int main(int argc, char** argv) {
   const std::string_view operation(argv[2]);
   if ((platform_name != "linux" && platform_name != "freebsd") ||
       (operation != "install" && operation != "delete" &&
-       operation != "observe-multipath"))
+       operation != "observe-multipath" &&
+       operation != "observe-nexthop-group"))
     return 2;
-  if (operation == "observe-multipath") {
+  if (operation == "observe-multipath" ||
+      operation == "observe-nexthop-group") {
     if (platform_name != "linux" || argc != 7) return 2;
     std::vector<dang::rib::ObservedRoute> routes;
     std::string error;
@@ -42,10 +46,15 @@ int main(int argc, char** argv) {
     }
     const std::string operational =
         dang::rib::SerializeOperationalRoutes(matching);
+    bool mutability_ok = true;
+    for (const auto& route : matching) {
+      if (route.mutable_route != (operation == "observe-multipath"))
+        mutability_ok = false;
+    }
     const bool ok = matching.size() == 2U && interfaces.size() == 2U &&
         interfaces.contains(argv[5]) && interfaces.contains(argv[6]) &&
         operational.find(argv[5]) != std::string::npos &&
-        operational.find(argv[6]) != std::string::npos;
+        operational.find(argv[6]) != std::string::npos && mutability_ok;
     if (!ok)
       std::cerr << "multipath observation mismatch: " << operational << '\n';
     return ok ? 0 : 1;

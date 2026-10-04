@@ -11,6 +11,7 @@
 #if defined(__linux__)
 #include <arpa/inet.h>
 #include <linux/netlink.h>
+#include <linux/nexthop.h>
 #include <linux/rtnetlink.h>
 #include <net/if.h>
 #include <sys/socket.h>
@@ -23,19 +24,35 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <map>
 #include <set>
+#include <tuple>
 #endif
 
 namespace dang::rib {
 namespace {
 
 #if defined(__linux__)
-/** One path nested in Linux's RTA_MULTIPATH route attribute. */
+/** One native path from RTA_MULTIPATH or an expanded nexthop object. */
 struct LinuxNexthop {
   std::optional<std::string> gateway;
+  std::optional<std::string> special;
   unsigned interface_index = 0;
   bool installed = true;
 };
+
+/** One Linux persistent nexthop object or group returned by route netlink. */
+struct LinuxNexthopObject {
+  int family = AF_UNSPEC;
+  unsigned flags = 0;
+  std::optional<std::string> gateway;
+  std::optional<std::string> special;
+  unsigned interface_index = 0;
+  std::vector<std::uint32_t> members;
+  bool unsupported = false;
+};
+
+using LinuxNexthopObjects = std::map<std::uint32_t, LinuxNexthopObject>;
 
 /** Bounded request storage for one route and its portable attributes. */
 struct LinuxRouteRequest {
@@ -174,6 +191,185 @@ bool SendAcknowledgedRouteRequest(LinuxRouteRequest* request,
       return false;
     }
   }
+}
+
+/** Reads the kernel nexthop-object registry used by route RTA_NH_ID values. */
+bool ReadLinuxNexthopObjects(LinuxNexthopObjects* objects,
+                             std::string* error) {
+  objects->clear();
+  const int socket_fd =
+      socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
+  if (socket_fd < 0) {
+    *error = "cannot open Linux nexthop netlink socket: " +
+             std::string(std::strerror(errno));
+    return false;
+  }
+  const auto close_socket = [&]() { close(socket_fd); };
+  struct Request {
+    nlmsghdr header;
+    nhmsg nexthop;
+  } request{};
+  request.header.nlmsg_len = NLMSG_LENGTH(sizeof(nhmsg));
+  request.header.nlmsg_type = RTM_GETNEXTHOP;
+  request.header.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  request.header.nlmsg_seq = 1U;
+  request.nexthop.nh_family = AF_UNSPEC;
+  if (send(socket_fd, &request, request.header.nlmsg_len, 0) < 0) {
+    *error = "cannot request Linux nexthop objects: " +
+             std::string(std::strerror(errno));
+    close_socket();
+    return false;
+  }
+
+  std::array<char, 32768> buffer{};
+  bool done = false;
+  while (!done) {
+    const ssize_t received = recv(socket_fd, buffer.data(), buffer.size(), 0);
+    if (received < 0) {
+      if (errno == EINTR) continue;
+      *error = "cannot receive Linux nexthop objects: " +
+               std::string(std::strerror(errno));
+      close_socket();
+      return false;
+    }
+    if (received == 0) {
+      *error = "Linux nexthop dump ended before completion";
+      close_socket();
+      return false;
+    }
+    int remaining = static_cast<int>(received);
+    for (nlmsghdr* header = reinterpret_cast<nlmsghdr*>(buffer.data());
+         NLMSG_OK(header, remaining); header = NLMSG_NEXT(header, remaining)) {
+      if (header->nlmsg_seq != request.header.nlmsg_seq) continue;
+      if (header->nlmsg_type == NLMSG_DONE) {
+        if ((header->nlmsg_flags & NLM_F_DUMP_INTR) != 0U) {
+          *error = "Linux nexthop dump was interrupted by a registry change";
+          close_socket();
+          return false;
+        }
+        done = true;
+        break;
+      }
+      if (header->nlmsg_type == NLMSG_ERROR) {
+        if (header->nlmsg_len < NLMSG_LENGTH(sizeof(nlmsgerr))) {
+          *error = "Linux nexthop dump returned a truncated error";
+          close_socket();
+          return false;
+        }
+        const auto* failure =
+            reinterpret_cast<const nlmsgerr*>(NLMSG_DATA(header));
+        if (failure->error == 0) {
+          done = true;
+          break;
+        }
+        const int code = -failure->error;
+        // Kernels predating the nexthop-object API have no objects to expand;
+        // retain the historical route observation behavior on those hosts.
+        if (code == EOPNOTSUPP || code == EINVAL) {
+          objects->clear();
+          close_socket();
+          return true;
+        }
+        *error = "Linux kernel rejected nexthop dump: " +
+                 std::string(std::strerror(code));
+        close_socket();
+        return false;
+      }
+      if (header->nlmsg_type != RTM_NEWNEXTHOP ||
+          header->nlmsg_len < NLMSG_LENGTH(sizeof(nhmsg)))
+        continue;
+      const auto* info = reinterpret_cast<const nhmsg*>(NLMSG_DATA(header));
+      LinuxNexthopObject object;
+      object.family = info->nh_family;
+      object.flags = info->nh_flags;
+      std::uint32_t id = 0;
+      int attributes_length =
+          static_cast<int>(NLMSG_PAYLOAD(header, sizeof(nhmsg)));
+      for (rtattr* attribute = reinterpret_cast<rtattr*>(
+               reinterpret_cast<char*>(const_cast<nhmsg*>(info)) +
+               NLMSG_ALIGN(sizeof(nhmsg)));
+           RTA_OK(attribute, attributes_length);
+           attribute = RTA_NEXT(attribute, attributes_length)) {
+        const std::size_t payload = RTA_PAYLOAD(attribute);
+        if (attribute->rta_type == NHA_ID && payload >= sizeof(id)) {
+          std::memcpy(&id, RTA_DATA(attribute), sizeof(id));
+        } else if (attribute->rta_type == NHA_OIF &&
+                   payload >= sizeof(std::uint32_t)) {
+          std::uint32_t index = 0;
+          std::memcpy(&index, RTA_DATA(attribute), sizeof(index));
+          object.interface_index = index;
+        } else if (attribute->rta_type == NHA_GATEWAY) {
+          char address[INET6_ADDRSTRLEN]{};
+          if ((object.family == AF_INET && payload >= 4U) ||
+              (object.family == AF_INET6 && payload >= 16U)) {
+            if (inet_ntop(object.family, RTA_DATA(attribute), address,
+                          sizeof(address)))
+              object.gateway = address;
+          } else {
+            object.unsupported = true;
+          }
+        } else if (attribute->rta_type == NHA_GROUP) {
+          if (payload % sizeof(nexthop_grp) != 0U) {
+            object.unsupported = true;
+            continue;
+          }
+          const auto* group =
+              reinterpret_cast<const nexthop_grp*>(RTA_DATA(attribute));
+          for (std::size_t index = 0; index < payload / sizeof(*group);
+               ++index)
+            object.members.push_back(group[index].id);
+        } else if (attribute->rta_type == NHA_BLACKHOLE) {
+          object.special = "discard";
+        } else if (attribute->rta_type == NHA_ENCAP ||
+                   attribute->rta_type == NHA_ENCAP_TYPE ||
+                   attribute->rta_type == NHA_FDB) {
+          object.unsupported = true;
+        }
+      }
+      if (id != 0U) (*objects)[id] = std::move(object);
+    }
+  }
+  close_socket();
+  return true;
+}
+
+/** Recursively expands one simple or grouped object into RFC base nexthops. */
+bool ExpandLinuxNexthopObject(std::uint32_t id, int route_family,
+                              const LinuxNexthopObjects& objects,
+                              std::set<std::uint32_t>* visiting,
+                              std::vector<LinuxNexthop>* paths) {
+  const auto found = objects.find(id);
+  if (found == objects.end() || found->second.unsupported ||
+      !visiting->insert(id).second)
+    return false;
+  const LinuxNexthopObject& object = found->second;
+  const std::size_t first_path = paths->size();
+  bool valid = true;
+  if (!object.members.empty()) {
+    for (const std::uint32_t member : object.members) {
+      if (!ExpandLinuxNexthopObject(member, route_family, objects, visiting,
+                                    paths)) {
+        valid = false;
+        break;
+      }
+    }
+  } else if ((object.family == AF_UNSPEC || object.family == route_family) &&
+             (object.gateway || object.interface_index != 0U ||
+              object.special)) {
+    paths->push_back({.gateway = object.gateway,
+                      .special = object.special,
+                      .interface_index = object.interface_index,
+                      .installed =
+                          (object.flags & (RTNH_F_DEAD | RTNH_F_LINKDOWN)) ==
+                          0U});
+  } else {
+    valid = false;
+  }
+  if ((object.flags & (RTNH_F_DEAD | RTNH_F_LINKDOWN)) != 0U)
+    for (std::size_t index = first_path; index < paths->size(); ++index)
+      (*paths)[index].installed = false;
+  visiting->erase(id);
+  return valid;
 }
 #endif
 
@@ -333,6 +529,8 @@ bool ObserveLinuxRoutes(std::vector<ObservedRoute>* routes,
 #else
   if (!routes || !error) return false;
   routes->clear();
+  LinuxNexthopObjects nexthop_objects;
+  if (!ReadLinuxNexthopObjects(&nexthop_objects, error)) return false;
   const int socket_fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
   if (socket_fd < 0) { *error = std::strerror(errno); return false; }
   struct Request { nlmsghdr header; rtmsg route; } request{};
@@ -394,6 +592,8 @@ bool ObserveLinuxRoutes(std::vector<ObservedRoute>* routes,
       unsigned table = info->rtm_table;
       unsigned interface_index = 0;
       std::uint32_t metric = 0;
+      std::optional<std::uint32_t> nexthop_id;
+      bool from_nexthop_object = false;
       std::vector<LinuxNexthop> multipath;
       int attributes_length = static_cast<int>(RTM_PAYLOAD(header));
       for (rtattr* attribute = RTM_RTA(info); RTA_OK(attribute, attributes_length);
@@ -411,6 +611,12 @@ bool ObserveLinuxRoutes(std::vector<ObservedRoute>* routes,
           std::memcpy(&metric, RTA_DATA(attribute), sizeof(metric));
         else if (attribute->rta_type == RTA_TABLE)
           std::memcpy(&table, RTA_DATA(attribute), sizeof(table));
+        else if (attribute->rta_type == RTA_NH_ID &&
+                 RTA_PAYLOAD(attribute) >= sizeof(std::uint32_t)) {
+          std::uint32_t id = 0;
+          std::memcpy(&id, RTA_DATA(attribute), sizeof(id));
+          nexthop_id = id;
+        }
         else if (attribute->rta_type == RTA_MULTIPATH) {
           int nexthops_length = static_cast<int>(RTA_PAYLOAD(attribute));
           for (rtnexthop* nexthop =
@@ -436,6 +642,15 @@ bool ObserveLinuxRoutes(std::vector<ObservedRoute>* routes,
             multipath.push_back(std::move(path));
           }
         }
+      }
+      from_nexthop_object = nexthop_id.has_value();
+      if (nexthop_id) {
+        std::set<std::uint32_t> visiting;
+        std::vector<LinuxNexthop> expanded;
+        if (!ExpandLinuxNexthopObject(*nexthop_id, info->rtm_family,
+                                      nexthop_objects, &visiting, &expanded))
+          continue;
+        multipath = std::move(expanded);
       }
       char address[INET6_ADDRSTRLEN]{};
       if (!inet_ntop(info->rtm_family, destination.data(), address, sizeof(address))) continue;
@@ -473,19 +688,32 @@ bool ObserveLinuxRoutes(std::vector<ObservedRoute>* routes,
         routes->push_back(std::move(value));
       };
       if (!multipath.empty() && !route.special) {
-        std::set<std::pair<std::optional<std::string>,
-                           std::optional<std::string>>> emitted_paths;
+        std::set<std::tuple<std::optional<std::string>,
+                            std::optional<std::string>,
+                            std::optional<std::string>>> emitted_paths;
         for (const LinuxNexthop& path : multipath) {
           ObservedRoute member = observed;
           member.installed = path.installed;
+          // The RFC base view cannot retain the Linux object ID or group
+          // topology needed to recreate this route during rollback. Keep it
+          // observable, but never approximate an imperative mutation.
+          if (from_nexthop_object) member.mutable_route = false;
           member.route.gateway = path.gateway;
           member.route.interface = resolve_interface_name(path.interface_index);
+          member.route.special = path.special;
+          if (member.route.special) {
+            member.route.gateway.reset();
+            member.route.interface.reset();
+          }
           // A kernel nexthop object referenced only by ID cannot yet be
-          // expanded into the RFC base-nexthop choice. Never emit an empty,
-          // schema-invalid nexthop while that support remains absent.
-          if (!member.route.gateway && !member.route.interface) continue;
+          // represented if it uses encapsulation or another unsupported
+          // object type. Never emit an empty, schema-invalid nexthop.
+          if (!member.route.gateway && !member.route.interface &&
+              !member.route.special)
+            continue;
           if (!emitted_paths.emplace(member.route.gateway,
-                                     member.route.interface).second)
+                                     member.route.interface,
+                                     member.route.special).second)
             continue;
           append(std::move(member));
         }

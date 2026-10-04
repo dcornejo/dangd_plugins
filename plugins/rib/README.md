@@ -48,9 +48,17 @@ Linux `RTA_MULTIPATH` routes are expanded into one stable route entry per
 native base nexthop, preserving each gateway/interface path and its installed
 state. This representation avoids publishing an empty nexthop and keeps path
 identity available without advertising RFC 8431's optional load-balance
-feature. Native ECMP weights are therefore not represented yet. Routes backed
-only by an unresolved Linux nexthop-object ID are omitted until that object can
-be expanded into a schema-valid base nexthop.
+feature. Routes carrying Linux `RTA_NH_ID` are now joined with a direct
+`RTM_GETNEXTHOP` dump. Simple objects and recursively referenced multipath
+groups expand into the same base-nexthop view, including gateway, interface,
+special discard identity, and installed state. Cycles, missing members,
+encapsulation, FDB objects, wrong-family objects, interrupted dumps, and other
+unrepresentable forms are omitted rather than emitted as partial or invalid
+routes. Native ECMP weights are intentionally not represented until the
+optional load-balance feature can be implemented end to end. Object-backed
+routes are operational/read-only: the base view cannot retain the Linux object
+ID and group topology required to recreate the exact route during rollback, so
+imperative mutation fails closed instead of approximating the original object.
 
 ## Installation status and dependencies
 
@@ -122,7 +130,10 @@ and destroys both afterward. Each interaction installs the test route, verifies
 it in the plugin's operational XML and through the native kernel route
 inventory, deletes it, and verifies absence. No host LAN interface or host
 default route is used. The Linux workflow also creates a two-interface ECMP
-route in another private table and requires both paths in operational XML.
+route in another private table and requires both paths in operational XML. A
+second weighted ECMP route references a persistent Linux nexthop group; both
+member objects must be expanded through route netlink into the same safe base
+view and reported as non-mutable. The test does not claim weight fidelity.
 
 `route-add` accepts the same destination-prefix/base-nexthop subset as
 configuration commits. Each member is attempted independently, as required by
