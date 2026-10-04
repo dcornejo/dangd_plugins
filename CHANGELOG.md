@@ -9,6 +9,13 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Reclassified the FRR-native provider as the lowest-priority deferred work and
+  made native BGP a hard completion gate. The existing transaction, rollback,
+  reconciliation, operational, RIP, and RIPng foundation remains available for
+  experimentation, but the collection does not claim a supported FRR offering
+  until bgpd exposes a usable `frr-bgp` mgmtd backend and complete BGP behavior
+  passes on Linux and FreeBSD. CLI execution is not an acceptable workaround.
+
 - Expanded Linux routes backed by persistent nexthop object IDs. The observer
   now inventories objects through `RTM_GETNEXTHOP`, recursively resolves simple
   and grouped IDs, and publishes each representable gateway/interface path in

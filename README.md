@@ -123,11 +123,12 @@ only with one another. Packaging does not weaken dangd's duplicate-owner check.
   maintained in `plugins/system/README.md`.
 - `pam_dangd` is packaged independently. Follow `pam/README.md`, including its
   recovery-first SSH/PAM procedure.
-- `frr` is the top-priority routing provider. It implements native routing,
-  zebra, staticd, live interface/VRF parents, and runtime-gated protocol models
-  through `mgmtd`, with disposable validation, before-image rollback,
-  reconciliation, operational state, native RPC plumbing, and deduplicated
-  unsolicited events. See `plugins/frr/README.md` for the tested limitations.
+- `frr` is a deferred experimental routing provider. Its native routing,
+  zebra, staticd, live interface/VRF, RIP, and RIPng work remains available for
+  development, but it is not a complete or supported FRR offering. BGP is a
+  hard completion requirement, and the tested FRR runtime does not expose a
+  usable `frr-bgp` backend through `mgmtd`. See `plugins/frr/README.md` for the
+  preserved evidence and deferral gate.
 - `rib` provides the ABI-v8 RFC 8431 configuration and notification provider,
   claims the
   `routing` resource against FRR, and applies its supported route slice on Linux

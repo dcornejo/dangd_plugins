@@ -9,6 +9,15 @@ It is intentionally separate from the RFC 8431 provider: deployments select
 one routing owner, and both packages claim dangd's exclusive `routing` resource
 domain.
 
+This provider is deferred at the project's lowest priority and is not a
+complete or supported FRR offering. BGP is a hard completion requirement. The
+current FRR 10.7.1 runtime installs `frr-bgp` model sources but does not expose
+that module or a bgpd backend through mgmtd, so the required native BGP
+configuration and operational path cannot yet be implemented. Existing code
+and test evidence are retained as an experimental foundation. Work resumes
+only when that programmatic boundary is usable; invoking FRR CLI commands is
+not an acceptable substitute.
+
 The first implementation layer discovers one installed FRR YANG directory and
 loads its sources with bounded reads. Linux normally installs that directory at
 `/usr/share/yang`; FreeBSD packages normally use `/usr/local/share/yang`. These
@@ -136,7 +145,9 @@ when their module is live. RPCs declared by any enabled conditional protocol use
 the same correlated mgmtd request/reply path as zebra. OSPFv2 and VRRP data is
 carried by the routing/interface parent roots. BGP is deliberately absent from
 this list: FRR 10.7.1 installs its source family, but the tested bgpd does not
-register it as an implemented mgmtd module.
+register it as an implemented mgmtd module. Because project policy requires
+BGP for FRR support, this is a provider-level completion gate rather than one
+optional protocol gap.
 
 The opt-in Linux interaction creates two network namespaces and a disposable
 veth, commits `/frr-ripd:ripd` through mgmtd, subscribes to
