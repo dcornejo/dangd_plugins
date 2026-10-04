@@ -555,7 +555,7 @@ if(BUILD_TESTING)
   add_test(NAME frr_abi_v8_plugin_discovery
     COMMAND frr_plugin_discovery_test $<TARGET_FILE:dangd_frr_plugin>)
 
-  add_test(NAME routing_package_exclusivity
+  add_test(NAME native_packaging_contract
     COMMAND "${CMAKE_COMMAND}"
       -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
       -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}

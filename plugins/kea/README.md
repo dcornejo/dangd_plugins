@@ -415,8 +415,9 @@ has no permissive mode: failure cancels every attempted remote confirmed
 commit before local apply and leaves local running unchanged. The generic
 `dangctl --edit-config` workflow submits a Kea `<config>` document through the
 same candidate lock, edit, validation, commit, and unlock path; it contains no
-Kea-specific behavior. Production status still requires packaging and live
-Linux/FreeBSD NETCONF interoperability evidence.
+Kea-specific behavior. Native Debian and FreeBSD package installation and
+packaged-plugin loading are validated. Production status still requires live
+Linux/FreeBSD pair-wide NETCONF interoperability evidence.
 
 The plugin deliberately exposes one ABI-v4 hardware action for the entire Kea
 transaction. This preserves atomic compensation across Kea's own

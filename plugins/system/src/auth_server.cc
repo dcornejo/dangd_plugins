@@ -45,6 +45,22 @@ bool ReadAll(int socket, void* output, std::size_t size) {
   return true;
 }
 
+bool WriteAll(int socket, const void* input, std::size_t size) {
+  const auto* bytes = static_cast<const unsigned char*>(input);
+  while (size > 0) {
+#if defined(MSG_NOSIGNAL)
+    const ssize_t count = send(socket, bytes, size, MSG_NOSIGNAL);
+#else
+    const ssize_t count = send(socket, bytes, size, 0);
+#endif
+    if (count < 0 && errno == EINTR) continue;
+    if (count <= 0) return false;
+    bytes += count;
+    size -= static_cast<std::size_t>(count);
+  }
+  return true;
+}
+
 bool PeerMayAuthenticate(int socket) {
 #if defined(__linux__)
   ucred credentials{};
@@ -78,6 +94,11 @@ struct AuthServer::Impl {
   std::thread worker;
 
   void ServeClient(int client) {
+#if defined(SO_NOSIGPIPE)
+    int suppress_sigpipe = 1;
+    (void)setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &suppress_sigpipe,
+                     sizeof(suppress_sigpipe));
+#endif
     timeval timeout{5, 0};
     (void)setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout,
                      sizeof(timeout));
@@ -98,7 +119,7 @@ struct AuthServer::Impl {
         response = AuthResponse::kAccepted;
       Erase(&password);
     }
-    (void)write(client, &response, sizeof(response));
+    (void)WriteAll(client, &response, sizeof(response));
   }
 
   void Run() {

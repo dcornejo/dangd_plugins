@@ -28,6 +28,39 @@ foreach(component IN ITEMS frr rib)
   endif()
 endforeach()
 
+# The Kea component is deliberately self-contained.  Keep unrelated provider
+# models and binaries out of its native package as the collection grows.
+set(kea_stage "${BINARY_DIR}/packaging-contract-kea")
+file(REMOVE_RECURSE "${kea_stage}")
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" --install "${BINARY_DIR}"
+    --prefix "${kea_stage}" --component kea
+  RESULT_VARIABLE kea_result
+  ERROR_VARIABLE kea_error)
+if(NOT kea_result EQUAL 0)
+  message(FATAL_ERROR "cannot stage Kea package: ${kea_error}")
+endif()
+file(GLOB_RECURSE kea_files RELATIVE "${kea_stage}" "${kea_stage}/*")
+list(SORT kea_files)
+if(NOT CMAKE_SHARED_MODULE_SUFFIX)
+  set(CMAKE_SHARED_MODULE_SUFFIX ".so")
+endif()
+set(expected_kea_files
+  "lib/dangd/plugins/dangd_kea_plugin${CMAKE_SHARED_MODULE_SUFFIX}"
+  "share/doc/dangd-plugins/KEA.md"
+  "share/yang/modules/dang-kea-ha@2026-09-28.yang"
+  "share/yang/modules/dang-kea-instance@2026-09-28.yang"
+  "share/yang/modules/kea-dhcp-types@2026-06-24.yang"
+  "share/yang/modules/kea-dhcp4-server@2026-06-24.yang"
+  "share/yang/modules/kea-dhcp6-server@2026-06-24.yang"
+  "share/yang/modules/kea-types@2025-06-25.yang")
+list(SORT expected_kea_files)
+if(NOT kea_files STREQUAL expected_kea_files)
+  message(FATAL_ERROR
+    "Kea component contents differ from its package contract:\n"
+    "expected: ${expected_kea_files}\nactual: ${kea_files}")
+endif()
+
 file(READ "${SOURCE_DIR}/packaging/Packaging.cmake" packaging)
 
 # Kea is a runtime provider rather than a link dependency, so package metadata

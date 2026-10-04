@@ -65,6 +65,41 @@ staging prefix with `cmake --install build-package --prefix /tmp/stage
 --component kea` and inspect the resulting tree. A component installation must
 not contain files belonging to any other package.
 
+For a release candidate, validate the actual archives on disposable native
+hosts. Build the matching `dangd` package from the sibling repository, install
+it together with `dangd-plugin-kea`, and run the installed binaries and files:
+
+```sh
+# Debian or Ubuntu
+sudo apt install ./dangd_0.1.0_amd64.deb \
+  ./dangd-plugin-kea_0.1.0_amd64.deb
+/usr/bin/dangd \
+  --model /usr/share/doc/yang/dangd/examples/appliance.yang \
+  --config /usr/share/doc/yang/dangd/examples/config.xml \
+  --nacm /usr/share/doc/yang/dangd/examples/nacm.xml \
+  --plugin /usr/lib/dangd/plugins/dangd_kea_plugin.so \
+  --plugin-worker /usr/libexec/dangd/dangd-plugin-worker --check
+dpkg -V dangd dangd-plugin-kea
+```
+
+```sh
+# FreeBSD
+sudo pkg add ./dangd-0.1.0.pkg ./dangd-plugin-kea-0.1.0.pkg
+/usr/local/bin/dangd \
+  --model /usr/local/share/doc/yang/dangd/examples/appliance.yang \
+  --config /usr/local/share/doc/yang/dangd/examples/config.xml \
+  --nacm /usr/local/share/doc/yang/dangd/examples/nacm.xml \
+  --plugin /usr/local/lib/dangd/plugins/dangd_kea_plugin.so \
+  --plugin-worker /usr/local/libexec/dangd/dangd-plugin-worker --check
+pkg check -s dangd dangd-plugin-kea
+```
+
+The check must print `dangd: configuration is valid`. Inspect the package
+manifest as well: the Kea package must contain exactly one provider module,
+six YANG files, and `KEA.md`, and must declare the platform's Kea 3.2 runtime.
+Remove the validation packages afterward unless the host is intentionally a
+package-install fixture.
+
 Packaging does not enable PAM, alter sshd, configure Kea, or start dangd.
 Administrators must explicitly connect each installed plugin and PAM policy to
 their deployment. Package validation must follow the repository rule that no

@@ -2021,8 +2021,15 @@ std::optional<std::string> ModuleCandidateXml(
     if (error) *error = "cannot serialize Kea peer candidate XML";
     return std::nullopt;
   }
-  std::string serialized(reinterpret_cast<const char*>(buffer->content),
-                         buffer->use);
+  const xmlChar* content = xmlBufferContent(buffer);
+  const int length = xmlBufferLength(buffer);
+  if (!content || length < 0) {
+    xmlBufferFree(buffer);
+    if (error) *error = "cannot read serialized Kea peer candidate XML";
+    return std::nullopt;
+  }
+  std::string serialized(reinterpret_cast<const char*>(content),
+                         static_cast<std::size_t>(length));
   xmlBufferFree(buffer);
   if (serialized.size() > kMaximumDatastoreBytes) {
     if (error) *error = "Kea peer candidate exceeds the plugin byte limit";
