@@ -9,12 +9,19 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Updated the Kea HA operator workflow for the guarded generic
+  `dangctl --edit-config` transaction. Kea configuration now has an explicit
+  CLI path through ordinary candidate lock, edit, validation, commit, and
+  unlock without adding provider awareness to the client or dangd core. The
+  remaining production gates are packaging and live Linux/FreeBSD pair-wide
+  NETCONF evidence.
+
 - Reconciled the Kea HA documentation with dangd's completed normal NETCONF
   peer-commit integration. The documented contract now includes recursive-plan
   suppression, datastore-before-decision ordering, pre-mutation multi-group
-  rejection, and the fail-closed degraded-peer behavior. Packaging, `dangctl`
-  workflow integration, and live Linux/FreeBSD pair-wide NETCONF evidence
-  remain before the production-ready claim.
+  rejection, and the fail-closed degraded-peer behavior. Packaging and live
+  Linux/FreeBSD pair-wide NETCONF evidence remain before the production-ready
+  claim.
 
 - Reclassified the FRR-native provider as the lowest-priority deferred work and
   made native BGP a hard completion gate. The existing transaction, rollback,

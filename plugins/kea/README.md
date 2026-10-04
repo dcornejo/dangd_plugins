@@ -412,8 +412,10 @@ participant commits carry a host-owned context that suppresses recursive
 planning, datastore durability is ordered before distributed COMMIT, and
 multi-group proposals fail before mutation. A degraded or unreachable member
 has no permissive mode: failure cancels every attempted remote confirmed
-commit before local apply and leaves local running unchanged. Production
-status still requires packaging, `dangctl` workflow integration, and live
+commit before local apply and leaves local running unchanged. The generic
+`dangctl --edit-config` workflow submits a Kea `<config>` document through the
+same candidate lock, edit, validation, commit, and unlock path; it contains no
+Kea-specific behavior. Production status still requires packaging and live
 Linux/FreeBSD NETCONF interoperability evidence.
 
 The plugin deliberately exposes one ABI-v4 hardware action for the entire Kea

@@ -314,9 +314,13 @@ durable before the distributed COMMIT decision, and a commit affecting several
 peer groups fails before mutation rather than committing groups sequentially.
 A transport or health-verification failure cancels every attempted remote
 confirmed commit before local apply, sends no confirmation, removes a fully
-cancelled PREPARED journal, and leaves local running unchanged. Packaging,
-`dangctl` workflow integration, and live cross-platform pair-wide NETCONF
-evidence remain.
+cancelled PREPARED journal, and leaves local running unchanged. Packaging and
+live cross-platform pair-wide NETCONF evidence remain. The guarded
+`dangctl --edit-config` workflow now provides the operator-facing path: it
+submits a complete or partial Kea `<config>` document through standard
+candidate lock, edit, validation, commit, and unlock operations. All Kea
+planning and verification remains in this plugin behind ABI v9; the client and
+dangd core contain no Kea-specific branch.
 
 The implemented production pair controller treats the peers as one transaction
 group:
