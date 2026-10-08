@@ -94,6 +94,9 @@ using RouteEventSink = std::function<void(const Route&, bool installed)>;
 using RibNameResolver =
     std::function<std::optional<std::string>(const std::string&,
                                              const std::string&)>;
+/** Injectable route inventory used by imperative route operations. */
+using RouteObserver =
+    std::function<bool(std::vector<ObservedRoute>*, std::string*)>;
 
 /** Executes the supported RFC 8431 route-add RPC and returns its output XML. */
 [[nodiscard]] bool InvokeRouteAdd(NativePlatform platform,
@@ -106,11 +109,8 @@ using RibNameResolver =
                                   NexthopRegistry* registry = nullptr,
                                   const RegistryWriter& writer = {},
                                   const RouteEventSink& events = {},
-                                  const RibNameResolver& native_rib = {});
-
-/** Injectable route inventory used to resolve route-delete prefix requests. */
-using RouteObserver =
-    std::function<bool(std::vector<ObservedRoute>*, std::string*)>;
+                                  const RibNameResolver& native_rib = {},
+                                  const RouteObserver& observer = {});
 
 /** Executes RFC 8431 route-delete against unambiguous observed routes. */
 [[nodiscard]] bool InvokeRouteDelete(

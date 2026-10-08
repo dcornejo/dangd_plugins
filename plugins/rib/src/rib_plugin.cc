@@ -25,6 +25,10 @@
 #include <string_view>
 #include <vector>
 
+#if defined(__FreeBSD__)
+#include <sys/sysctl.h>
+#endif
+
 namespace {
 using namespace dang::rib;
 
@@ -129,11 +133,16 @@ RouteObserver Observer(Context* owner) {
       ok = ObserveLinuxRoutes(routes, error);
     } else {
       routes->clear();
-      std::vector<std::uint32_t> fibs =
-          owner->rib_mapping.NativeNumbers(NativePlatform::kFreeBsd);
-      if (std::ranges::find(fibs, 0U) == fibs.end()) fibs.insert(fibs.begin(), 0U);
+#if defined(__FreeBSD__)
+      unsigned fib_count = 0;
+      size_t size = sizeof(fib_count);
+      if (sysctlbyname("net.fibs", &fib_count, &size, nullptr, 0) != 0 ||
+          fib_count == 0U) {
+        *error = "cannot enumerate FreeBSD FIBs";
+        return false;
+      }
       ok = true;
-      for (const std::uint32_t fib : fibs) {
+      for (std::uint32_t fib = 0; fib < fib_count; ++fib) {
         std::vector<ObservedRoute> observed;
         if (!ObserveFreeBsdRoutesForFib(fib, &observed, error)) {
           ok = false;
@@ -142,6 +151,7 @@ RouteObserver Observer(Context* owner) {
         routes->insert(routes->end(), std::make_move_iterator(observed.begin()),
                        std::make_move_iterator(observed.end()));
       }
+#endif
     }
     if (ok) ModelObservedRoutes(owner->rib_mapping, routes);
     return ok;
@@ -322,7 +332,7 @@ int Invoke(void* raw_context, const DangOperationV1* operation,
                              &why, &where, CommandRunner{},
                              Resolver(static_cast<Context*>(raw_context)),
                              &owner->nexthops, Writer(owner), EventSink(owner),
-                             NativeRib(owner));
+                             NativeRib(owner), Observer(owner));
   else if (std::string_view(operation->operation_name) == "route-delete")
     invoked = InvokeRouteDelete(kPlatform, operation->input_xml,
                                 &rpc_output_xml, &why, &where,

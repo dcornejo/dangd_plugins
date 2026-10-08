@@ -9,6 +9,18 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Made RFC 8431 `route-add` non-destructive when a destination already
+  exists. Production now inventories the modeled RIB before mutation, reports
+  the RFC-defined repeated-route error code 1, and uses exclusive native
+  create flags to close the inventory-to-apply race instead of inheriting
+  replace semantics. Duplicate RIB/family/destination keys in one datastore
+  or RPC batch also fail closed, because the portable base-nexthop slice
+  cannot preserve them as independent native routes. FreeBSD inventory now
+  covers every kernel FIB, including unaliased built-in RIB names,
+  rather than only FIB 0 and explicit mappings. Isolated Linux and
+  FreeBSD lifecycle tests prove that a second add leaves the first route
+  available for update and deletion.
+
 - Extended RFC 8431 reusable nexthops to the writable `discard` and
   `discard-with-error` identities. `nh-add` now obtains their family from a
   prior `rib-add`, `nexthop-ref` resolves them into the exact native special

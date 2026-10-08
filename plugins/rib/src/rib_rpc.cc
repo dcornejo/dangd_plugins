@@ -9,6 +9,7 @@
 #include <charconv>
 #include <limits>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <string_view>
 #include <utility>
@@ -515,7 +516,8 @@ bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
                     const NexthopResolver& resolver,
                     NexthopRegistry* registry, const RegistryWriter& writer,
                     const RouteEventSink& events,
-                    const RibNameResolver& native_rib) {
+                    const RibNameResolver& native_rib,
+                    const RouteObserver& observer) {
   if (!input_xml || !output_xml || !error || !error_path) return false;
   xmlDocPtr raw = xmlReadMemory(input_xml, static_cast<int>(std::strlen(input_xml)),
                                 "route-add.xml", nullptr,
@@ -536,6 +538,19 @@ bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
     return false;
   }
   const bool details = Boolean(Child(root, "return-failure-detail"));
+  std::set<std::tuple<std::string, std::string, std::string>> occupied;
+  if (observer) {
+    std::vector<ObservedRoute> observed;
+    std::string observe_error;
+    if (!Inventory(platform, observer, &observed, &observe_error)) {
+      *error = "cannot read host RIB before route-add: " + observe_error;
+      *error_path = "/ietf-i2rs-rib:route-add/routes";
+      return false;
+    }
+    for (const ObservedRoute& route : observed)
+      occupied.emplace(route.route.rib, route.route.address_family,
+                       route.route.destination);
+  }
   const PersistentRegistry before =
       registry ? registry->PersistentState() : PersistentRegistry{};
   unsigned success = 0;
@@ -578,6 +593,12 @@ bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
       continue;
     }
     Route route = config.routes.front();
+    const auto native_key =
+        std::make_tuple(route.rib, route.address_family, route.destination);
+    if (occupied.contains(native_key)) {
+      failed.emplace_back(index, 1U);
+      continue;
+    }
     const auto native_route = NativeRoute(route, native_rib);
     if (!native_route) {
       failed.emplace_back(index, 2U);
@@ -588,10 +609,11 @@ bool InvokeRouteAdd(NativePlatform platform, const char* input_xml,
       failed.emplace_back(index, 2U); continue;
     }
     ExecutionResult result = ExecuteChanges(
-        platform, {{ChangeKind::kInstall, *native_route}}, runner);
+        platform, {{ChangeKind::kAdd, *native_route}}, runner);
     if (result.ok) {
       if (registry) registry->BindRoute(route, route.nexthop_ref);
       installed.push_back(route);
+      occupied.insert(native_key);
       ++success;
     } else {
       if (route.nexthop_ref)

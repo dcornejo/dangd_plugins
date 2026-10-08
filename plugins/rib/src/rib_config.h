@@ -49,8 +49,8 @@ using NexthopResolver = std::function<bool(
     const std::string&, std::uint32_t, std::optional<std::string>*,
     std::optional<std::string>*, std::optional<std::string>*)>;
 
-/** Native operation required to transform the before-image into the proposal. */
-enum class ChangeKind { kDelete, kInstall };
+/** Native operation; add is exclusive while install may replace after delete. */
+enum class ChangeKind { kDelete, kInstall, kAdd };
 
 /** One reversible route operation retained through the plugin transaction. */
 struct Change {

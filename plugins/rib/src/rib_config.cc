@@ -132,6 +132,7 @@ bool ParseConfig(const char* xml, Config* config, std::string* error,
         "/ietf-i2rs-rib:routing-instance/name", error, error_path);
 
   std::set<std::tuple<std::string, std::uint64_t>> route_keys;
+  std::set<std::tuple<std::string, std::string, std::string>> native_route_keys;
   for (xmlNodePtr rib : Children(instance, "rib-list")) {
     const std::string rib_name = Text(Child(rib, "name")).value_or("");
     const std::string family =
@@ -160,6 +161,12 @@ bool ParseConfig(const char* xml, Config* config, std::string* error,
         return Fail("only destination-prefix IP routes are currently supported",
                     "/ietf-i2rs-rib:routing-instance/rib-list/route-list/match",
                     error, error_path);
+      if (!native_route_keys.emplace(rib_name, family, route.destination).second)
+        return Fail(
+            "the portable backend requires one route per RIB, family, and "
+            "destination; use one modeled route with a supported nexthop",
+            "/ietf-i2rs-rib:routing-instance/rib-list/route-list/match",
+            error, error_path);
 
       xmlNodePtr base = Child(Child(route_node, "nexthop"), "nexthop-base");
       if (!base)
@@ -256,7 +263,9 @@ std::vector<Change> PlanChanges(const Config& before, const Config& proposed) {
 
 std::string Describe(const Change& change) {
   std::ostringstream output;
-  output << (change.kind == ChangeKind::kDelete ? "delete" : "install")
+  output << (change.kind == ChangeKind::kDelete
+                 ? "delete"
+                 : change.kind == ChangeKind::kAdd ? "add" : "install")
          << ' ' << change.route.address_family << " route "
          << change.route.destination << " in RIB " << change.route.rib;
   if (change.route.gateway) output << " via " << *change.route.gateway;

@@ -421,9 +421,11 @@ bool BuildLinuxCommands(const std::vector<Change>& changes,
   for (const Change& change : changes) {
     if (!SafeTableAndInterface(change.route, error, error_path)) return false;
     NativeCommand command;
-    command.arguments = {"ip", change.route.address_family == "ipv4" ? "-4" : "-6",
-                         "route",
-                         change.kind == ChangeKind::kDelete ? "delete" : "replace"};
+    command.arguments = {
+        "ip", change.route.address_family == "ipv4" ? "-4" : "-6",
+        "route", change.kind == ChangeKind::kDelete
+                     ? "delete"
+                     : change.kind == ChangeKind::kAdd ? "add" : "replace"};
     if (change.route.special)
       command.arguments.push_back(*change.route.special == "discard"
                                       ? "blackhole"
@@ -434,7 +436,7 @@ bool BuildLinuxCommands(const std::vector<Change>& changes,
       command.arguments.insert(command.arguments.end(), {"via", *change.route.gateway});
     if (change.route.interface)
       command.arguments.insert(command.arguments.end(), {"dev", *change.route.interface});
-    if (change.kind == ChangeKind::kInstall)
+    if (change.kind != ChangeKind::kDelete)
       command.arguments.insert(command.arguments.end(),
                                {"metric", std::to_string(change.route.preference),
                                 "proto", "static"});
@@ -484,10 +486,12 @@ bool ApplyLinuxRouteChange(const Change& change, std::string* error) {
   request.header.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
   if (change.kind == ChangeKind::kInstall)
     request.header.nlmsg_flags |= NLM_F_CREATE | NLM_F_REPLACE;
+  else if (change.kind == ChangeKind::kAdd)
+    request.header.nlmsg_flags |= NLM_F_CREATE | NLM_F_EXCL;
   request.route.rtm_family = static_cast<unsigned char>(family);
   request.route.rtm_dst_len = static_cast<unsigned char>(prefix);
   request.route.rtm_protocol =
-      change.kind == ChangeKind::kInstall ? RTPROT_STATIC : RTPROT_UNSPEC;
+      change.kind != ChangeKind::kDelete ? RTPROT_STATIC : RTPROT_UNSPEC;
   request.route.rtm_scope =
       (change.route.gateway || change.route.special) ? RT_SCOPE_UNIVERSE
                                                      : RT_SCOPE_LINK;
@@ -532,7 +536,7 @@ bool ApplyLinuxRouteChange(const Change& change, std::string* error) {
                       sizeof(interface_attribute), error))
       return false;
   }
-  if (change.kind == ChangeKind::kInstall) {
+  if (change.kind != ChangeKind::kDelete) {
     const std::uint32_t preference = change.route.preference;
     if (!AddAttribute(&request, RTA_PRIORITY, &preference, sizeof(preference),
                       error))

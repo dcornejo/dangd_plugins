@@ -187,6 +187,31 @@ TEST(RibConfigTest, ParsesPortableDestinationRoute) {
   EXPECT_EQ(config.routes[0].preference, 10U);
 }
 
+TEST(RibConfigTest, RejectsRoutesThatCollapseOntoOneNativeDestination) {
+  constexpr char input[] = R"xml(<config>
+    <routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib">
+      <name>default</name><rib-list><name>100</name>
+      <address-family>ipv4-address-family</address-family>
+      <route-list><route-index>7</route-index><match><ipv4>
+        <dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix>
+      </ipv4></match><nexthop><nexthop-base><ipv4-address>198.51.100.1</ipv4-address>
+      </nexthop-base></nexthop><route-attributes><route-preference>10</route-preference>
+      <local-only>false</local-only></route-attributes></route-list>
+      <route-list><route-index>8</route-index><match><ipv4>
+        <dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix>
+      </ipv4></match><nexthop><nexthop-base><ipv4-address>198.51.100.2</ipv4-address>
+      </nexthop-base></nexthop><route-attributes><route-preference>20</route-preference>
+      <local-only>false</local-only></route-attributes></route-list>
+      </rib-list></routing-instance></config>)xml";
+  Config config;
+  std::string error;
+  std::string path;
+  EXPECT_FALSE(ParseConfig(input, &config, &error, &path));
+  EXPECT_NE(error.find("one route per RIB"), std::string::npos);
+  EXPECT_EQ(path,
+            "/ietf-i2rs-rib:routing-instance/rib-list/route-list/match");
+}
+
 TEST(RibConfigTest, RejectsConfiguredLocalOnlyRouteWithAttributedPath) {
   std::string xml(kBefore);
   const std::string supported = "<local-only>false</local-only>";
@@ -799,6 +824,87 @@ TEST(RibConfigTest, RouteAddReportsMixedBatchResults) {
   EXPECT_NE(output.find("<error-code>0</error-code>"), std::string::npos);
   ASSERT_EQ(events.size(), 1U);
   EXPECT_EQ(events[0].index, 7U);
+}
+
+TEST(RibConfigTest, RouteAddReportsRepeatedDestinationWithoutReplacingIt) {
+  constexpr char input[] = R"xml(<route-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib">
+    <return-failure-detail>true</return-failure-detail><rib-name>100</rib-name><routes>
+      <route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes><nexthop><nexthop-base><ipv4-address>198.51.100.1</ipv4-address></nexthop-base></nexthop></route-list>
+      <route-list><route-index>8</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><route-attributes><route-preference>20</route-preference><local-only>false</local-only></route-attributes><nexthop><nexthop-base><ipv4-address>198.51.100.2</ipv4-address></nexthop-base></nexthop></route-list>
+    </routes></route-add>)xml";
+  std::vector<NativeCommand> commands;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRouteAdd(
+      NativePlatform::kLinux, input, &output, &error, &path,
+      [&](const NativeCommand& command, std::string*) {
+        commands.push_back(command);
+        return true;
+      })) << error;
+  ASSERT_EQ(commands.size(), 1U);
+  EXPECT_EQ(commands[0].arguments[3], "add");
+  EXPECT_NE(output.find(">1</success-count>"), std::string::npos);
+  EXPECT_NE(output.find(">1</failed-count>"), std::string::npos);
+  EXPECT_NE(output.find("<route-index>8</route-index><error-code>1</error-code>"),
+            std::string::npos);
+}
+
+TEST(RibConfigTest, RouteAddRejectsDestinationAlreadyInNativeInventory) {
+  constexpr char input[] = R"xml(<route-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib">
+    <return-failure-detail>true</return-failure-detail><rib-name>100</rib-name><routes>
+      <route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes><nexthop><nexthop-base><ipv4-address>198.51.100.1</ipv4-address></nexthop-base></nexthop></route-list>
+    </routes></route-add>)xml";
+  ObservedRoute existing;
+  existing.route = {.routing_instance = "default", .rib = "100",
+                    .address_family = "ipv4", .index = 99,
+                    .destination = "192.0.2.0/24",
+                    .gateway = "198.51.100.254"};
+  unsigned calls = 0;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRouteAdd(
+      NativePlatform::kLinux, input, &output, &error, &path,
+      [&](const NativeCommand&, std::string*) {
+        ++calls;
+        return true;
+      }, {}, nullptr, {}, {}, {},
+      [&](std::vector<ObservedRoute>* routes, std::string*) {
+        *routes = {existing};
+        return true;
+      })) << error;
+  EXPECT_EQ(calls, 0U);
+  EXPECT_NE(output.find(">0</success-count>"), std::string::npos);
+  EXPECT_NE(output.find(">1</failed-count>"), std::string::npos);
+  EXPECT_NE(output.find("<route-index>7</route-index><error-code>1</error-code>"),
+            std::string::npos);
+}
+
+TEST(RibConfigTest, RouteAddFailsClosedWhenNativeInventoryCannotBeRead) {
+  constexpr char input[] = R"xml(<route-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib">
+    <rib-name>100</rib-name><routes><route-list><route-index>7</route-index>
+    <match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match>
+    <route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes>
+    <nexthop><nexthop-base><ipv4-address>198.51.100.1</ipv4-address></nexthop-base></nexthop>
+    </route-list></routes></route-add>)xml";
+  unsigned calls = 0;
+  std::string output;
+  std::string error;
+  std::string path;
+  EXPECT_FALSE(InvokeRouteAdd(
+      NativePlatform::kLinux, input, &output, &error, &path,
+      [&](const NativeCommand&, std::string*) {
+        ++calls;
+        return true;
+      }, {}, nullptr, {}, {}, {},
+      [](std::vector<ObservedRoute>*, std::string* why) {
+        *why = "injected inventory failure";
+        return false;
+      }));
+  EXPECT_EQ(calls, 0U);
+  EXPECT_NE(error.find("injected inventory failure"), std::string::npos);
+  EXPECT_EQ(path, "/ietf-i2rs-rib:route-add/routes");
 }
 
 TEST(RibConfigTest, RouteAddRejectsUnrepresentableLocalOnlyAttribute) {
@@ -1865,7 +1971,7 @@ TEST(RibConfigTest, RouteAddCompensatesNativeStateWhenBindingSaveFails) {
       },
       [&](const Route&, bool) { ++events; }));
   ASSERT_EQ(commands.size(), 2U);
-  EXPECT_EQ(commands[0].arguments[3], "replace");
+  EXPECT_EQ(commands[0].arguments[3], "add");
   EXPECT_EQ(commands[1].arguments[3], "delete");
   EXPECT_NE(error.find("injected binding-write failure"), std::string::npos);
   Route route;

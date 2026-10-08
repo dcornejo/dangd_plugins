@@ -126,6 +126,13 @@ values because neither native API exposes the model's list key. Unit tests cover
 successful execution, apply failure, complete rollback, and incomplete
 rollback reporting.
 
+The current portable projection permits one modeled route for each RIB,
+address family, and destination prefix. Multiple route indexes that collapse
+onto that same native key are rejected during datastore preparation; use one
+route with a supported nexthop representation instead. This prevents a valid
+YANG list from being silently reduced to one kernel entry before complete
+multipath support exists.
+
 The complete delta is one ABI-v4 hardware action. Apply compensates partial
 failure, and coordinator rollback applies inverse changes in reverse order.
 
@@ -135,7 +142,8 @@ disposable VNET jail and epair, assigns only documentation-prefix addresses,
 initializes standard loopback addresses, and destroys both afterward. Each
 interaction installs ordinary and direct special routes, verifies
 it in the plugin's operational XML and through the native kernel route
-inventory, deletes it, and verifies absence. No host LAN interface or host
+inventory, verifies that a repeated `route-add` cannot replace it, deletes it,
+and verifies absence. No host LAN interface or host
 default route is used. The Linux workflow also creates a two-interface ECMP
 route in another private table and requires both paths in operational XML. A
 second weighted ECMP route references a persistent Linux nexthop group; both
@@ -146,7 +154,12 @@ view and reported as non-mutable. The test does not claim weight fidelity.
 configuration commits. Each member is attempted independently, as required by
 the RPC's success/failed-count result shape. Optional failure detail reports
 code 3 for malformed supported-slice input and reserved code 0 when a native
-operation fails without an RFC-defined error-code equivalent. Schema-invalid
+operation fails without an RFC-defined error-code equivalent. Before applying
+the batch, production reads the live modeled inventory. An existing route, or
+a destination successfully added earlier in the same batch, returns RFC error
+code 1 and is never replaced. Linux and FreeBSD then use an exclusive native
+create request so a route racing into existence after the inventory read is
+also preserved. Schema-invalid
 RPC envelopes fail through dangd before plugin dispatch; direct malformed
 plugin calls fail with the attributed `/ietf-i2rs-rib:route-add` path.
 
@@ -292,9 +305,10 @@ Configuration
 validation and apply/rollback, imperative route and RIB RPCs, reusable-nexthop
 scope and persistence, operational reads, and notification payloads all
 preserve the modeled name while native commands receive its platform number.
-On FreeBSD, operational and notification polling query FIB 0 plus every
-explicitly mapped FreeBSD FIB independently with `NET_RT_DUMP`; results are
-then translated back to their unique modeled names.
+On FreeBSD, operational, notification, and imperative safety polling query
+every kernel FIB independently with `NET_RT_DUMP`; results are then translated
+back to their configured alias or unique built-in modeled name. This ensures
+that repeat detection also covers unaliased `ipv4-N` and `ipv6-N` RIBs.
 
 When upgrading from mapping format 1 or numeric identity names, stop dangd and
 update both the mapping file and every RIB name in the private nexthop registry

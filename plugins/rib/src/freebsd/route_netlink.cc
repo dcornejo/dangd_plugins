@@ -197,11 +197,13 @@ bool ApplyFreeBsdRouteChange(const Change& change, std::string* error) {
   request.header.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
   if (change.kind == ChangeKind::kInstall)
     request.header.nlmsg_flags |= NLM_F_CREATE | NLM_F_REPLACE;
+  else if (change.kind == ChangeKind::kAdd)
+    request.header.nlmsg_flags |= NLM_F_CREATE | NLM_F_EXCL;
   request.route.rtm_family = static_cast<unsigned char>(family);
   request.route.rtm_dst_len = static_cast<unsigned char>(prefix);
   request.route.rtm_table = 0;  // FreeBSD requires RTA_TABLE for one FIB.
   request.route.rtm_protocol =
-      change.kind == ChangeKind::kInstall ? RTPROT_STATIC : RTPROT_UNSPEC;
+      change.kind != ChangeKind::kDelete ? RTPROT_STATIC : RTPROT_UNSPEC;
   request.route.rtm_scope =
       (change.route.gateway || change.route.special) ? RT_SCOPE_UNIVERSE
                                                      : RT_SCOPE_LINK;
@@ -223,7 +225,7 @@ bool ApplyFreeBsdRouteChange(const Change& change, std::string* error) {
   // RTM_DELROUTE identifies a FreeBSD route by FIB, destination, and prefix.
   // Adding nexthop attributes can make a deletion fail to match, so only
   // installs include the optional gateway, interface, and preference.
-  if (change.kind == ChangeKind::kInstall) {
+  if (change.kind != ChangeKind::kDelete) {
     if (change.route.gateway) {
       std::array<unsigned char, 16> gateway{};
       if (inet_pton(family, change.route.gateway->c_str(), gateway.data()) !=

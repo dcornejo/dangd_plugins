@@ -160,6 +160,19 @@ int main(int argc, char** argv) {
       operation_result.output_xml &&
       std::string_view(operation_result.output_xml).find(">1</success-count>") !=
           std::string_view::npos;
+  // route-add must never inherit the native backend's replacement behavior.
+  // A repeated destination is the RFC-defined error 1 and leaves the first
+  // route in place for the update and deletion stages below.
+  operation_result = {};
+  ok = ok && v7.v6.v5.v4.v3.v2.invoke(base.context, &operation,
+                                        &operation_result, &error) &&
+      operation_result.output_xml &&
+      std::string_view(operation_result.output_xml).find(">0</success-count>") !=
+          std::string_view::npos &&
+      std::string_view(operation_result.output_xml).find(">1</failed-count>") !=
+          std::string_view::npos &&
+      std::string_view(operation_result.output_xml).find(
+          "<error-code>1</error-code>") != std::string_view::npos;
   DangNotificationV1 route_event{};
   ok = ok && api->next_notification(base.context, &route_event, &error) == 1 &&
       route_event.module_name &&
