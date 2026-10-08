@@ -395,6 +395,20 @@ bool SafeTableAndInterface(const Route& route, std::string* error,
     *path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop";
     return false;
   }
+  if (route.special && *route.special != "discard" &&
+      *route.special != "discard-with-error") {
+    *error = "Linux route has an unsupported special nexthop";
+    *path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/"
+            "nexthop-base/special";
+    return false;
+  }
+  if (route.special &&
+      (route.gateway || route.interface || route.nexthop_ref)) {
+    *error = "Linux special route cannot include another nexthop";
+    *path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/"
+            "nexthop-base";
+    return false;
+  }
   return true;
 }
 
@@ -410,8 +424,13 @@ bool BuildLinuxCommands(const std::vector<Change>& changes,
     NativeCommand command;
     command.arguments = {"ip", change.route.address_family == "ipv4" ? "-4" : "-6",
                          "route",
-                         change.kind == ChangeKind::kDelete ? "delete" : "replace",
-                         change.route.destination, "table", change.route.rib};
+                         change.kind == ChangeKind::kDelete ? "delete" : "replace"};
+    if (change.route.special)
+      command.arguments.push_back(*change.route.special == "discard"
+                                      ? "blackhole"
+                                      : "unreachable");
+    command.arguments.insert(command.arguments.end(),
+                             {change.route.destination, "table", change.route.rib});
     if (change.route.gateway)
       command.arguments.insert(command.arguments.end(), {"via", *change.route.gateway});
     if (change.route.interface)
@@ -471,8 +490,13 @@ bool ApplyLinuxRouteChange(const Change& change, std::string* error) {
   request.route.rtm_protocol =
       change.kind == ChangeKind::kInstall ? RTPROT_STATIC : RTPROT_UNSPEC;
   request.route.rtm_scope =
-      change.route.gateway ? RT_SCOPE_UNIVERSE : RT_SCOPE_LINK;
-  request.route.rtm_type = RTN_UNICAST;
+      (change.route.gateway || change.route.special) ? RT_SCOPE_UNIVERSE
+                                                     : RT_SCOPE_LINK;
+  request.route.rtm_type =
+      !change.route.special
+          ? RTN_UNICAST
+          : *change.route.special == "discard" ? RTN_BLACKHOLE
+                                                : RTN_UNREACHABLE;
   if (table <= std::numeric_limits<unsigned char>::max()) {
     request.route.rtm_table = static_cast<unsigned char>(table);
   } else {
@@ -587,7 +611,11 @@ bool ObserveLinuxRoutes(std::vector<ObservedRoute>* routes,
       else if (info->rtm_type == RTN_UNREACHABLE ||
                info->rtm_type == RTN_PROHIBIT)
         route.special = "discard-with-error";
-      observed.mutable_route = info->rtm_type == RTN_UNICAST;
+      // Receive routes are kernel-owned. Blackhole and reject routes have an
+      // exact reversible mapping in the portable backend.
+      observed.mutable_route =
+          info->rtm_type == RTN_UNICAST || info->rtm_type == RTN_BLACKHOLE ||
+          info->rtm_type == RTN_UNREACHABLE || info->rtm_type == RTN_PROHIBIT;
       std::array<unsigned char, 16> destination{};
       unsigned table = info->rtm_table;
       unsigned interface_index = 0;

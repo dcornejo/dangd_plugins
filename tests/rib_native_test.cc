@@ -14,6 +14,9 @@ int main(int argc, char** argv) {
   if (argc < 6 || argc > 7) {
     std::cerr << "usage: rib_native_test linux|freebsd install|delete "
                  "RIB PREFIX INTERFACE [GATEWAY]\n"
+                 "       rib_native_test linux|freebsd "
+                 "install-special|delete-special|observe-special "
+                 "RIB PREFIX discard|discard-with-error\n"
                  "       rib_native_test linux observe-multipath "
                  "RIB PREFIX INTERFACE INTERFACE\n"
                  "       rib_native_test linux observe-nexthop-group "
@@ -24,9 +27,41 @@ int main(int argc, char** argv) {
   const std::string_view operation(argv[2]);
   if ((platform_name != "linux" && platform_name != "freebsd") ||
       (operation != "install" && operation != "delete" &&
+       operation != "install-special" &&
+       operation != "delete-special" &&
+       operation != "observe-special" &&
        operation != "observe-multipath" &&
        operation != "observe-nexthop-group"))
     return 2;
+  if (operation == "observe-special") {
+    if (argc != 6 ||
+        (std::string_view(argv[5]) != "discard" &&
+         std::string_view(argv[5]) != "discard-with-error"))
+      return 2;
+    std::vector<dang::rib::ObservedRoute> routes;
+    std::string error;
+    const bool observed = platform_name == "linux"
+        ? dang::rib::ObserveLinuxRoutes(&routes, &error)
+        : dang::rib::ObserveFreeBsdRoutesForFib(
+              static_cast<std::uint32_t>(std::stoul(argv[3])), &routes,
+              &error);
+    if (!observed) {
+      std::cerr << error << '\n';
+      return 1;
+    }
+    for (const auto& route : routes) {
+      if (route.route.rib == argv[3] && route.route.destination == argv[4] &&
+          route.route.special == argv[5] && route.mutable_route) {
+        const std::string xml =
+            dang::rib::SerializeOperationalRoutes({route});
+        if (xml.find("<special>" + std::string(argv[5]) + "</special>") !=
+            std::string::npos)
+          return 0;
+      }
+    }
+    std::cerr << "special route observation mismatch\n";
+    return 1;
+  }
   if (operation == "observe-multipath" ||
       operation == "observe-nexthop-group") {
     if (platform_name != "linux" || argc != 7) return 2;
@@ -67,12 +102,23 @@ int main(int argc, char** argv) {
                              ? "ipv4"
                              : "ipv6";
   route.destination = argv[4];
-  route.interface = argv[5];
-  if (argc == 7) route.gateway = argv[6];
+  const bool special = operation == "install-special" ||
+                       operation == "delete-special";
+  if (special) {
+    if (argc != 6 ||
+        (std::string_view(argv[5]) != "discard" &&
+         std::string_view(argv[5]) != "discard-with-error"))
+      return 2;
+    route.special = argv[5];
+  } else {
+    route.interface = argv[5];
+    if (argc == 7) route.gateway = argv[6];
+  }
   route.preference = 10;
   const dang::rib::Change change{
-      operation == "install" ? dang::rib::ChangeKind::kInstall
-                             : dang::rib::ChangeKind::kDelete,
+      operation == "install" || operation == "install-special"
+          ? dang::rib::ChangeKind::kInstall
+          : dang::rib::ChangeKind::kDelete,
       route};
   const auto result = dang::rib::ExecuteChanges(
       platform_name == "linux" ? dang::rib::NativePlatform::kLinux

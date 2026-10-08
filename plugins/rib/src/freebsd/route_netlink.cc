@@ -203,8 +203,13 @@ bool ApplyFreeBsdRouteChange(const Change& change, std::string* error) {
   request.route.rtm_protocol =
       change.kind == ChangeKind::kInstall ? RTPROT_STATIC : RTPROT_UNSPEC;
   request.route.rtm_scope =
-      change.route.gateway ? RT_SCOPE_UNIVERSE : RT_SCOPE_LINK;
-  request.route.rtm_type = RTN_UNICAST;
+      (change.route.gateway || change.route.special) ? RT_SCOPE_UNIVERSE
+                                                     : RT_SCOPE_LINK;
+  request.route.rtm_type =
+      !change.route.special
+          ? RTN_UNICAST
+          : *change.route.special == "discard" ? RTN_BLACKHOLE
+                                                : RTN_PROHIBIT;
 
   const std::size_t address_size = family == AF_INET ? 4U : 16U;
   if (!AddAttribute(&request, NL_RTA_DST, destination.data(), address_size,
@@ -230,7 +235,22 @@ bool ApplyFreeBsdRouteChange(const Change& change, std::string* error) {
                         error))
         return false;
     }
-    if (change.route.interface) {
+    if (change.route.special) {
+      // FreeBSD represents blackhole and reject routes as nexthops resolved
+      // through a loopback gateway. This also supplies the interface and
+      // source address required while the kernel finalizes the nexthop.
+      // This is a platform implementation detail: the configured RFC 8431
+      // nexthop remains a direct special nexthop and does not expose lo0.
+      std::array<unsigned char, 16> gateway{};
+      const char* loopback = family == AF_INET ? "127.0.0.1" : "::1";
+      if (inet_pton(family, loopback, gateway.data()) != 1) {
+        *error = "cannot encode the FreeBSD loopback gateway";
+        return false;
+      }
+      if (!AddAttribute(&request, NL_RTA_GATEWAY, gateway.data(), address_size,
+                        error))
+        return false;
+    } else if (change.route.interface) {
       errno = 0;
       const unsigned interface_index =
           if_nametoindex(change.route.interface->c_str());

@@ -55,6 +55,20 @@ sudo ip -6 -n "$namespace" route show table 103 |
 sudo ip netns exec "$namespace" "$binary" \
   linux delete 103 2001:db8:103::/64 dummy0
 test -z "$(sudo ip -6 -n "$namespace" route show table 103)"
+sudo ip netns exec "$namespace" "$binary" \
+  linux install-special 105 198.18.5.0/24 discard
+sudo ip netns exec "$namespace" "$binary" \
+  linux observe-special 105 198.18.5.0/24 discard
+sudo ip netns exec "$namespace" "$binary" \
+  linux delete-special 105 198.18.5.0/24 discard
+test -z "$(sudo ip -n "$namespace" route show table 105)"
+sudo ip netns exec "$namespace" "$binary" \
+  linux install-special 106 2001:db8:106::/64 discard-with-error
+sudo ip netns exec "$namespace" "$binary" \
+  linux observe-special 106 2001:db8:106::/64 discard-with-error
+sudo ip netns exec "$namespace" "$binary" \
+  linux delete-special 106 2001:db8:106::/64 discard-with-error
+test -z "$(sudo ip -6 -n "$namespace" route show table 106)"
 if sudo ip netns exec "$namespace" "$binary" \
   linux install 102 198.18.3.0/24 dummy0 203.0.113.1; then
   echo "unreachable gateway unexpectedly passed rtnetlink validation" >&2

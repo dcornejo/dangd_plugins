@@ -103,6 +103,20 @@ bool SafeFibAndInterface(const Route& route, std::string* error,
     *path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop";
     return false;
   }
+  if (route.special && *route.special != "discard" &&
+      *route.special != "discard-with-error") {
+    *error = "FreeBSD route has an unsupported special nexthop";
+    *path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/"
+            "nexthop-base/special";
+    return false;
+  }
+  if (route.special &&
+      (route.gateway || route.interface || route.nexthop_ref)) {
+    *error = "FreeBSD special route cannot include another nexthop";
+    *path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/"
+            "nexthop-base";
+    return false;
+  }
   return true;
 }
 
@@ -121,6 +135,10 @@ bool BuildFreeBsdCommands(const std::vector<Change>& changes,
                          change.kind == ChangeKind::kDelete ? "delete" : "add",
                          change.route.address_family == "ipv4" ? "-inet" : "-inet6",
                          "-fib", change.route.rib, change.route.destination};
+    if (change.route.special)
+      command.arguments.push_back(*change.route.special == "discard"
+                                      ? "-blackhole"
+                                      : "-reject");
     if (change.route.gateway) {
       command.arguments.push_back(*change.route.gateway);
       if (change.route.interface)
@@ -246,7 +264,9 @@ bool ObserveFreeBsdRoutesForFib(std::uint32_t fib,
     if (message->rtm_flags & RTF_REJECT)
       route.special = "discard-with-error";
 #endif
-    observed.mutable_route = !route.special.has_value();
+    // Local receive routes remain kernel-owned. Blackhole and reject routes
+    // have exact reversible route-netlink encodings.
+    observed.mutable_route = !route.special || *route.special != "receive";
     if (message->rtm_index) {
       char interface_name[IF_NAMESIZE]{};
       if (if_indextoname(message->rtm_index, interface_name)) route.interface = interface_name;

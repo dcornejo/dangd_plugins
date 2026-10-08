@@ -16,10 +16,10 @@ namespace dang::rib {
  * A deliberately small, portable projection of one RFC 8431 route.
  *
  * The first backend slice accepts destination-prefix IPv4 and IPv6 routes
- * with a base nexthop expressed as a gateway, interface, or both. Keeping the
- * projection narrower than the YANG tree makes unsupported forwarding
- * semantics fail during prepare instead of being silently approximated by a
- * host routing API.
+ * with a base nexthop expressed as a gateway, interface, both, or one of the
+ * portable discard identities. Keeping the projection narrower than the YANG
+ * tree makes unsupported forwarding semantics fail during prepare instead of
+ * being silently approximated by a host routing API.
  */
 struct Route {
   std::string routing_instance;
@@ -33,7 +33,7 @@ struct Route {
   std::uint32_t preference = 0;
   /** Native observation may be true; portable configuration requires false. */
   bool local_only = false;
-  /** RFC 8431 identity for an observed native special nexthop. */
+  /** Supported RFC 8431 special identity; receive remains observation-only. */
   std::optional<std::string> special;
 
   bool operator==(const Route&) const = default;

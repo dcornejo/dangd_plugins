@@ -169,6 +169,8 @@ bool ParseConfig(const char* xml, Config* config, std::string* error,
       route.gateway = Text(Child(base, family == "ipv4" ? "ipv4-address"
                                                         : "ipv6-address"));
       route.interface = Text(Child(base, "outgoing-interface"));
+      if (const auto special = Text(Child(base, "special")); special)
+        route.special = LocalIdentity(*special);
       if (xmlNodePtr combined = Child(
               base, family == "ipv4" ? "egress-interface-ipv4-address"
                                       : "egress-interface-ipv6-address")) {
@@ -186,8 +188,23 @@ bool ParseConfig(const char* xml, Config* config, std::string* error,
                       error, error_path);
         route.nexthop_ref = static_cast<std::uint32_t>(id);
       }
-      if (!route.gateway && !route.interface)
-        return Fail("base nexthop requires an IP gateway or outgoing interface",
+      if (route.special && (*route.special != "discard" &&
+                            *route.special != "discard-with-error"))
+        return Fail(*route.special == "receive"
+                        ? "receive routes are kernel-owned and read-only"
+                        : "the special nexthop is not supported by the "
+                          "portable backend",
+                    "/ietf-i2rs-rib:routing-instance/rib-list/route-list/"
+                    "nexthop/nexthop-base/special",
+                    error, error_path);
+      if (route.special &&
+          (route.gateway || route.interface || route.nexthop_ref))
+        return Fail("a special nexthop cannot include another base nexthop",
+                    "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/nexthop-base",
+                    error, error_path);
+      if (!route.special && !route.gateway && !route.interface)
+        return Fail("base nexthop requires an IP gateway, outgoing interface, "
+                    "or supported special identity",
                     "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/nexthop-base",
                     error, error_path);
 
@@ -244,6 +261,7 @@ std::string Describe(const Change& change) {
          << change.route.destination << " in RIB " << change.route.rib;
   if (change.route.gateway) output << " via " << *change.route.gateway;
   if (change.route.interface) output << " dev " << *change.route.interface;
+  if (change.route.special) output << " special " << *change.route.special;
   output << " preference " << change.route.preference;
   if (change.route.local_only) output << " local-only";
   return output.str();

@@ -22,7 +22,11 @@ sudo ifconfig "$epair" inet 192.0.2.1/24 up
 sudo ifconfig "$epair" inet6 2001:db8:8431::1/64
 sudo jail -c name="$jail_name" path=/ host.hostname="$jail_name" \
   persist vnet vnet.interface="$peer"
-sudo jexec "$jail_name" ifconfig lo0 up
+# A newly created VNET jail has an unconfigured lo0.  FreeBSD resolves
+# blackhole and reject nexthops through the matching loopback address, just as
+# a normal boot configures them on the host.
+sudo jexec "$jail_name" ifconfig lo0 inet 127.0.0.1/8 up
+sudo jexec "$jail_name" ifconfig lo0 inet6 ::1/128
 sudo jexec "$jail_name" ifconfig "$peer" inet 192.0.2.2/24 up
 sudo jexec "$jail_name" ifconfig "$peer" inet6 2001:db8:8431::2/64
 if [ -n "$plugin_test" ] && [ -n "$plugin" ]; then
@@ -55,6 +59,19 @@ if sudo jexec "$jail_name" netstat -rn -f inet6 |
     grep -F "2001:db8:8432::/64"; then
   exit 1
 fi
+
+sudo jexec "$jail_name" "$binary" freebsd install-special 0 \
+  198.18.4.0/24 discard
+sudo jexec "$jail_name" "$binary" freebsd observe-special 0 \
+  198.18.4.0/24 discard
+sudo jexec "$jail_name" "$binary" freebsd delete-special 0 \
+  198.18.4.0/24 discard
+sudo jexec "$jail_name" "$binary" freebsd install-special 0 \
+  2001:db8:8434::/64 discard-with-error
+sudo jexec "$jail_name" "$binary" freebsd observe-special 0 \
+  2001:db8:8434::/64 discard-with-error
+sudo jexec "$jail_name" "$binary" freebsd delete-special 0 \
+  2001:db8:8434::/64 discard-with-error
 
 # A direct RTA_OIF route must work on an unnumbered interface. The retired
 # route(8) adapter could express this only by guessing a local gateway address.

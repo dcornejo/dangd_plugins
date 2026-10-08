@@ -204,6 +204,41 @@ TEST(RibConfigTest, RejectsConfiguredLocalOnlyRouteWithAttributedPath) {
   EXPECT_TRUE(config.routes.empty());
 }
 
+TEST(RibConfigTest, ParsesPortableDiscardRoutesAndRejectsReceive) {
+  std::string discard(kBefore);
+  const std::string opening = "<egress-interface-ipv4-address>";
+  const std::string closing = "</egress-interface-ipv4-address>";
+  const auto position = discard.find(opening);
+  ASSERT_NE(position, std::string::npos);
+  const auto end = discard.find(closing, position);
+  ASSERT_NE(end, std::string::npos);
+  discard.replace(position, end + closing.size() - position,
+                  "<special>discard</special>");
+  Config config;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(ParseConfig(discard.c_str(), &config, &error, &path)) << error;
+  ASSERT_EQ(config.routes.size(), 1U);
+  EXPECT_EQ(config.routes[0].special, "discard");
+  EXPECT_FALSE(config.routes[0].gateway);
+  EXPECT_FALSE(config.routes[0].interface);
+
+  std::string reject = discard;
+  reject.replace(reject.find("<special>discard</special>"),
+                 std::string("<special>discard</special>").size(),
+                 "<special>iir:discard-with-error</special>");
+  ASSERT_TRUE(ParseConfig(reject.c_str(), &config, &error, &path)) << error;
+  EXPECT_EQ(config.routes[0].special, "discard-with-error");
+
+  std::string receive = discard;
+  receive.replace(receive.find("<special>discard</special>"),
+                  std::string("<special>discard</special>").size(),
+                  "<special>receive</special>");
+  EXPECT_FALSE(ParseConfig(receive.c_str(), &config, &error, &path));
+  EXPECT_NE(error.find("kernel-owned"), std::string::npos);
+  EXPECT_NE(path.find("/special"), std::string::npos);
+}
+
 TEST(RibConfigTest, RejectsUnmappedRoutingInstanceInsteadOfUsingDefault) {
   std::string xml(kBefore);
   const std::string modeled_name = "<name>default</name>";
@@ -296,6 +331,46 @@ TEST(RibConfigTest, ProducesShellFreeLinuxAndFreeBsdCommands) {
       }));
   EXPECT_NE(error.find("multiple usable"), std::string::npos);
   EXPECT_NE(path.find("/nexthop"), std::string::npos);
+}
+
+TEST(RibConfigTest, MapsPortableSpecialRoutesOnBothPlatforms) {
+  Route discard{.routing_instance = "default",
+                .rib = "100",
+                .address_family = "ipv4",
+                .index = 7,
+                .destination = "192.0.2.0/24",
+                .gateway = std::nullopt,
+                .interface = std::nullopt,
+                .nexthop_ref = std::nullopt,
+                .preference = 10,
+                .local_only = false,
+                .special = "discard"};
+  std::vector<NativeCommand> commands;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(BuildLinuxCommands({{ChangeKind::kInstall, discard}},
+                                 &commands, &error, &path)) << error;
+  EXPECT_EQ(commands[0].arguments,
+            (std::vector<std::string>{"ip", "-4", "route", "replace",
+                                      "blackhole", "192.0.2.0/24", "table",
+                                      "100", "metric", "10", "proto",
+                                      "static"}));
+  ASSERT_TRUE(BuildFreeBsdCommands({{ChangeKind::kInstall, discard}},
+                                   &commands, &error, &path)) << error;
+  EXPECT_EQ(commands[0].arguments,
+            (std::vector<std::string>{"route", "-n", "add", "-inet",
+                                      "-fib", "100", "192.0.2.0/24",
+                                      "-blackhole"}));
+
+  discard.special = "discard-with-error";
+  ASSERT_TRUE(BuildLinuxCommands({{ChangeKind::kInstall, discard}},
+                                 &commands, &error, &path)) << error;
+  EXPECT_NE(std::ranges::find(commands[0].arguments, "unreachable"),
+            commands[0].arguments.end());
+  ASSERT_TRUE(BuildFreeBsdCommands({{ChangeKind::kInstall, discard}},
+                                   &commands, &error, &path)) << error;
+  EXPECT_NE(std::ranges::find(commands[0].arguments, "-reject"),
+            commands[0].arguments.end());
 }
 
 TEST(RibConfigTest, NativeFreeBsdValidationAcceptsUnnumberedInterface) {
@@ -717,6 +792,24 @@ TEST(RibConfigTest, RouteAddRejectsUnrepresentableLocalOnlyAttribute) {
   EXPECT_NE(output.find("<error-code>3</error-code>"), std::string::npos);
 }
 
+TEST(RibConfigTest, RouteAddInstallsPortableSpecialNexthop) {
+  constexpr char input[] = R"xml(<route-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><routes><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes><nexthop><nexthop-base><special>discard</special></nexthop-base></nexthop></route-list></routes></route-add>)xml";
+  std::vector<NativeCommand> commands;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRouteAdd(
+      NativePlatform::kLinux, input, &output, &error, &path,
+      [&](const NativeCommand& command, std::string*) {
+        commands.push_back(command);
+        return true;
+      })) << error;
+  ASSERT_EQ(commands.size(), 1U);
+  EXPECT_NE(std::ranges::find(commands[0].arguments, "blackhole"),
+            commands[0].arguments.end());
+  EXPECT_NE(output.find(">1</success-count>"), std::string::npos);
+}
+
 TEST(RibConfigTest, RouteRpcUsesNativeMappingAndPreservesModeledEventName) {
   std::vector<NativeCommand> commands;
   std::vector<Route> events;
@@ -862,6 +955,57 @@ TEST(RibConfigTest, RouteUpdateReplacesAttributesTransactionally) {
   EXPECT_NE(std::ranges::find(commands[1].arguments, "20"),
             commands[1].arguments.end());
   EXPECT_NE(output.find(">1</success-count>"), std::string::npos);
+}
+
+TEST(RibConfigTest, RouteUpdateReplacesTheWholeBaseNexthopChoice) {
+  ObservedRoute route;
+  route.route = {.routing_instance = "default", .rib = "100",
+                 .address_family = "ipv4", .index = 99,
+                 .destination = "192.0.2.0/24", .gateway = "192.0.2.1",
+                 .interface = "dummy0", .nexthop_ref = std::nullopt,
+                 .preference = 10};
+  std::vector<NativeCommand> commands;
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeRouteUpdate(
+      NativePlatform::kLinux,
+      R"(<route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><input-routes><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><updated-nexthop><nexthop-base><outgoing-interface>dummy1</outgoing-interface></nexthop-base></updated-nexthop></route-list></input-routes></route-update>)",
+      &output, &error, &path,
+      [&](const NativeCommand& command, std::string*) {
+        commands.push_back(command);
+        return true;
+      },
+      [&](std::vector<ObservedRoute>* routes, std::string*) {
+        *routes = {route};
+        return true;
+      })) << error;
+  ASSERT_EQ(commands.size(), 2U);
+  EXPECT_NE(std::ranges::find(commands[1].arguments, "dummy1"),
+            commands[1].arguments.end());
+  EXPECT_EQ(std::ranges::find(commands[1].arguments, "192.0.2.1"),
+            commands[1].arguments.end());
+
+  commands.clear();
+  ASSERT_TRUE(InvokeRouteUpdate(
+      NativePlatform::kLinux,
+      R"(<route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><input-routes><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><updated-nexthop><nexthop-base><special>discard</special></nexthop-base></updated-nexthop></route-list></input-routes></route-update>)",
+      &output, &error, &path,
+      [&](const NativeCommand& command, std::string*) {
+        commands.push_back(command);
+        return true;
+      },
+      [&](std::vector<ObservedRoute>* routes, std::string*) {
+        *routes = {route};
+        return true;
+      })) << error;
+  ASSERT_EQ(commands.size(), 2U);
+  EXPECT_NE(std::ranges::find(commands[1].arguments, "blackhole"),
+            commands[1].arguments.end());
+  EXPECT_EQ(std::ranges::find(commands[1].arguments, "dummy0"),
+            commands[1].arguments.end());
+  EXPECT_EQ(std::ranges::find(commands[1].arguments, "192.0.2.1"),
+            commands[1].arguments.end());
 }
 
 TEST(RibConfigTest, RouteUpdateRejectsUnrepresentableLocalOnlyAttribute) {

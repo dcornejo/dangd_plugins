@@ -9,6 +9,18 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Made the RFC 8431 direct `discard` and `discard-with-error` special
+  nexthops fully writable and reversible through configuration commits,
+  `route-add`, `route-update`, `route-delete`, and `rib-delete` on Linux and
+  FreeBSD. Native observation now classifies those exact route kinds as
+  mutable while preserving kernel-owned `receive` routes as read-only.
+  Route updates also clear every obsolete member of the base-nexthop choice,
+  so a gateway cannot leak into an interface-only or special replacement.
+  Isolated dual-stack native tests install, observe, and delete both special
+  identities; the FreeBSD VNET fixture now initializes its otherwise empty
+  loopback addresses and the backend supplies the platform-required loopback
+  gateway without exposing that detail in the YANG configuration.
+
 - Completed guarded pair-wide Kea NETCONF validation on Kea 3.2 Linux and
   FreeBSD. The plugin now marks its local participant through the generic ABI,
   maps portable hook basenames into each host's package directory, reports

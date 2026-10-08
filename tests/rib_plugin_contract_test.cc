@@ -42,6 +42,17 @@ int main(int argc, char** argv) {
       std::string_view(state.data_xml).find("routing-instance") != std::string_view::npos;
   if (prepared) base.release(base.context, prepared);
 
+  constexpr char special[] = R"(<config><routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>default</name><rib-list><name>ipv4-100</name><address-family>ipv4-address-family</address-family><route-list><route-index>9</route-index><match><ipv4><dest-ipv4-prefix>198.18.9.0/24</dest-ipv4-prefix></ipv4></match><nexthop><nexthop-base><special>discard</special></nexthop-base></nexthop><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes></route-list></rib-list></routing-instance></config>)";
+  DangTransactionV1 special_transaction{before, special, "[]"};
+  void* special_prepared = nullptr;
+  error = {};
+  valid = valid &&
+      base.prepare(base.context, &special_transaction, &special_prepared,
+                   &error) &&
+      base.validate(base.context, special_prepared, &error) &&
+      v7.v6.v5.v4.hardware_action_count(base.context, special_prepared) == 1;
+  if (special_prepared) base.release(base.context, special_prepared);
+
   std::string unsupported(proposed);
   const std::string local_only = "<local-only>false</local-only>";
   const std::size_t local_only_position = unsupported.find(local_only);

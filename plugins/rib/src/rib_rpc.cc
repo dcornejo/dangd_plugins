@@ -50,6 +50,11 @@ std::string Text(xmlNodePtr node) {
   return value;
 }
 
+std::string LocalIdentity(std::string value) {
+  const std::size_t colon = value.find(':');
+  return colon == std::string::npos ? value : value.substr(colon + 1U);
+}
+
 bool Boolean(xmlNodePtr node) {
   const std::string value = Text(node);
   return value == "true" || value == "1";
@@ -747,9 +752,15 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
     if (xmlNodePtr updated = Child(node, "updated-nexthop")) {
       xmlNodePtr base = Child(updated, "nexthop-base");
       if (!base) { failed.emplace_back(index, 3U); continue; }
+      replacement.gateway.reset();
+      replacement.interface.reset();
+      replacement.nexthop_ref.reset();
+      replacement.special.reset();
       replacement.gateway = Text(Child(base, ipv6 ? "ipv6-address"
                                                    : "ipv4-address"));
       replacement.interface = Text(Child(base, "outgoing-interface"));
+      const std::string special = LocalIdentity(Text(Child(base, "special")));
+      if (!special.empty()) replacement.special = special;
       if (xmlNodePtr combined = Child(
               base, ipv6 ? "egress-interface-ipv6-address"
                          : "egress-interface-ipv4-address")) {
@@ -771,7 +782,18 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
       }
       if (replacement.gateway->empty()) replacement.gateway.reset();
       if (replacement.interface->empty()) replacement.interface.reset();
-      if (!replacement.gateway && !replacement.interface) {
+      if (replacement.special &&
+          (*replacement.special != "discard" &&
+           *replacement.special != "discard-with-error")) {
+        failed.emplace_back(index, 3U); continue;
+      }
+      if (replacement.special &&
+          (replacement.gateway || replacement.interface ||
+           replacement.nexthop_ref)) {
+        failed.emplace_back(index, 3U); continue;
+      }
+      if (!replacement.special && !replacement.gateway &&
+          !replacement.interface) {
         failed.emplace_back(index, 3U); continue;
       }
     } else if (xmlNodePtr attributes = Child(node, "updated-route-attr")) {

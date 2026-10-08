@@ -41,9 +41,14 @@ Native receive, blackhole, and error-reject routes are published with the RFC
 8431 `receive`, `discard`, and `discard-with-error` special nexthop identities.
 This covers Linux `RTN_LOCAL`, `RTN_BLACKHOLE`, `RTN_UNREACHABLE`, and
 `RTN_PROHIBIT`, plus FreeBSD `RTF_LOCAL`, `RTF_BLACKHOLE`, and `RTF_REJECT`.
-These kernel-owned special routes are read-only in this portable provider.
-Route delete/update returns reserved error code 0 for them, and `rib-delete`
-fails before changing anything if the selected RIB contains one.
+The portable provider can configure, add, update, delete, and roll back direct
+`discard` and `discard-with-error` nexthops. The `receive` identity remains
+kernel-owned and read-only: route delete/update returns reserved error code 0
+for it, and `rib-delete` fails before changing anything if the selected RIB
+contains one. Linux maps the two writable identities to blackhole and
+unreachable routes. FreeBSD maps them to blackhole and reject routes through
+the corresponding IPv4 or IPv6 loopback gateway, which must exist as it does
+on a normally booted host.
 Linux `RTA_MULTIPATH` routes are expanded into one stable route entry per
 native base nexthop, preserving each gateway/interface path and its installed
 state. This representation avoids publishing an empty nexthop and keeps path
@@ -97,7 +102,8 @@ Linux `iproute2` or FreeBSD `route(8)`. It must not be loaded together with the
 FRR plugin.
 
 The runtime foundation currently parses destination-prefix IPv4 and IPv6
-routes whose base nexthop is a gateway, an outgoing interface, or both. It
+routes whose base nexthop is a gateway, an outgoing interface, both, or the
+direct `discard`/`discard-with-error` special identity. It
 accepts only the routing instance named `default`; VRF/VNET instance mapping is
 not implemented, so any other name fails at `/routing-instance/name` rather
 than being applied to the host default instance. It
@@ -126,7 +132,8 @@ failure, and coordinator rollback applies inverse changes in reverse order.
 Privileged native tests are opt-in with `-DDANG_RIB_NATIVE_TESTS=ON`. Linux
 creates a disposable network namespace and dummy interface. FreeBSD creates a
 disposable VNET jail and epair, assigns only documentation-prefix addresses,
-and destroys both afterward. Each interaction installs the test route, verifies
+initializes standard loopback addresses, and destroys both afterward. Each
+interaction installs ordinary and direct special routes, verifies
 it in the plugin's operational XML and through the native kernel route
 inventory, deletes it, and verifies absence. No host LAN interface or host
 default route is used. The Linux workflow also creates a two-interface ECMP
