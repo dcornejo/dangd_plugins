@@ -47,7 +47,7 @@ struct Config {
 /** Resolves a reusable RFC 8431 nexthop identifier within its containing RIB. */
 using NexthopResolver = std::function<bool(
     const std::string&, std::uint32_t, std::optional<std::string>*,
-    std::optional<std::string>*)>;
+    std::optional<std::string>*, std::optional<std::string>*)>;
 
 /** Native operation required to transform the before-image into the proposal. */
 enum class ChangeKind { kDelete, kInstall };

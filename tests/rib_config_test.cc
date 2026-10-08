@@ -628,7 +628,7 @@ TEST(RibConfigTest, TracksSamePrefixMultipathRoutesIndependently) {
 TEST(RibConfigTest, TracksObservedReusableNexthopResolutionTransitions) {
   PersistentRegistry registry;
   registry.nexthops.push_back(
-      {"100", 7, "192.0.2.1", "dummy&0", "ipv4", true});
+      {"100", 7, "192.0.2.1", "dummy&0", "ipv4", true, {}});
   registry.bindings.push_back({"100", "ipv4", "198.51.100.0/24", 1, 7});
   Route route{.routing_instance = "default",
               .rib = "100",
@@ -654,10 +654,37 @@ TEST(RibConfigTest, TracksObservedReusableNexthopResolutionTransitions) {
   EXPECT_FALSE(unresolved[0].resolved);
 }
 
+TEST(RibConfigTest, TracksSpecialNexthopResolutionExactly) {
+  PersistentRegistry registry;
+  registry.nexthops.push_back(
+      {"100", 7, std::nullopt, std::nullopt, "ipv6", true,
+       "discard-with-error"});
+  registry.bindings.push_back({"100", "ipv6", "2001:db8:7::/64", 1, 7});
+  Route route{.routing_instance = "default",
+              .rib = "100",
+              .address_family = "ipv6",
+              .index = 1,
+              .destination = "2001:db8:7::/64",
+              .special = "discard-with-error"};
+  NexthopResolutionTracker tracker;
+  const auto resolved = tracker.Observe(registry, {{route, true}});
+  ASSERT_EQ(resolved.size(), 1U);
+  EXPECT_TRUE(resolved[0].resolved);
+  const std::string xml = SerializeNexthopResolutionChange(
+      resolved[0].nexthop, resolved[0].resolved);
+  EXPECT_NE(xml.find("<special>discard-with-error</special>"),
+            std::string::npos);
+
+  route.special = "discard";
+  const auto unresolved = tracker.Observe(registry, {{route, true}});
+  ASSERT_EQ(unresolved.size(), 1U);
+  EXPECT_FALSE(unresolved[0].resolved);
+}
+
 TEST(RibConfigTest, DoesNotResolveNexthopFromDifferentInstalledPath) {
   PersistentRegistry registry;
   registry.nexthops.push_back(
-      {"100", 7, "192.0.2.1", "dummy0", "ipv4", true});
+      {"100", 7, "192.0.2.1", "dummy0", "ipv4", true, {}});
   registry.bindings.push_back({"100", "ipv4", "198.51.100.0/24", 2, 7});
   Route other_path{.routing_instance = "default",
                    .rib = "100",
@@ -706,8 +733,8 @@ TEST(RibConfigTest, IncludesDatastoreRoutesInResolutionState) {
 TEST(RibConfigTest, SerializesRegisteredNexthopsWithAndWithoutRoutes) {
   const PersistentRegistry registry{
       .ribs = {{"100", "ipv4"}, {"200", "ipv6"}},
-      .nexthops = {{"100", 7, {}, {}, "ipv4", false},
-                   {"200", 9, {}, {}, "ipv6", false}},
+      .nexthops = {{"100", 7, {}, {}, "ipv4", false, {}},
+                   {"200", 9, {}, {}, "ipv6", false, {}}},
       .bindings = {}};
   const std::string xml = SerializeOperationalRoutes({}, registry);
   EXPECT_NE(xml.find("<name>100</name><address-family>ipv4-address-family</address-family>"),
@@ -735,7 +762,7 @@ TEST(RibConfigTest, SerializesEmptyRegisteredRib) {
 TEST(RibConfigTest, OmitsFamilyUnknownNexthopWithoutContainingRib) {
   const PersistentRegistry registry{
       .ribs = {},
-      .nexthops = {{"100", 7, {}, {}, {}, false}},
+      .nexthops = {{"100", 7, {}, {}, {}, false, {}}},
       .bindings = {}};
   const std::string xml = SerializeOperationalRoutes({}, registry);
   EXPECT_EQ(xml.find("<nexthop-member-id>7</nexthop-member-id>"),
@@ -1089,8 +1116,9 @@ TEST(RibConfigTest, RouteUpdateResolvesRegisteredNexthop) {
       },
       [&](const std::string& rib, std::uint32_t id,
           std::optional<std::string>* gateway,
-          std::optional<std::string>* interface) {
-        return registry.Resolve(rib, id, gateway, interface);
+          std::optional<std::string>* interface,
+          std::optional<std::string>* special) {
+        return registry.Resolve(rib, id, gateway, interface, special);
       }, &registry)) << error;
   ASSERT_EQ(commands.size(), 2U);
   EXPECT_NE(std::ranges::find(commands[1].arguments, "192.0.2.44"),
@@ -1149,8 +1177,9 @@ TEST(RibConfigTest, RouteUpdateCompensatesWhenBindingSaveFails) {
       },
       [&](const std::string& rib, std::uint32_t id,
           std::optional<std::string>* gateway,
-          std::optional<std::string>* interface) {
-        return registry.Resolve(rib, id, gateway, interface);
+          std::optional<std::string>* interface,
+          std::optional<std::string>* special) {
+        return registry.Resolve(rib, id, gateway, interface, special);
       },
       &registry,
       [](const PersistentRegistry&, std::string* why) {
@@ -1262,7 +1291,52 @@ TEST(RibConfigTest, RibAddDurablySuppliesInterfaceOnlyNexthopFamily) {
             std::string::npos);
 }
 
-TEST(RibConfigTest, InterfaceOnlyNexthopRejectsMissingOrConflictingRibFamily) {
+TEST(RibConfigTest, ReusesPortableSpecialNexthopByReference) {
+  NexthopRegistry registry;
+  EXPECT_EQ(registry.RegisterRib("100", "ipv4"),
+            NexthopRegistry::RegisterRibResult::kRegistered);
+  std::string output;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(InvokeNexthopAdd(
+      &registry,
+      R"(<nh-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><sharing-flag>true</sharing-flag><nexthop-base><special>discard</special></nexthop-base></nh-add>)",
+      &output, &error, &path)) << error;
+  EXPECT_NE(output.find(">1</nexthop-id>"), std::string::npos);
+  const PersistentRegistry state = registry.PersistentState();
+  ASSERT_EQ(state.nexthops.size(), 1U);
+  EXPECT_EQ(state.nexthops[0].address_family, "ipv4");
+  EXPECT_EQ(state.nexthops[0].special, "discard");
+
+  std::vector<NativeCommand> commands;
+  ASSERT_TRUE(InvokeRouteAdd(
+      NativePlatform::kLinux,
+      R"(<route-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><routes><route-list><route-index>9</route-index><match><ipv4><dest-ipv4-prefix>198.51.100.0/24</dest-ipv4-prefix></ipv4></match><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes><nexthop><nexthop-base><nexthop-ref>1</nexthop-ref></nexthop-base></nexthop></route-list></routes></route-add>)",
+      &output, &error, &path,
+      [&](const NativeCommand& command, std::string*) {
+        commands.push_back(command);
+        return true;
+      },
+      [&](const std::string& rib, std::uint32_t id,
+          std::optional<std::string>* gateway,
+          std::optional<std::string>* interface,
+          std::optional<std::string>* special) {
+        return registry.Resolve(rib, id, gateway, interface, special);
+      },
+      &registry)) << error;
+  ASSERT_EQ(commands.size(), 1U);
+  EXPECT_NE(std::ranges::find(commands[0].arguments, "blackhole"),
+            commands[0].arguments.end());
+
+  ASSERT_TRUE(InvokeNexthopAdd(
+      &registry,
+      R"(<nh-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-base><special>receive</special></nexthop-base></nh-add>)",
+      &output, &error, &path));
+  EXPECT_NE(output.find("kernel-owned"), std::string::npos);
+  EXPECT_EQ(registry.PersistentState().nexthops.size(), 1U);
+}
+
+TEST(RibConfigTest, FamilyNeutralNexthopRejectsMissingOrConflictingRibFamily) {
   NexthopRegistry registry;
   std::string output;
   std::string error;
@@ -1270,6 +1344,13 @@ TEST(RibConfigTest, InterfaceOnlyNexthopRejectsMissingOrConflictingRibFamily) {
   constexpr char nexthop[] =
       R"(<nh-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-base><outgoing-interface>dummy0</outgoing-interface></nexthop-base></nh-add>)";
   ASSERT_TRUE(InvokeNexthopAdd(&registry, nexthop, &output, &error, &path));
+  EXPECT_NE(output.find("prior rib-add"), std::string::npos);
+  EXPECT_TRUE(registry.PersistentState().nexthops.empty());
+
+  ASSERT_TRUE(InvokeNexthopAdd(
+      &registry,
+      R"(<nh-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><nexthop-base><special>discard</special></nexthop-base></nh-add>)",
+      &output, &error, &path));
   EXPECT_NE(output.find("prior rib-add"), std::string::npos);
   EXPECT_TRUE(registry.PersistentState().nexthops.empty());
 
@@ -1440,16 +1521,22 @@ TEST(RibConfigTest, PersistsAndRestoresPrivateRegistryAtomically) {
   PersistentRegistry expected;
   expected.next_id = 9;
   expected.ribs.push_back({"100", "ipv4"});
-  expected.nexthops.push_back({"100", 7, "192.0.2.1", "dummy0", "ipv4", true});
   expected.nexthops.push_back(
-      {"200", 8, std::nullopt, std::nullopt, std::nullopt, false});
+      {"100", 7, "192.0.2.1", "dummy0", "ipv4", true, {}});
+  expected.nexthops.push_back(
+      {"200", 8, std::nullopt, std::nullopt, std::nullopt, false, {}});
+  expected.nexthops.push_back(
+      {"300", 9, std::nullopt, std::nullopt, "ipv6", true,
+       "discard-with-error"});
   expected.bindings.push_back({"100", "ipv4", "198.51.100.0/24", 42, 7});
   std::string error;
   ASSERT_TRUE(SaveRegistry(state, expected, &error)) << error;
   std::ifstream encoded(state);
   const std::string encoded_text((std::istreambuf_iterator<char>(encoded)),
                                  std::istreambuf_iterator<char>());
-  EXPECT_NE(encoded_text.find("\"version\": 2"), std::string::npos);
+  EXPECT_NE(encoded_text.find("\"version\": 3"), std::string::npos);
+  EXPECT_NE(encoded_text.find("\"special\": \"discard-with-error\""),
+            std::string::npos);
   EXPECT_NE(encoded_text.find("\"route-index\": 42"), std::string::npos);
   EXPECT_EQ(std::filesystem::status(state).permissions() &
                 (std::filesystem::perms::group_all |
@@ -1533,7 +1620,8 @@ TEST(RibConfigTest, RebuildsRegistryObjectsBindingsAndReferences) {
   ASSERT_TRUE(restored.RestorePersistentState(state, &error)) << error;
   std::optional<std::string> gateway;
   std::optional<std::string> interface;
-  ASSERT_TRUE(restored.Resolve("100", 1, &gateway, &interface));
+  std::optional<std::string> special;
+  ASSERT_TRUE(restored.Resolve("100", 1, &gateway, &interface, &special));
   EXPECT_EQ(gateway, "192.0.2.1");
   EXPECT_EQ(interface, "dummy0");
   EXPECT_EQ(restored.RouteReference(route), 1U);
@@ -1548,7 +1636,7 @@ TEST(RibConfigTest, RebuildsRegistryObjectsBindingsAndReferences) {
 TEST(RibConfigTest, RejectsInconsistentPersistentRegistryRecovery) {
   PersistentRegistry state;
   state.nexthops.push_back(
-      {"100", 1, "192.0.2.1", std::nullopt, "ipv4", false});
+      {"100", 1, "192.0.2.1", std::nullopt, "ipv4", false, {}});
   state.bindings.push_back({"100", "ipv4", "198.51.100.0/24", 1, 2});
   NexthopRegistry registry;
   std::string error;
@@ -1561,12 +1649,23 @@ TEST(RibConfigTest, RejectsNexthopThatConflictsWithPersistentRibFamily) {
   PersistentRegistry state;
   state.ribs.push_back({"100", "ipv6"});
   state.nexthops.push_back(
-      {"100", 1, "192.0.2.1", std::nullopt, "ipv4", false});
+      {"100", 1, "192.0.2.1", std::nullopt, "ipv4", false, {}});
   NexthopRegistry registry;
   std::string error;
   EXPECT_FALSE(registry.RestorePersistentState(state, &error));
   EXPECT_NE(error.find("conflicting"), std::string::npos);
   EXPECT_TRUE(registry.PersistentState().ribs.empty());
+}
+
+TEST(RibConfigTest, RejectsPersistentSpecialNexthopWithoutFamily) {
+  PersistentRegistry state;
+  state.nexthops.push_back({"100", 1, std::nullopt, std::nullopt,
+                            std::nullopt, false, "discard"});
+  NexthopRegistry registry;
+  std::string error;
+  EXPECT_FALSE(registry.RestorePersistentState(state, &error));
+  EXPECT_NE(error.find("invalid"), std::string::npos);
+  EXPECT_TRUE(registry.PersistentState().nexthops.empty());
 }
 
 TEST(RibConfigTest, MakesNexthopMutationDurableBeforeAcknowledgement) {
@@ -1650,10 +1749,12 @@ TEST(RibConfigTest, ResolvesRegisteredNexthopReferenceInConfiguration) {
       xml.c_str(), &config, &error, &path,
       [](const std::string& rib, std::uint32_t id,
          std::optional<std::string>* gateway,
-         std::optional<std::string>* interface) {
+         std::optional<std::string>* interface,
+         std::optional<std::string>* special) {
         if (rib != "100" || id != 23) return false;
         *gateway = "198.51.100.9";
         *interface = "dummy23";
+        special->reset();
         return true;
       })) << error;
   ASSERT_EQ(config.routes.size(), 1U);
@@ -1698,8 +1799,9 @@ TEST(RibConfigTest, RouteAddExecutesResolvedRegisteredNexthop) {
       },
       [&](const std::string& rib, std::uint32_t reference,
           std::optional<std::string>* gateway,
-          std::optional<std::string>* interface) {
-        return registry.Resolve(rib, reference, gateway, interface);
+          std::optional<std::string>* interface,
+          std::optional<std::string>* special) {
+        return registry.Resolve(rib, reference, gateway, interface, special);
       }, &registry)) << error;
   ASSERT_EQ(commands.size(), 1U);
   EXPECT_NE(std::ranges::find(commands.front().arguments, "192.0.2.9"),
@@ -1752,8 +1854,9 @@ TEST(RibConfigTest, RouteAddCompensatesNativeStateWhenBindingSaveFails) {
       },
       [&](const std::string& rib, std::uint32_t id,
           std::optional<std::string>* gateway,
-          std::optional<std::string>* interface) {
-        return registry.Resolve(rib, id, gateway, interface);
+          std::optional<std::string>* interface,
+          std::optional<std::string>* special) {
+        return registry.Resolve(rib, id, gateway, interface, special);
       },
       &registry,
       [](const PersistentRegistry&, std::string* why) {

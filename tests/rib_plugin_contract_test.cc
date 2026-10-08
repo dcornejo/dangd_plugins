@@ -123,6 +123,38 @@ int main(int argc, char** argv) {
       operation_result.output_xml &&
       std::string_view(operation_result.output_xml).find(">true</result>") !=
           std::string_view::npos;
+
+#ifdef __FreeBSD__
+  constexpr char reusable_rib[] = "ipv6-0";
+#else
+  constexpr char reusable_rib[] = "ipv6-101";
+#endif
+  const std::string rib_add_xml =
+      std::string(
+          R"(<rib-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>)") +
+      reusable_rib +
+      R"(</name><address-family>ipv6-address-family</address-family></rib-add>)";
+  operation = {"ietf-i2rs-rib", "rib-add", "/ietf-i2rs-rib:rib-add",
+               rib_add_xml.c_str()};
+  operation_result = {};
+  valid = valid && v7.v6.v5.v4.v3.v2.invoke(
+      base.context, &operation, &operation_result, &error) &&
+      operation_result.output_xml &&
+      std::string_view(operation_result.output_xml).find(">true</result>") !=
+          std::string_view::npos;
+  const std::string special_nh_add_xml =
+      std::string(
+          R"(<nh-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>)") +
+      reusable_rib +
+      R"(</rib-name><nexthop-base><special>discard-with-error</special></nexthop-base></nh-add>)";
+  operation = {"ietf-i2rs-rib", "nh-add", "/ietf-i2rs-rib:nh-add",
+               special_nh_add_xml.c_str()};
+  operation_result = {};
+  valid = valid && v7.v6.v5.v4.v3.v2.invoke(
+      base.context, &operation, &operation_result, &error) &&
+      operation_result.output_xml &&
+      std::string_view(operation_result.output_xml).find(">2</nexthop-id>") !=
+          std::string_view::npos;
   dlclose(library);
   if (registry_path) std::filesystem::remove(registry_path, ignored);
   if (!valid) std::cerr << (error.message ? error.message : "RIB plugin contract failed") << '\n';

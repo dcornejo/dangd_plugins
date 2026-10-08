@@ -29,6 +29,7 @@ class NexthopRegistry {
     std::optional<std::string> interface;
     std::optional<std::string> address_family;
     bool sharable = false;
+    std::optional<std::string> special;
   };
   [[nodiscard]] std::optional<std::uint32_t> Add(Entry entry);
   /** Records the modeled family used by family-neutral nexthops. */
@@ -55,7 +56,8 @@ class NexthopRegistry {
       const std::vector<Route>& routes);
   [[nodiscard]] bool Resolve(const std::string& rib, std::uint32_t id,
                              std::optional<std::string>* gateway,
-                             std::optional<std::string>* interface);
+                             std::optional<std::string>* interface,
+                             std::optional<std::string>* special);
   /** Captures every durable object, allocation cursor, and route binding. */
   [[nodiscard]] PersistentRegistry PersistentState();
   /** Returns durable state plus transient datastore route bindings. */

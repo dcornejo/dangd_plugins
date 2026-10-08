@@ -155,8 +155,9 @@ RegistryWriter Writer(Context* owner) {
 NexthopResolver Resolver(Context* owner) {
   return [owner](const std::string& rib, std::uint32_t id,
                  std::optional<std::string>* gateway,
-                 std::optional<std::string>* interface) {
-    return owner->nexthops.Resolve(rib, id, gateway, interface);
+                 std::optional<std::string>* interface,
+                 std::optional<std::string>* special) {
+    return owner->nexthops.Resolve(rib, id, gateway, interface, special);
   };
 }
 std::vector<Reference> References(const Config& config) {

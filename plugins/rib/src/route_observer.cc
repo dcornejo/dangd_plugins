@@ -124,7 +124,8 @@ std::vector<NexthopResolutionChange> NexthopResolutionTracker::Observe(
                  route.destination == binding.destination &&
                  (!nexthop->gateway || route.gateway == nexthop->gateway) &&
                  (!nexthop->interface ||
-                  route.interface == nexthop->interface);
+                  route.interface == nexthop->interface) &&
+                 (!nexthop->special || route.special == nexthop->special);
         });
     if (installed) resolved.emplace(binding.rib, binding.nexthop_id);
   }
@@ -276,8 +277,11 @@ std::string SerializeNexthopResolutionChange(
       << "<nexthop-id>" << nexthop.id << "</nexthop-id><sharing-flag>"
       << (nexthop.sharable ? "true" : "false")
       << "</sharing-flag><nexthop-base>";
-  const bool ipv4 = !nexthop.gateway || nexthop.gateway->find(':') == std::string::npos;
-  EmitBaseNexthop(xml, ipv4, nexthop.gateway, nexthop.interface);
+  const bool ipv4 = nexthop.address_family
+      ? *nexthop.address_family == "ipv4"
+      : !nexthop.gateway || nexthop.gateway->find(':') == std::string::npos;
+  EmitBaseNexthop(xml, ipv4, nexthop.gateway, nexthop.interface,
+                  nexthop.special);
   xml << "</nexthop-base></nexthop><nexthop-state>"
       << (resolved ? "resolved" : "unresolved")
       << "</nexthop-state></nexthop-resolution-status-change>";

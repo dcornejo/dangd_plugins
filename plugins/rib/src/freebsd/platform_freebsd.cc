@@ -110,8 +110,7 @@ bool SafeFibAndInterface(const Route& route, std::string* error,
             "nexthop-base/special";
     return false;
   }
-  if (route.special &&
-      (route.gateway || route.interface || route.nexthop_ref)) {
+  if (route.special && (route.gateway || route.interface)) {
     *error = "FreeBSD special route cannot include another nexthop";
     *path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/"
             "nexthop-base";

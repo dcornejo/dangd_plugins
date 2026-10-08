@@ -9,6 +9,15 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Extended RFC 8431 reusable nexthops to the writable `discard` and
+  `discard-with-error` identities. `nh-add` now obtains their family from a
+  prior `rib-add`, `nexthop-ref` resolves them into the exact native special
+  route, persistence format version 3 retains them across restart, and
+  resolution notifications match and serialize the special identity.
+  Kernel-owned `receive`, mixed choice forms, unknown identities, missing
+  family context, and conflicting recovery state fail closed. Versions 1 and
+  2 of the private sidecar remain readable.
+
 - Made the RFC 8431 direct `discard` and `discard-with-error` special
   nexthops fully writable and reversible through configuration commits,
   `route-add`, `route-update`, `route-delete`, and `rib-delete` on Linux and

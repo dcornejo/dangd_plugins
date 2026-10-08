@@ -30,7 +30,7 @@ nlohmann::json OptionalJson(const std::optional<std::string>& value) {
 }
 
 nlohmann::json Encode(const PersistentRegistry& value) {
-  nlohmann::json result{{"version", 2}, {"next-id", value.next_id},
+  nlohmann::json result{{"version", 3}, {"next-id", value.next_id},
                         {"ribs", nlohmann::json::array()},
                         {"nexthops", nlohmann::json::array()},
                         {"bindings", nlohmann::json::array()}};
@@ -42,7 +42,8 @@ nlohmann::json Encode(const PersistentRegistry& value) {
       {"gateway", OptionalJson(item.gateway)},
       {"interface", OptionalJson(item.interface)},
       {"address-family", OptionalJson(item.address_family)},
-      {"sharable", item.sharable}});
+      {"sharable", item.sharable},
+      {"special", OptionalJson(item.special)}});
   for (const auto& item : value.bindings)
     result["bindings"].push_back({{"rib", item.rib},
       {"address-family", item.address_family}, {"destination", item.destination},
@@ -119,7 +120,7 @@ bool LoadRegistry(const std::filesystem::path& path, PersistentRegistry* registr
     std::ifstream input(path);
     nlohmann::json json = nlohmann::json::parse(input);
     const unsigned version = json.at("version").get<unsigned>();
-    if (version != 1 && version != 2)
+    if (version != 1 && version != 2 && version != 3)
       return Fail("unsupported registry state version", error);
     PersistentRegistry loaded;
     loaded.next_id = json.at("next-id").get<std::uint32_t>();
@@ -143,8 +144,19 @@ bool LoadRegistry(const std::filesystem::path& path, PersistentRegistry* registr
     for (const auto& item : json.at("nexthops")) {
       PersistentNexthop value{item.at("rib").get<std::string>(), item.at("id").get<std::uint32_t>(),
         OptionalString(item.at("gateway")), OptionalString(item.at("interface")),
-        OptionalString(item.at("address-family")), item.at("sharable").get<bool>()};
-      if (value.rib.empty() || value.id == 0 || !ids.emplace(value.rib, value.id).second)
+        OptionalString(item.at("address-family")), item.at("sharable").get<bool>(),
+        version >= 3 ? OptionalString(item.at("special")) : std::nullopt};
+      const bool supported_special =
+          !value.special || *value.special == "discard" ||
+          *value.special == "discard-with-error";
+      const bool valid_shape =
+          !value.special || (!value.gateway && !value.interface &&
+                             value.address_family.has_value());
+      if (value.rib.empty() || value.id == 0 || !supported_special ||
+          !valid_shape ||
+          (value.address_family && *value.address_family != "ipv4" &&
+           *value.address_family != "ipv6") ||
+          !ids.emplace(value.rib, value.id).second)
         return Fail("registry contains an invalid or duplicate nexthop", error);
       loaded.nexthops.push_back(std::move(value));
     }

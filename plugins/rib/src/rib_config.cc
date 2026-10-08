@@ -180,9 +180,10 @@ bool ParseConfig(const char* xml, Config* config, std::string* error,
       }
       if (xmlNodePtr reference = Child(base, "nexthop-ref")) {
         std::uint64_t id = 0;
-        if (!resolver || !ParseUnsigned(reference, &id) || id > UINT32_MAX ||
+        if (route.special || route.gateway || route.interface || !resolver ||
+            !ParseUnsigned(reference, &id) || id > UINT32_MAX ||
             !resolver(rib_name, static_cast<std::uint32_t>(id), &route.gateway,
-                      &route.interface))
+                      &route.interface, &route.special))
           return Fail("nexthop-ref does not identify a registered nexthop in this RIB",
                       "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/nexthop-base/nexthop-ref",
                       error, error_path);
@@ -197,8 +198,7 @@ bool ParseConfig(const char* xml, Config* config, std::string* error,
                     "/ietf-i2rs-rib:routing-instance/rib-list/route-list/"
                     "nexthop/nexthop-base/special",
                     error, error_path);
-      if (route.special &&
-          (route.gateway || route.interface || route.nexthop_ref))
+      if (route.special && (route.gateway || route.interface))
         return Fail("a special nexthop cannot include another base nexthop",
                     "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/nexthop-base",
                     error, error_path);

@@ -125,6 +125,8 @@ bool ParseBaseNexthop(xmlNodePtr root, NexthopRegistry::Entry* entry,
   entry->gateway = Text(Child(base, "ipv4-address"));
   if (entry->gateway->empty()) entry->gateway = Text(Child(base, "ipv6-address"));
   entry->interface = Text(Child(base, "outgoing-interface"));
+  const std::string special = LocalIdentity(Text(Child(base, "special")));
+  if (!special.empty()) entry->special = special;
   for (const std::string_view combined : {"egress-interface-ipv4-address",
                                           "egress-interface-ipv6-address"}) {
     if (xmlNodePtr pair = Child(base, combined)) {
@@ -135,8 +137,20 @@ bool ParseBaseNexthop(xmlNodePtr root, NexthopRegistry::Entry* entry,
   }
   if (entry->gateway->empty()) entry->gateway.reset();
   if (entry->interface->empty()) entry->interface.reset();
-  if (!entry->gateway && !entry->interface) {
-    *reason = "the base nexthop requires an IP address or outgoing interface";
+  if (entry->special && *entry->special != "discard" &&
+      *entry->special != "discard-with-error") {
+    *reason = *entry->special == "receive"
+        ? "receive nexthops are kernel-owned and read-only"
+        : "the special nexthop is not supported by the portable backend";
+    return false;
+  }
+  if (entry->special && (entry->gateway || entry->interface)) {
+    *reason = "a special nexthop cannot include another base nexthop";
+    return false;
+  }
+  if (!entry->special && !entry->gateway && !entry->interface) {
+    *reason = "the base nexthop requires an IP address, outgoing interface, "
+              "or supported special identity";
     return false;
   }
   if (entry->gateway)
@@ -343,13 +357,15 @@ bool NexthopRegistry::ReplaceConfigurationRouteBindings(
 
 bool NexthopRegistry::Resolve(const std::string& rib, std::uint32_t id,
                               std::optional<std::string>* gateway,
-                              std::optional<std::string>* interface) {
-  if (!gateway || !interface) return false;
+                              std::optional<std::string>* interface,
+                              std::optional<std::string>* special) {
+  if (!gateway || !interface || !special) return false;
   std::lock_guard lock(mutex_);
   const auto found = entries_.find({rib, id});
   if (found == entries_.end()) return false;
   *gateway = found->second.gateway;
   *interface = found->second.interface;
+  *special = found->second.special;
   return true;
 }
 
@@ -364,7 +380,7 @@ PersistentRegistry NexthopRegistry::PersistentState() {
   for (const auto& [key, entry] : entries_) {
     state.nexthops.push_back({key.first, key.second, entry.gateway,
                               entry.interface, entry.address_family,
-                              entry.sharable});
+                              entry.sharable, entry.special});
   }
   state.bindings.reserve(route_references_.size());
   for (const auto& [route, id] : route_references_) {
@@ -384,7 +400,7 @@ PersistentRegistry NexthopRegistry::ResolutionState() {
   for (const auto& [key, entry] : entries_)
     state.nexthops.push_back({key.first, key.second, entry.gateway,
                               entry.interface, entry.address_family,
-                              entry.sharable});
+                              entry.sharable, entry.special});
   for (const auto& [route, id] : route_references_)
     state.bindings.push_back(
         {std::get<0>(route), std::get<1>(route), std::get<2>(route),
@@ -414,12 +430,20 @@ bool NexthopRegistry::RestorePersistentState(const PersistentRegistry& state,
     }
   }
   for (const auto& item : state.nexthops) {
-    if (item.rib.empty() || item.id == 0 ||
+    const bool supported_special =
+        !item.special || *item.special == "discard" ||
+        *item.special == "discard-with-error";
+    const bool valid_shape =
+        !item.special || (!item.gateway && !item.interface &&
+                          item.address_family.has_value());
+    if (item.rib.empty() || item.id == 0 || !supported_special ||
+        !valid_shape ||
         (ribs.contains(item.rib) && item.address_family &&
          ribs.at(item.rib) != *item.address_family) ||
         !entries.emplace(std::make_pair(item.rib, item.id),
                          Entry{item.rib, item.gateway, item.interface,
-                               item.address_family, item.sharable})
+                               item.address_family, item.sharable,
+                               item.special})
              .second) {
       *error = "registry contains an invalid, conflicting, or duplicate nexthop";
       return false;
@@ -768,11 +792,14 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
                                                          : "ipv4-address"));
         replacement.interface = Text(Child(combined, "outgoing-interface"));
       }
+      if (replacement.gateway->empty()) replacement.gateway.reset();
+      if (replacement.interface->empty()) replacement.interface.reset();
       if (xmlNodePtr reference = Child(base, "nexthop-ref")) {
         std::uint32_t id = 0;
-        if (!resolver || !Unsigned(reference, &id) ||
+        if (replacement.special || replacement.gateway ||
+            replacement.interface || !resolver || !Unsigned(reference, &id) ||
             !resolver(rib_name, id, &replacement.gateway,
-                      &replacement.interface)) {
+                      &replacement.interface, &replacement.special)) {
           failed.emplace_back(index, 2U);
           continue;
         }
@@ -780,16 +807,13 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
       } else {
         replacement.nexthop_ref.reset();
       }
-      if (replacement.gateway->empty()) replacement.gateway.reset();
-      if (replacement.interface->empty()) replacement.interface.reset();
       if (replacement.special &&
           (*replacement.special != "discard" &&
            *replacement.special != "discard-with-error")) {
         failed.emplace_back(index, 3U); continue;
       }
       if (replacement.special &&
-          (replacement.gateway || replacement.interface ||
-           replacement.nexthop_ref)) {
+          (replacement.gateway || replacement.interface)) {
         failed.emplace_back(index, 3U); continue;
       }
       if (!replacement.special && !replacement.gateway &&
@@ -1043,13 +1067,14 @@ bool InvokeNexthopAdd(NexthopRegistry* registry, const char* input_xml,
     *output_xml = BooleanOutput(false, reason);
     return true;
   }
-  // An outgoing interface does not encode an IP family. Require the modeled
-  // RIB context established by rib-add instead of guessing from host state.
+  // An outgoing interface or special identity does not encode an IP family.
+  // Require the modeled RIB context established by rib-add instead of
+  // guessing from host state.
   if (!entry.address_family) {
     entry.address_family = registry->RibFamily(entry.rib);
     if (!entry.address_family) {
       *output_xml = BooleanOutput(
-          false, "interface-only nexthop requires a prior rib-add address family");
+          false, "family-neutral nexthop requires a prior rib-add address family");
       return true;
     }
   }

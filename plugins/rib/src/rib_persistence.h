@@ -27,6 +27,8 @@ struct PersistentNexthop {
   std::optional<std::string> interface;
   std::optional<std::string> address_family;
   bool sharable = false;
+  /** Portable RFC 8431 special identity, mutually exclusive with forwarding. */
+  std::optional<std::string> special;
   bool operator==(const PersistentNexthop&) const = default;
 };
 

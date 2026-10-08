@@ -169,8 +169,10 @@ modeled failure because RPF enforcement is not implemented. `rib-delete`
 removes every observed route in the selected namespace as one compensated
 plan, restoring earlier deletions if a later native operation fails.
 
-`nh-add` allocates an identifier for a base IP-address, outgoing-interface, or
-combined nexthop and retains it in a mutex-protected registry scoped by RIB.
+`nh-add` allocates an identifier for a base IP-address, outgoing-interface,
+combined nexthop, `discard`, or `discard-with-error` identity and retains it in
+a mutex-protected registry scoped by RIB. `receive` remains kernel-owned and is
+rejected as a reusable configured object.
 The live provider validates that RIB name against the active platform mapping
 and nexthop family before allocating an identifier or writing the registry.
 Unknown aliases, wrong-family aliases, and bare numeric names return a modeled
@@ -189,11 +191,11 @@ successful `route-delete` and `rib-delete` release them. Registry persistence
 is completed before reusable-object and imperative-route RPCs are acknowledged.
 Operational reads publish registered identifiers under their containing RIB.
 Gateway nexthops provide their family directly. `rib-add` durably records the
-modeled family, so an interface-only `nh-add` can be published before the RIB
-contains any observed route. An interface-only request for a RIB that has not
-first been registered fails as a modeled operation rather than guessing from
-interface addresses or host defaults. Re-registering a name with a different
-family likewise fails closed.
+modeled family, so an interface-only or special `nh-add` can be published
+before the RIB contains any observed route. Such a family-neutral request for
+a RIB that has not first been registered fails as a modeled operation rather
+than guessing from interface addresses or host defaults. Re-registering a name
+with a different family likewise fails closed.
 
 Applied datastore reference counts are rebuilt from dangd's reconciled
 configuration snapshot. This makes restart restoration independent of prior
@@ -223,10 +225,11 @@ kernel/sidecar state.
 An otherwise empty RIB registered by `rib-add` is part of that durable state
 and reappears in operational data after restart before its first route or
 nexthop is created.
-Registry format version 2 includes the modeled `route-index` in every binding,
-allowing parallel referenced routes for the same RIB, family, and prefix to
-remain independent across reconciliation and restart. Version-1 files remain
-readable and assign their historically unique binding index zero.
+Registry format version 3 retains the complete reusable special identity.
+Version 2 introduced the modeled `route-index` in every binding, allowing
+parallel referenced routes for the same RIB, family, and prefix to remain
+independent across reconciliation and restart. Versions 1 and 2 remain
+readable; version-1 bindings receive their historically unique index zero.
 
 The ABI-v8 provider publishes `route-change` notifications for successful
 managed route installation, replacement, and removal. Imperative RPC events
@@ -246,9 +249,9 @@ a managed success with native readback because observed routes use a
 deterministic synthetic index. The separate `nexthop-resolution-status-change`
 notification is also implemented for reusable nexthops. Resolution means at
 least one imperative or datastore route bound through `nexthop-ref` is present
-and installed in the observed native RIB with the referenced gateway and/or
-interface. A different parallel path for the same prefix does not resolve the
-binding. Creating an unused object is not a
+and installed in the observed native RIB with the referenced gateway,
+interface, and/or special identity. A different parallel path for the same
+prefix does not resolve the binding. Creating an unused object is not a
 status change; losing the final installed binding transitions it to
 `unresolved`. The notification contains the allocated ID, sharing flag, and
 complete supported base nexthop. Complex nexthops outside the portable subset
