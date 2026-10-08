@@ -53,7 +53,12 @@ Linux `RTA_MULTIPATH` routes are expanded into one stable route entry per
 native base nexthop, preserving each gateway/interface path and its installed
 state. This representation avoids publishing an empty nexthop and keeps path
 identity available without advertising RFC 8431's optional load-balance
-feature. Routes carrying Linux `RTA_NH_ID` are now joined with a direct
+feature. A dead native member is inactive and carries the exact RFC 8431
+`unresolved-nexthop` route reason; a subsequent installed-state transition is
+reported as `resolved-nexthop` or `unresolved-nexthop` in `route-change`.
+Ordinary route creation, removal, or metric changes do not expose a reliable
+native cause and are deliberately left without a reason rather than guessed.
+Routes carrying Linux `RTA_NH_ID` are now joined with a direct
 `RTM_GETNEXTHOP` dump. Simple objects and recursively referenced multipath
 groups expand into the same base-nexthop view, including gateway, interface,
 special discard identity, and installed state. Cycles, missing members,
@@ -249,8 +254,11 @@ managed route installation, replacement, and removal. Imperative RPC events
 are queued only after native execution and any registry sidecar update have
 succeeded. Datastore events are queued from successful applied-configuration
 reconciliation rather than tentative hardware apply, so a failed or rolled-back
-commit does not leak a success event. The bounded queue contains at most 1024
-events. When dangd drains notifications, the provider also compares a fresh
+commit does not leak a success event. Native installed-state transitions
+include the exact RFC `resolved-nexthop` or `unresolved-nexthop` reason; events
+whose cause is not available from the kernel omit the optional reason list.
+The bounded queue contains at most 1024 events. When dangd drains
+notifications, the provider also compares a fresh
 native route inventory with a synchronized baseline. The initial inventory is
 quiet; later external additions, removals, and route-property changes produce
 `route-change` events. Managed changes advance the same baseline when their

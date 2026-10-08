@@ -4,8 +4,10 @@
 #ifndef DANG_PLUGINS_RIB_ROUTE_OBSERVER_H_
 #define DANG_PLUGINS_RIB_ROUTE_OBSERVER_H_
 
-#include <string>
 #include <map>
+#include <optional>
+#include <string>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -16,10 +18,16 @@ namespace dang::rib {
 
 /** One route read from the host forwarding plane. */
 struct ObservedRoute {
+  ObservedRoute() = default;
+  ObservedRoute(const Route& value, bool is_installed)
+      : route(value), installed(is_installed) {}
+
   Route route;
   bool installed = true;
   /** False when observation is safe but native mutation is not implemented. */
   bool mutable_route = true;
+  /** RFC 8431 reason when the native state exposes one without inference. */
+  std::optional<std::string> reason;
 };
 
 /**
@@ -83,7 +91,8 @@ class NexthopResolutionTracker {
 
 /** Serializes one RFC 8431 route-change event without an RFC 5277 wrapper. */
 [[nodiscard]] std::string SerializeRouteChange(const Route& route,
-                                               bool installed);
+                                               bool installed,
+                                               std::string_view reason = {});
 
 /** Serializes one RFC 8431 reusable-nexthop resolution transition. */
 [[nodiscard]] std::string SerializeNexthopResolutionChange(

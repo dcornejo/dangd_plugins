@@ -537,6 +537,7 @@ TEST(RibConfigTest, SerializesUninstalledOperationalRouteAsInactive) {
                     .destination = "198.51.100.0/24",
                     .gateway = "192.0.2.1"};
   observed.installed = false;
+  observed.reason = "unresolved-nexthop";
   const std::string xml = SerializeOperationalRoutes({observed});
   EXPECT_NE(xml.find("<route-state>inactive</route-state>"),
             std::string::npos);
@@ -544,6 +545,8 @@ TEST(RibConfigTest, SerializesUninstalledOperationalRouteAsInactive) {
                 "<route-installed-state>uninstalled</route-installed-state>"),
             std::string::npos);
   EXPECT_EQ(xml.find("<route-state>active</route-state>"), std::string::npos);
+  EXPECT_NE(xml.find("<route-reason>unresolved-nexthop</route-reason>"),
+            std::string::npos);
 }
 
 TEST(RibConfigTest, SerializesNativeSpecialNexthopIdentity) {
@@ -581,6 +584,36 @@ TEST(RibConfigTest, SerializesInstalledAndRemovedRouteNotifications) {
   EXPECT_NE(removed.find("<route-installed-state>uninstalled"),
             std::string::npos);
   EXPECT_NE(removed.find("<route-state>inactive"), std::string::npos);
+  EXPECT_EQ(removed.find("<route-change-reasons>"), std::string::npos);
+  const std::string unresolved =
+      SerializeRouteChange(route, false, "unresolved-nexthop");
+  EXPECT_NE(unresolved.find(
+                "<route-change-reason>unresolved-nexthop</route-change-reason>"),
+            std::string::npos);
+}
+
+TEST(RibConfigTest, AttributesNativeInstalledStateTransitions) {
+  Route route{.routing_instance = "default",
+              .rib = "100",
+              .address_family = "ipv4",
+              .index = 1,
+              .destination = "192.0.2.0/24",
+              .gateway = "192.0.2.1",
+              .interface = std::nullopt,
+              .nexthop_ref = std::nullopt,
+              .preference = 0,
+              .local_only = false,
+              .special = std::nullopt};
+  RouteChangeTracker tracker;
+  EXPECT_TRUE(tracker.Observe({{route, true}}).empty());
+  const auto unresolved = tracker.Observe({{route, false}});
+  ASSERT_EQ(unresolved.size(), 1U);
+  ASSERT_TRUE(unresolved[0].reason.has_value());
+  EXPECT_EQ(*unresolved[0].reason, "unresolved-nexthop");
+  const auto resolved = tracker.Observe({{route, true}});
+  ASSERT_EQ(resolved.size(), 1U);
+  ASSERT_TRUE(resolved[0].reason.has_value());
+  EXPECT_EQ(*resolved[0].reason, "resolved-nexthop");
 }
 
 TEST(RibConfigTest, TracksExternalRouteChangesWithoutInitialFlood) {
@@ -599,6 +632,7 @@ TEST(RibConfigTest, TracksExternalRouteChangesWithoutInitialFlood) {
   ASSERT_EQ(added.size(), 1U);
   EXPECT_EQ(added[0].route.destination, second.destination);
   EXPECT_TRUE(added[0].installed);
+  EXPECT_FALSE(added[0].reason.has_value());
 
   second.gateway = "198.51.100.1";
   const auto changed = tracker.Observe({{first, true}, {second, true}});

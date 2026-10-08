@@ -5,4 +5,7 @@
   <match><ipv4><dest-ipv4-prefix>198.51.100.0/24</dest-ipv4-prefix></ipv4></match>
   <route-installed-state>installed</route-installed-state>
   <route-state>active</route-state>
+  <route-change-reasons>
+    <route-change-reason>resolved-nexthop</route-change-reason>
+  </route-change-reasons>
 </route-change>

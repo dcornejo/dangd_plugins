@@ -9,6 +9,13 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Preserved the RFC 8431 reason for native nexthop resolution transitions.
+  Linux dead multipath members now publish `unresolved-nexthop` in operational
+  route status. A later installed-state transition emits `resolved-nexthop` or
+  `unresolved-nexthop` in `route-change`; ordinary additions, removals, and
+  preference changes remain unattributed rather than receiving a guessed
+  cause. The notification example is schema-validated with the reason list.
+
 - Made RFC 8431 `route-add` non-destructive when a destination already
   exists. Production now inventories the modeled RIB before mutation, reports
   the RFC-defined repeated-route error code 1, and uses exclusive native

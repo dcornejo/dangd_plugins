@@ -441,7 +441,9 @@ int NextNotification(void* raw_context, DangNotificationV1* event,
   for (const ObservedRoute& change : owner->route_changes.Observe(routes)) {
     if (owner->notifications.size() >= kMaximumPendingNotifications) break;
     owner->notifications.push_back({
-        "route-change", SerializeRouteChange(change.route, change.installed)});
+        "route-change",
+        SerializeRouteChange(change.route, change.installed,
+                             change.reason.value_or(""))});
   }
   for (const NexthopResolutionChange& change :
        owner->nexthop_resolutions.Observe(owner->nexthops.ResolutionState(),

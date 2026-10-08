@@ -725,6 +725,7 @@ bool ObserveLinuxRoutes(std::vector<ObservedRoute>* routes,
         for (const LinuxNexthop& path : multipath) {
           ObservedRoute member = observed;
           member.installed = path.installed;
+          if (!path.installed) member.reason = "unresolved-nexthop";
           // The RFC base view cannot retain the Linux object ID or group
           // topology needed to recreate this route during rollback. Keep it
           // observable, but never approximate an imperative mutation.

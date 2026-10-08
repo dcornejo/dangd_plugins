@@ -85,14 +85,23 @@ std::vector<ObservedRoute> RouteChangeTracker::Observe(
     if (!next.contains(key)) {
       ObservedRoute removed = previous;
       removed.installed = false;
+      // Disappearance from an inventory does not reveal why the route was
+      // removed. Do not carry an earlier status reason into a new event.
+      removed.reason.reset();
       changes.push_back(std::move(removed));
     }
   for (const auto& [key, current] : next) {
     const auto previous = routes_.find(key);
     if (previous == routes_.end() ||
         !EquivalentObservedRoute(previous->second.route, current.route) ||
-        previous->second.installed != current.installed)
-      changes.push_back(current);
+        previous->second.installed != current.installed) {
+      ObservedRoute change = current;
+      if (previous != routes_.end() &&
+          previous->second.installed != current.installed)
+        change.reason = current.installed ? "resolved-nexthop"
+                                          : "unresolved-nexthop";
+      changes.push_back(std::move(change));
+    }
   }
   routes_ = std::move(next);
   return changes;
@@ -101,7 +110,7 @@ std::vector<ObservedRoute> RouteChangeTracker::Observe(
 void RouteChangeTracker::ApplyManaged(const Route& route, bool installed) {
   if (!initialized_) return;
   const Key key = RouteIdentity(route);
-  if (installed) routes_[key] = ObservedRoute{route, true};
+  if (installed) routes_[key] = ObservedRoute(route, true);
   else routes_.erase(key);
 }
 
@@ -222,7 +231,11 @@ std::string SerializeOperationalRoutes(
         << "</route-state>"
         << "<route-installed-state>"
         << (observed.installed ? "installed" : "uninstalled")
-        << "</route-installed-state></route-status><route-attributes>"
+        << "</route-installed-state>";
+    if (observed.reason)
+      xml << "<route-reason>" << Escape(*observed.reason)
+          << "</route-reason>";
+    xml << "</route-status><route-attributes>"
         << "<route-preference>" << route.preference << "</route-preference>"
         << "<local-only>" << (route.local_only ? "true" : "false")
         << "</local-only></route-attributes></route-list>";
@@ -248,7 +261,8 @@ std::string SerializeOperationalRoutes(
   return xml.str();
 }
 
-std::string SerializeRouteChange(const Route& route, bool installed) {
+std::string SerializeRouteChange(const Route& route, bool installed,
+                                 std::string_view reason) {
   const bool ipv4 = route.address_family == "ipv4";
   std::ostringstream xml;
   xml << "<route-change xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\">"
@@ -265,7 +279,11 @@ std::string SerializeRouteChange(const Route& route, bool installed) {
       << (installed ? "installed" : "uninstalled")
       << "</route-installed-state><route-state>"
       << (installed ? "active" : "inactive")
-      << "</route-state></route-change>";
+      << "</route-state>";
+  if (!reason.empty())
+    xml << "<route-change-reasons><route-change-reason>" << Escape(reason)
+        << "</route-change-reason></route-change-reasons>";
+  xml << "</route-change>";
   return xml.str();
 }
 
