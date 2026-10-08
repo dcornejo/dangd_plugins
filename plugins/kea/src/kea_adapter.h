@@ -146,12 +146,14 @@ using ConfigurationCommand = std::function<bool(
  * those accepted configurations. Active peers must be in touch, uninterrupted,
  * fresh, in the expected stable states, and own exactly the expected scopes.
  * Both replies are parsed with network and DTD processing disabled.
+ * `pending` is set only when identity, mode, role, and scopes match but Kea is
+ * still in a recognized startup or synchronization state.
  */
 [[nodiscard]] bool VerifyPeerTransactionReplies(
     const std::vector<ServerConfiguration>& expected,
     const std::vector<HaPeerHealthExpectation>& health,
     std::string_view running_reply, std::string_view operational_reply,
-    std::string* error);
+    std::string* error, bool* pending = nullptr);
 
 /**
  * Builds complete per-member module images for a safe Kea HA transaction.

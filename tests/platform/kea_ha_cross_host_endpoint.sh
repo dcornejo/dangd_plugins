@@ -94,8 +94,14 @@ case "$(uname -s)" in
   *) fail "unsupported operating system" ;;
 esac
 
-socket4=$socket_dir/dang-ha-cross-${interface}-4.sock
-socket6=$socket_dir/dang-ha-cross-${interface}-6.sock
+socket_label=$interface
+if [ "$action" = start ] && [ "$#" -eq 14 ]; then
+  socket_label=${14}
+elif [ -f "$runtime/socket-label" ]; then
+  socket_label=$(cat "$runtime/socket-label")
+fi
+socket4=$socket_dir/dang-ha-cross-${socket_label}-4.sock
+socket6=$socket_dir/dang-ha-cross-${socket_label}-6.sock
 
 read_runtime_address() {
   file=$1
@@ -160,7 +166,7 @@ case "$action" in
   start)
     # start IFACE LOCAL4 LOCAL6 LOCAL_NAME LOCAL_ROLE REMOTE4 REMOTE6
     #       REMOTE_NAME REMOTE_ROLE AUTO_FAILOVER TRANSPORT CERT_DIR
-    [ "$#" -eq 13 ] || fail "invalid start arguments"
+    [ "$#" -eq 13 ] || [ "$#" -eq 14 ] || fail "invalid start arguments"
     local4=$3
     local6=$4
     local_name=$5
@@ -228,6 +234,7 @@ case "$action" in
       fail "a test control socket already exists"
     addresses_are_free || fail "a test address already exists on $interface"
     mkdir -p "$runtime"
+    printf '%s\n' "$socket_label" >"$runtime/socket-label"
     printf '%s\n' "$local4" >"$runtime/local4"
     printf '%s\n' "$local6" >"$runtime/local6"
     trap 'stop_server' EXIT INT TERM
@@ -248,6 +255,8 @@ case "$action" in
                      "packet-queue-size":64},
   "hooks-libraries":[
     {"library":"$hook_dir/libdhcp_lease_cmds.so"},
+    {"library":"$hook_dir/libdhcp_stat_cmds.so"},
+    {"library":"$hook_dir/libdhcp_host_cmds.so"},
     {"library":"$hook_dir/libdhcp_ha.so","parameters":{
       "high-availability":[{
         "this-server-name":"$local_name","mode":"hot-standby",
@@ -269,7 +278,7 @@ case "$action" in
   ],
   "lease-database":{"type":"memfile","persist":false},
   "subnet4":[{"id":9401,"subnet":"192.0.2.0/24",
-              "pools":[{"pool":"192.0.2.100 - 192.0.2.120"}]}],
+              "pools":[{"pool":"192.0.2.100-192.0.2.120"}]}],
   "valid-lifetime":600,
   "loggers":[{"name":"kea-dhcp4","severity":"INFO",
               "output-options":[{"output":"stderr"}]}]
@@ -283,6 +292,8 @@ EOF
                      "packet-queue-size":64},
   "hooks-libraries":[
     {"library":"$hook_dir/libdhcp_lease_cmds.so"},
+    {"library":"$hook_dir/libdhcp_stat_cmds.so"},
+    {"library":"$hook_dir/libdhcp_host_cmds.so"},
     {"library":"$hook_dir/libdhcp_ha.so","parameters":{
       "high-availability":[{
         "this-server-name":"$local_name","mode":"hot-standby",
@@ -305,7 +316,7 @@ EOF
   "lease-database":{"type":"memfile","persist":false},
   "subnet6":[{"id":9601,"rapid-commit":true,
               "subnet":"2001:db8:6::/64",
-              "pools":[{"pool":"2001:db8:6::100 - 2001:db8:6::120"}]}],
+              "pools":[{"pool":"2001:db8:6::100-2001:db8:6::120"}]}],
   "preferred-lifetime":300,"valid-lifetime":600,
   "loggers":[{"name":"kea-dhcp6","severity":"INFO",
               "output-options":[{"output":"stderr"}]}]

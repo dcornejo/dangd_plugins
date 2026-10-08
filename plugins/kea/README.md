@@ -405,6 +405,10 @@ and have an age at or below the configured limit. Duplicate relationships,
 partial or malformed values, stale identity, wrong scopes, drifted running
 configuration, an altered opaque identity, DTDs, and oversized replies all fail
 closed. Dangd's normal NETCONF commit path now consumes this composed plan.
+The plugin returns pending, rather than permanent rejection, when identity,
+role, mode, and scopes match but Kea is in a bounded startup/synchronization
+state such as `waiting`. Dangd then supplies fresh authenticated readback under
+the original deadline; all other mismatches remain immediately fail-closed.
 The generic core controller binds one group to exact version-2 endpoint
 mappings, authenticated TLS participants, cryptographic persistent tokens,
 these plugin verifiers, and the crash-safe journal. Controller-issued
@@ -413,11 +417,16 @@ planning, datastore durability is ordered before distributed COMMIT, and
 multi-group proposals fail before mutation. A degraded or unreachable member
 has no permissive mode: failure cancels every attempted remote confirmed
 commit before local apply and leaves local running unchanged. The generic
-`dangctl --edit-config` workflow submits a Kea `<config>` document through the
+The roster member matching `DANG_KEA_INSTANCE_ID` is marked local through the
+generic ABI. Production initiation currently requires that local member to be
+the primary, so every remote standby is verified before local apply; initiating
+on a local standby fails before mutation. The `dangctl --edit-config` workflow submits a Kea `<config>` document through the
 same candidate lock, edit, validation, commit, and unlock path; it contains no
 Kea-specific behavior. Native Debian and FreeBSD package installation and
-packaged-plugin loading are validated. Production status still requires live
-Linux/FreeBSD pair-wide NETCONF interoperability evidence.
+packaged-plugin loading are validated. Guarded Linux/FreeBSD evidence now
+passes with each host assigned the primary role: pair-wide NETCONF commit,
+unavailable-peer rejection with unchanged images, DHCPv4/DHCPv6 allocation,
+replication, automatic failover, and recovery.
 
 The plugin deliberately exposes one ABI-v4 hardware action for the entire Kea
 transaction. This preserves atomic compensation across Kea's own
@@ -434,7 +443,16 @@ dual-stack deployment uses both:
 export DANG_KEA_INSTANCE_ID=default
 export DANG_KEA_DHCP4_SOCKET=/var/run/kea/kea4-ctrl-socket
 export DANG_KEA_DHCP6_SOCKET=/var/run/kea/kea6-ctrl-socket
+export DANG_KEA_HOOK_DIRECTORY=/usr/lib/x86_64-linux-gnu/kea/hooks
 ```
+
+`DANG_KEA_HOOK_DIRECTORY` is optional for a single host and required when one
+authoritative peer image must run on systems whose Kea packages use different
+hook directories, such as Linux and FreeBSD. The plugin retains each modeled
+hook library basename but resolves it below this host-owned absolute directory
+before native validation, apply, reconciliation, and rollback. This local
+deployment mapping is not stored in the YANG tree and is never interpreted by
+dangd. Configure the FreeBSD service with `/usr/local/lib/kea/hooks`.
 
 `DANG_KEA_INSTANCE_ID` defaults to `default` for an existing single-instance
 installation. Set it explicitly when more than one local Kea instance is
@@ -701,8 +719,28 @@ service scope activation, bidirectional lease replication, outage recognition,
 guarded manual takeover, rejoin synchronization, and restored replication. It
 deliberately keeps automatic failover disabled, never adds the primary scope
 until the primary processes have exited, and removes that scope before they
-restart, avoiding the split-brain risk documented for `ha-scopes`. It does not
-exercise a pair-wide dangd commit or claim distributed transaction atomicity.
+restart, avoiding the split-brain risk documented for `ha-scopes`.
+
+The pair-wide NETCONF wrapper adds temporary mutual-TLS dangd endpoints to the
+healthy HA pair and runs the native harness in automatic mode. Both repositories
+must already be built under `~/dang-validation` on each host. From this source
+tree run:
+
+```sh
+DANG_TEST_SSH=/tmp/dang-test-ssh \
+DANG_TEST_SCP=/tmp/dang-test-scp \
+tests/platform/run_kea_pair_netconf.sh \
+  dev-linux-1 dev-freebsd-1 ens19 vtnet1
+```
+
+It generates disposable credentials, commits a complete authoritative image
+with lifetime 601 through the primary's normal NETCONF endpoint, checks both
+native daemon images, makes the remote participant unreachable, and requires a
+602 proposal to fail without changing either daemon. The entire phase is then
+repeated with operating-system roles reversed, followed by the normal dual-
+stack service, replication, automatic failover, and recovery assertions. The
+modeled DHCPv6 image explicitly retains `rapid-commit=true`; out-of-band native
+settings are intentionally removed because dangd is the definitive authority.
 As with the basic VLAN interaction, the cleanup trap removes the
 documentation-prefix aliases, sockets, processes, configurations, and copied
 helpers after success or failure.

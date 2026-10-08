@@ -14,9 +14,19 @@ of each:
   defaults to `default` for an existing single-instance deployment;
 - `DANG_KEA_DHCP4_SOCKET` enables the local DHCPv4 daemon;
 - `DANG_KEA_DHCP6_SOCKET` enables the local DHCPv6 daemon;
+- `DANG_KEA_HOOK_DIRECTORY` optionally maps every modeled hook-library
+  basename into the local package's absolute hook directory;
 - an unset variable disables that family; and
 - a present but empty variable is invalid rather than another spelling of
-  disabled.
+disabled.
+
+Set `DANG_KEA_HOOK_DIRECTORY` on every member of a cross-platform pair so one
+authoritative peer image remains portable across package layouts. Linux uses
+`/usr/lib/x86_64-linux-gnu/kea/hooks` in the validated ISC packages and
+FreeBSD uses `/usr/local/lib/kea/hooks`. The mapping is plugin-owned local
+deployment state: the YANG image retains logical library basenames, the plugin
+performs the rewrite, and dangd remains unaware of Kea or operating-system
+paths.
 
 Each enabled family must have exactly one corresponding top-level Kea
 configuration container. A disabled family must have none. This symmetric rule
@@ -279,17 +289,20 @@ blocks startup; recovery never contradicts durable COMMIT by cancelling. An
 exclusive private sibling lock prevents concurrent daemons from replaying the
 same journal.
 
-This completes the generic transport, recovery, provider-planning,
-single-group execution-materialization, and production commit-path initiation
-pieces. Dangd's generic controller resolves every target before session
+This completes the generic transport, recovery, provider planning,
+single-group execution, and production commit path for a locally owned primary.
+Dangd's generic controller resolves every remote target before session
 construction, creates independent cryptographic persistent commit tokens,
 routes authenticated readback to only the contributing plugin verifiers,
 creates the crash-safe journal, and invokes the coordinator. The stateful
-participant locks candidate, transfers a complete configuration with
+participant locks candidate, reads running, replaces only the contributed
+module namespaces, transfers the reconstructed complete configuration with
 `copy-config`, validates it, starts a persistent
 confirmed commit, retrieves both running configuration and operational state
-for a supplied health callback, confirms or reconnects to cancel, and releases
-candidate and session resources. Live two-peer commit and live rollback tests
+for supplied health callbacks, confirms or reconnects to cancel, and discards,
+unlocks, and releases candidate/session resources. A verifier can distinguish
+pending convergence from permanent rejection; dangd obtains fresh authenticated
+readback until success or the original deadline. Live two-peer commit and live rollback tests
 cover that generic adapter. The Kea plugin translates a shared hot-standby
 change into complete per-member module images and supplies a strict pair-health
 callback that proves the expected roles, relationship, scopes, and peer
@@ -312,11 +325,15 @@ normal commit path now supplies the safe production lifecycle: participant
 commits cannot recursively initiate another peer plan, the local snapshot is
 durable before the distributed COMMIT decision, and a commit affecting several
 peer groups fails before mutation rather than committing groups sequentially.
-A transport or health-verification failure cancels every attempted remote
+A transport or permanent health-verification failure cancels every attempted remote
 confirmed commit before local apply, sends no confirmation, removes a fully
 cancelled PREPARED journal, and leaves local running unchanged. Native Debian
-and FreeBSD package installation and packaged-plugin loading are validated;
-live cross-platform pair-wide NETCONF evidence remains. The guarded
+and FreeBSD package installation and packaged-plugin loading are validated.
+The guarded cross-platform interaction makes Linux and FreeBSD primary in turn,
+commits `valid-lifetime` 601 through ordinary NETCONF, proves both daemon images
+changed, stops the remote dangd endpoint, and proves the next proposal is
+rejected without changing either image. The same phases retain DHCPv4 and
+DHCPv6 service, replication, automatic failover, and recovery. The guarded
 `dangctl --edit-config` workflow now provides the operator-facing path: it
 submits a complete or partial Kea `<config>` document through standard
 candidate lock, edit, validation, commit, and unlock operations. All Kea
@@ -340,3 +357,10 @@ group:
 The controller does not permit a degraded pair to accept a commit. This
 fail-closed policy is deliberate: there is no exception mode that could
 silently overwrite a returning peer.
+
+The participant whose `DANG_KEA_INSTANCE_ID` matches its roster name is marked
+local through ABI v9. The currently supported initiation point is that pair's
+primary; all remote standbys are verified before the outer local apply. Sending
+the same change to a standby endpoint fails before mutation with
+`peer-local-standby-unsupported`. This limitation is generic dangd ordering
+policy and does not add Kea-specific logic to the daemon.

@@ -17,7 +17,7 @@
     <hook-library><library>@KEA_HOOK_DIR@/libdhcp_lease_cmds.so</library></hook-library>
     <hook-library><library>@KEA_HOOK_DIR@/libdhcp_stat_cmds.so</library></hook-library>
     <hook-library><library>@KEA_HOOK_DIR@/libdhcp_host_cmds.so</library></hook-library>
-    <subnet6><id>601</id><pool><prefix>2001:db8:6::100/120</prefix></pool><subnet>2001:db8:6::/64</subnet>
+    <subnet6><id>601</id><pool><start-address>2001:db8:6::100</start-address><end-address>2001:db8:6::1ff</end-address></pool><subnet>2001:db8:6::/64</subnet>
       <host><identifier-type>duid</identifier-type><identifier>00:01:02:03</identifier><ip-addresses>2001:db8:6::70</ip-addresses>
         <option-data><code>23</code><space>dhcp6</space><data>2001:db8:6::53</data><csv-format>true</csv-format></option-data>
       </host>

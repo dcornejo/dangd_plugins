@@ -9,6 +9,17 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Completed guarded pair-wide Kea NETCONF validation on Kea 3.2 Linux and
+  FreeBSD. The plugin now marks its local participant through the generic ABI,
+  maps portable hook basenames into each host's package directory, reports
+  transient `waiting`/synchronization states as pending convergence, and emits
+  exact expected/actual HA diagnostics on permanent failure. The bidirectional
+  harness proves successful lifetime changes on both daemons, unavailable-peer
+  fail-closed behavior with unchanged authoritative state, DHCPv4/DHCPv6
+  allocation, replication, automatic failover, and recovery. Its authoritative
+  fixture now includes DHCPv6 Rapid Commit instead of relying on out-of-band
+  daemon state.
+
 - Completed native Kea package validation on Linux and FreeBSD. The generated
   packages contain only the provider, its six YANG modules, and `KEA.md`, carry
   the platform Kea 3.2 dependencies, install beside a freshly generated
@@ -21,14 +32,15 @@ All notable changes to the external dangd plugin collection are recorded here.
 - Updated the Kea HA operator workflow for the guarded generic
   `dangctl --edit-config` transaction. Kea configuration now has an explicit
   CLI path through ordinary candidate lock, edit, validation, commit, and
-  unlock without adding provider awareness to the client or dangd core. The
-  remaining production gate is live Linux/FreeBSD pair-wide NETCONF evidence.
+  unlock without adding provider awareness to the client or dangd core. Live
+  Linux/FreeBSD pair-wide NETCONF evidence now passes in both primary-role
+  directions.
 
 - Reconciled the Kea HA documentation with dangd's completed normal NETCONF
   peer-commit integration. The documented contract now includes recursive-plan
   suppression, datastore-before-decision ordering, pre-mutation multi-group
-  rejection, and the fail-closed degraded-peer behavior. Live Linux/FreeBSD
-  pair-wide NETCONF evidence remains before the production-ready claim.
+  rejection, the fail-closed degraded-peer behavior, and the supported
+  local-primary initiation boundary.
 
 - Reclassified the FRR-native provider as the lowest-priority deferred work and
   made native BGP a hard completion gate. The existing transaction, rollback,

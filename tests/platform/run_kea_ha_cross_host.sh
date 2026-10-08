@@ -17,6 +17,7 @@ endpoint=/tmp/dang-kea-ha-cross-endpoint-$$.sh
 client=/tmp/dang-kea-ha-cross-client-$$.py
 probe=/tmp/dang-kea-ha-cross-probe-$$.py
 remote_cert_dir=/tmp/dang-kea-ha-cross-tls-$$
+socket_label=${DANG_KEA_HA_SOCKET_LABEL:-}
 local_cert_dir=
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ssh_command=${DANG_TEST_SSH:-ssh}
@@ -263,11 +264,13 @@ run_phase() {
   remote "$first_host" sudo "$endpoint" start "$first_interface" \
     "$first4" "$first6" "$first_name" "$first_role" \
     "$first_remote4" "$first_remote6" "$first_remote_name" \
-    "$first_remote_role" "$auto_failover" "$transport" "$remote_cert_dir"
+    "$first_remote_role" "$auto_failover" "$transport" "$remote_cert_dir" \
+    ${socket_label:+"$socket_label"}
   remote "$second_host" sudo "$endpoint" start "$second_interface" \
     "$second4" "$second6" "$second_name" "$second_role" \
     "$second_remote4" "$second_remote6" "$second_remote_name" \
-    "$second_remote_role" "$auto_failover" "$transport" "$remote_cert_dir"
+    "$second_remote_role" "$auto_failover" "$transport" "$remote_cert_dir" \
+    ${socket_label:+"$socket_label"}
 
   if ! remote "$linux_host" sudo "$endpoint" ready "$linux_interface" \
        linux freebsd "$linux_role" "$probe"; then
@@ -286,6 +289,17 @@ run_phase() {
       "$freebsd4" "$probe" "$remote_cert_dir"
     remote "$freebsd_host" sudo "$endpoint" tls-guard "$freebsd_interface" \
       "$linux4" "$probe" "$remote_cert_dir"
+  fi
+
+  # An optional local hook may exercise a management plane while the real
+  # pair is healthy. Its positional contract is deliberately generic host and
+  # topology data; the HA harness has no knowledge of dangd or any plugin.
+  if [ -n "${DANG_KEA_HA_READY_HOOK:-}" ]; then
+    "$DANG_KEA_HA_READY_HOOK" "$primary" \
+      "$linux_host" "$freebsd_host" \
+      "$linux_interface" "$freebsd_interface" \
+      "$linux_role" "$freebsd_role" \
+      "$linux4" "$linux6" "$freebsd4" "$freebsd6"
   fi
   remote "$client_host" sudo "$endpoint" client "$client_interface" \
     "$client4" "$client6" "$primary4" "$primary6" "$client"

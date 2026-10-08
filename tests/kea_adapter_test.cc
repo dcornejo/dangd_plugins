@@ -512,9 +512,22 @@ int main() {
       synchronizing_peer.find("<state>hot-standby</state>"),
       std::string("<state>hot-standby</state>").size(),
       "<state>synchronizing</state>");
-  valid &= rejects_peer_reply(peer_running_reply, synchronizing_peer,
-                              "unhealthy",
-                              "unstable local HA state was accepted");
+  bool pending = false;
+  error.clear();
+  const bool synchronizing_accepted = ha_member &&
+      dang::plugins::kea::VerifyPeerTransactionReplies(
+          {*ha_member}, peer_health, peer_running_reply, synchronizing_peer,
+          &error, &pending);
+  valid &= Check(!synchronizing_accepted && pending &&
+                     error.find("unhealthy") != std::string::npos,
+                 "unstable local HA state was not reported as pending");
+  std::string missing_local_name = peer_operational_reply;
+  missing_local_name.replace(
+      missing_local_name.find("<server-name>primary</server-name>"),
+      std::string("<server-name>primary</server-name>").size(), "");
+  valid &= rejects_peer_reply(peer_running_reply, missing_local_name,
+                              "omits server-name",
+                              "missing local HA identity was accepted");
   std::string wrong_scopes = peer_operational_reply;
   wrong_scopes.replace(wrong_scopes.find("<scope>primary</scope>"),
                        std::string("<scope>primary</scope>").size(),
@@ -1077,7 +1090,7 @@ int main() {
   valid &= Check(four.at("subnet4").at(0).at("id") == 4,
                  "subnet4 ID is not numeric");
   valid &= Check(four.at("subnet4").at(0).at("pools").at(0).at("pool") ==
-                     "192.0.2.10 - 192.0.2.20",
+                     "192.0.2.10-192.0.2.20",
                  "IPv4 pool range was not translated");
   valid &= Check(four.at("subnet4").at(0).at("subnet") == "192.0.2.0/24",
                  "subnet prefix leaf was confused with a state list");
@@ -1120,6 +1133,20 @@ int main() {
   valid &= Check(six.at("subnet6").at(0).at("pools").at(0).at("pool") ==
                      "2001:db8:1::100/120",
                  "IPv6 pool prefix was not translated");
+  setenv("DANG_KEA_HOOK_DIRECTORY", "/platform/kea/hooks", 1);
+  error.clear();
+  auto remapped_hooks = dang::plugins::kea::TranslateConfiguration(
+      xml, "kea-dhcp4-server", "/tmp/kea4.sock", &error);
+  unsetenv("DANG_KEA_HOOK_DIRECTORY");
+  valid &= Check(
+      remapped_hooks &&
+          remapped_hooks->arguments["Dhcp4"]["hooks-libraries"][0]
+                                     ["library"] ==
+              "/platform/kea/hooks/libdhcp_test.so" &&
+          remapped_hooks->arguments["Dhcp4"]["hooks-libraries"][1]
+                                     ["library"] ==
+              "/platform/kea/hooks/libdhcp_lease_cmds.so",
+      "host-local hook directory did not preserve logical library basenames");
   valid &= Check(six.at("reservations").at(0).at("ip-addresses").is_array(),
                  "singleton reservation IP leaf-list is not an array");
   valid &= Check(six.at("reservations").at(0).at("prefixes").is_array(),

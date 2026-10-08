@@ -8,7 +8,7 @@
     <hook-library><library>@KEA_HOOK_DIR@/libdhcp_lease_cmds.so</library></hook-library>
     <hook-library><library>@KEA_HOOK_DIR@/libdhcp_stat_cmds.so</library></hook-library>
     <hook-library><library>@KEA_HOOK_DIR@/libdhcp_host_cmds.so</library></hook-library>
-    <subnet4><id>401</id><pool><prefix>192.0.2.64/27</prefix></pool><subnet>192.0.2.0/24</subnet>
+    <subnet4><id>401</id><pool><start-address>192.0.2.64</start-address><end-address>192.0.2.95</end-address></pool><subnet>192.0.2.0/24</subnet>
       <host><identifier-type>hw-address</identifier-type><identifier>00:01:02:03:04:05</identifier><ip-address>192.0.2.70</ip-address>
         <option-data><code>15</code><space>dhcp4</space><data>printer.example</data><csv-format>true</csv-format></option-data>
       </host>

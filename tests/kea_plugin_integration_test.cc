@@ -491,13 +491,14 @@ int main(int argc, char** argv) {
       if (!valid) Report("unknown peer identity rejection", identity_error);
     }
     DangPeerCandidateV1 stale_candidate{
-        "stale", "stale", 99, 99, "stale", "stale", "stale"};
+        "stale", "stale", 99, 99, 99, "stale", "stale", "stale"};
     DangPluginErrorV1 range_error{};
     valid = valid && !plugin9->peer_candidate_at(
                          plugin->context, prepared, candidate_count,
                          &stale_candidate, &range_error) &&
         stale_candidate.group_id == nullptr &&
-        stale_candidate.participant_id == nullptr && stale_candidate.role == 0 &&
+        stale_candidate.participant_id == nullptr && stale_candidate.local == 0 &&
+        stale_candidate.role == 0 &&
         stale_candidate.confirmed_timeout_seconds == 0 &&
         stale_candidate.module_name == nullptr &&
         stale_candidate.configuration_xml == nullptr &&

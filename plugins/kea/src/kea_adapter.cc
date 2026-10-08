@@ -28,6 +28,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <iterator>
 #include <limits>
@@ -277,7 +278,10 @@ nlohmann::json ConvertPool(const xmlNode* node) {
   if (result.contains("prefix")) {
     result["pool"] = result["prefix"];
   } else if (result.contains("start-address") && result.contains("end-address")) {
-    result["pool"] = result["start-address"].get<std::string>() + " - " +
+    // Kea accepts optional whitespace around the range delimiter but
+    // config-get canonicalizes it away. Emit that canonical spelling so an
+    // immediate authoritative readback compares equal to the applied image.
+    result["pool"] = result["start-address"].get<std::string>() + "-" +
         result["end-address"].get<std::string>();
   }
   result.erase("prefix");
@@ -522,6 +526,43 @@ bool PreservesControlSocket(const nlohmann::json& body,
 std::string_view BaseName(std::string_view path) {
   const auto separator = path.find_last_of('/');
   return separator == std::string_view::npos ? path : path.substr(separator + 1);
+}
+
+bool ApplyLocalHookDirectory(nlohmann::json* body, std::string* error) {
+  const char* configured = std::getenv("DANG_KEA_HOOK_DIRECTORY");
+  if (!configured) return true;
+  std::string directory(configured);
+  if (directory.empty() || directory.front() != '/' ||
+      directory.size() > 4096 || directory.find('\0') != std::string::npos ||
+      std::ranges::any_of(directory, [](const char byte) {
+        return static_cast<unsigned char>(byte) < 0x20U;
+      })) {
+    if (error)
+      *error = "DANG_KEA_HOOK_DIRECTORY must be a bounded absolute path";
+    return false;
+  }
+  while (directory.size() > 1 && directory.back() == '/')
+    directory.pop_back();
+  const auto hooks = body->find("hooks-libraries");
+  if (hooks == body->end()) return true;
+  if (!hooks->is_array()) {
+    if (error) *error = "Kea hooks-libraries is not a list";
+    return false;
+  }
+  for (auto& hook : *hooks) {
+    if (!hook.is_object()) continue;
+    auto library = hook.find("library");
+    if (library == hook.end() || !library->is_string()) continue;
+    const std::string_view basename =
+        BaseName(library->get_ref<const std::string&>());
+    if (basename.empty() || basename == "." || basename == "..") {
+      if (error) *error = "Kea hook library has no safe basename";
+      return false;
+    }
+    *library = directory == "/" ? "/" + std::string(basename)
+                                : directory + "/" + std::string(basename);
+  }
+  return true;
 }
 
 std::optional<std::string> MissingRequiredHook(const nlohmann::json& body) {
@@ -2139,6 +2180,7 @@ std::optional<ServerConfiguration> TranslateConfiguration(
     return std::nullopt;
   }
   xmlFreeDoc(document);
+  if (!ApplyLocalHookDirectory(&body, error)) return std::nullopt;
   if (!PreservesControlSocket(body, socket_path)) {
     if (error)
       *error = "Kea configuration must preserve the managed UNIX control "
@@ -2515,8 +2557,9 @@ bool VerifyPeerTransactionReplies(
     const std::vector<ServerConfiguration>& expected,
     const std::vector<HaPeerHealthExpectation>& health,
     std::string_view running_reply, std::string_view operational_reply,
-    std::string* error) {
+    std::string* error, bool* pending) {
   if (error) error->clear();
+  if (pending) *pending = false;
   if (expected.empty() || health.empty()) {
     if (error)
       *error = "Kea peer verification requires configuration and health";
@@ -2690,9 +2733,39 @@ bool VerifyPeerTransactionReplies(
         *local_name != configured.server_name ||
         *local_role != configured.role || *local_state != policy.local_state ||
         *local_scopes != *expected_local_scopes) {
-      if (error && error->empty())
+      const bool identity_and_scopes_match =
+          local_name && local_role && local_state && local_scopes &&
+          expected_local_scopes && *mode == configured.mode &&
+          *local_name == configured.server_name &&
+          *local_role == configured.role &&
+          *local_scopes == *expected_local_scopes;
+      if (pending && identity_and_scopes_match &&
+          (*local_state == "waiting" || *local_state == "syncing" ||
+           *local_state == "synchronizing" || *local_state == "ready"))
+        *pending = true;
+      if (error && error->empty()) {
+        const auto scopes_text = [](const auto& values) {
+          std::string text = "[";
+          for (const std::string& value : values) {
+            if (text.size() > 1) text += ",";
+            text += value;
+          }
+          return text + "]";
+        };
+        const auto optional_text = [](const auto& value) -> std::string {
+          return value ? *value : "<missing>";
+        };
         *error = policy.module_name +
-            ": local HA identity, state, or scopes are unhealthy";
+            ": local HA identity, state, or scopes are unhealthy: got " +
+            optional_text(local_name) + "/" + optional_text(local_role) +
+            "/" + optional_text(local_state) + "/" +
+            (local_scopes ? scopes_text(*local_scopes) : "<missing>") +
+            ", expected " +
+            configured.server_name + "/" + configured.role + "/" +
+            policy.local_state + "/" +
+            (expected_local_scopes ? scopes_text(*expected_local_scopes)
+                                   : "<invalid>");
+      }
       return false;
     }
     const xmlNode* remote =

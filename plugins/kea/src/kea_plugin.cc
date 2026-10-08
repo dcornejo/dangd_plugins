@@ -979,7 +979,7 @@ size_t PeerCandidateCount(void*, void* opaque) {
 }
 
 /** Borrows one retained module image through the public ABI-v9 descriptor. */
-int PeerCandidateAtImpl(void*, void* opaque, size_t index,
+int PeerCandidateAtImpl(void* opaque_context, void* opaque, size_t index,
                         DangPeerCandidateV1* result,
                         DangPluginErrorV1* error) {
   if (!result) {
@@ -1000,6 +1000,9 @@ int PeerCandidateAtImpl(void*, void* opaque, size_t index,
     const auto& module = peer.candidate.modules[index];
     result->group_id = peer.candidate.group_id.c_str();
     result->participant_id = peer.candidate.participant_id.c_str();
+    const auto* context = static_cast<const PluginContext*>(opaque_context);
+    result->local = context &&
+        context->instance_id == peer.candidate.participant_id;
     result->role = peer.candidate.primary ? DANG_PEER_PRIMARY_V1
                                           : DANG_PEER_STANDBY_V1;
     result->confirmed_timeout_seconds = 60;
@@ -1020,7 +1023,12 @@ int PeerCandidateAt(void* context, void* opaque, size_t index,
   });
 }
 
-/** Verifies authenticated replies against the retained member-specific plan. */
+/**
+ * Verifies authenticated replies against the retained member-specific plan.
+ *
+ * Returns one for acceptance, zero for permanent rejection, and minus one for
+ * a recognized bounded Kea convergence state under the generic ABI contract.
+ */
 int VerifyPeerImpl(void*, void* opaque,
                    const DangPeerVerificationV1* verification,
                    DangPluginErrorV1* error) {
@@ -1053,13 +1061,14 @@ int VerifyPeerImpl(void*, void* opaque,
   for (const auto& module : selected->candidate.modules)
     expected.push_back(module.expected_configuration);
   std::string reason;
+  bool pending = false;
   if (!VerifyPeerTransactionReplies(
           expected, selected->candidate.health, verification->running_reply_xml,
-          verification->operational_reply_xml, &reason)) {
+          verification->operational_reply_xml, &reason, &pending)) {
     SetError(error, "Kea peer " + selected->candidate.participant_id +
                         " verification failed: " + reason,
              "/");
-    return 0;
+    return pending ? -1 : 0;
   }
   return 1;
 }

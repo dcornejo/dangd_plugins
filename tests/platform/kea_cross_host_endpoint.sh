@@ -115,10 +115,10 @@ case "$action" in
       dhcp6=$runtime/kea-dhcp6
     fi
     cat >"$runtime/kea4.json" <<EOF
-{"Dhcp4":{"interfaces-config":{"interfaces":["$interface"],"dhcp-socket-type":"udp"},"lease-database":{"type":"memfile","persist":false},"subnet4":[{"id":9401,"subnet":"192.0.2.0/24","pools":[{"pool":"192.0.2.100 - 192.0.2.120"}]}],"valid-lifetime":600,"loggers":[{"name":"kea-dhcp4","severity":"INFO","output-options":[{"output":"stderr"}]}]}}
+{"Dhcp4":{"interfaces-config":{"interfaces":["$interface"],"dhcp-socket-type":"udp"},"lease-database":{"type":"memfile","persist":false},"subnet4":[{"id":9401,"subnet":"192.0.2.0/24","pools":[{"pool":"192.0.2.100-192.0.2.120"}]}],"valid-lifetime":600,"loggers":[{"name":"kea-dhcp4","severity":"INFO","output-options":[{"output":"stderr"}]}]}}
 EOF
     cat >"$runtime/kea6.json" <<EOF
-{"Dhcp6":{"interfaces-config":{"interfaces":["$interface"]},"lease-database":{"type":"memfile","persist":false},"subnet6":[{"id":9601,"rapid-commit":true,"subnet":"2001:db8:6::/64","pools":[{"pool":"2001:db8:6::100 - 2001:db8:6::120"}]}],"preferred-lifetime":300,"valid-lifetime":600,"loggers":[{"name":"kea-dhcp6","severity":"INFO","output-options":[{"output":"stderr"}]}]}}
+{"Dhcp6":{"interfaces-config":{"interfaces":["$interface"]},"lease-database":{"type":"memfile","persist":false},"subnet6":[{"id":9601,"rapid-commit":true,"subnet":"2001:db8:6::/64","pools":[{"pool":"2001:db8:6::100-2001:db8:6::120"}]}],"preferred-lifetime":300,"valid-lifetime":600,"loggers":[{"name":"kea-dhcp6","severity":"INFO","output-options":[{"output":"stderr"}]}]}}
 EOF
     KEA_PIDFILE_DIR="$runtime" "$dhcp4" -d -p "$port4" -P 1068 -c "$runtime/kea4.json" >"$runtime/kea4.stdout" 2>&1 &
     echo $! >"$runtime/pid4"
