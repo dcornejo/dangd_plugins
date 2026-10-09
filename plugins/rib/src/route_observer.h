@@ -87,6 +87,8 @@ class NexthopResolutionTracker {
  *
  * Durable RIB registrations are supplied with the native route inventory so a
  * successful rib-add remains visible even before its first route or nexthop.
+ * Representable native ECMP paths are projected as one weighted route. Managed
+ * paths reuse durable member IDs; external paths receive snapshot-local IDs.
  */
 [[nodiscard]] std::string SerializeOperationalRoutes(
     const std::vector<ObservedRoute>& routes,

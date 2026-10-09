@@ -218,8 +218,9 @@ int Fail(DangPluginErrorV1* error, std::string text, std::string where = {}) {
 }
 size_t SourceCount(void*) { return 2; }
 int SourceAt(void*, size_t index, DangYangSourceV1* out, DangPluginErrorV1* error) {
+  static constexpr const char* kRibFeatures[]{"nexthop-load-balance"};
   static const DangYangSourceV1 sources[]{
-    {"ietf-i2rs-rib", "2018-09-13", kIetfI2rsRibYang, std::strlen(kIetfI2rsRibYang), "RFC 8431", DANG_YANG_IMPLEMENTED_V1, nullptr, 0},
+    {"ietf-i2rs-rib", "2018-09-13", kIetfI2rsRibYang, std::strlen(kIetfI2rsRibYang), "RFC 8431", DANG_YANG_IMPLEMENTED_V1, kRibFeatures, 1},
     {"ietf-interfaces", "2018-02-20", kIetfInterfacesYang, std::strlen(kIetfInterfacesYang), "RFC 8343", DANG_YANG_IMPORT_ONLY_V1, nullptr, 0}};
   if (!out || index >= 2) return Fail(error, "RIB YANG source index is invalid");
   *out = sources[index]; return 1;
@@ -390,7 +391,7 @@ int Operational(void* raw_context, DangOperationalDataV2* out, DangPluginErrorV1
   if (!ok) return Fail(error, "cannot read host RIB: " + why,
                        "/ietf-i2rs-rib:routing-instance/rib-list");
   operational_xml = SerializeOperationalRoutes(
-      routes, owner->nexthops.PersistentState());
+      routes, owner->nexthops.ResolutionState());
   *out = {operational_xml.c_str(), 0}; return 1;
 }
 int Reconcile(void* raw_context, void* raw_prepared, const char* current_xml,

@@ -721,6 +721,110 @@ TEST(RibConfigTest, SerializesNativeSpecialNexthopIdentity) {
   EXPECT_EQ(xml.find("<outgoing-interface>"), std::string::npos);
 }
 
+TEST(RibConfigTest, SerializesManagedWeightedPathsAsOneDurableRoute) {
+  ObservedRoute first;
+  first.route = {.routing_instance = "default",
+                 .rib = "ipv4-100",
+                 .address_family = "ipv4",
+                 .index = 101,
+                 .destination = "198.18.5.0/24",
+                 .gateway = "192.0.2.1",
+                 .interface = "dummy0",
+                 .nexthop_ref = std::nullopt,
+                 .preference = 10,
+                 .local_only = false,
+                 .special = std::nullopt};
+  first.weight = 2;
+  ObservedRoute second = first;
+  second.route.index = 102;
+  second.route.gateway = "192.0.2.2";
+  second.route.interface = "dummy1";
+  second.weight = 3;
+  const PersistentRegistry registry{
+      .next_id = 10,
+      .ribs = {{"ipv4-100", "ipv4"}},
+      .nexthops = {{"ipv4-100", 7, "192.0.2.1", "dummy0", "ipv4", false, {}},
+                   {"ipv4-100", 9, "192.0.2.2", "dummy1", "ipv4", false, {}}},
+      .bindings = {{"ipv4-100", "ipv4", "198.18.5.0/24", 55, 7},
+                   {"ipv4-100", "ipv4", "198.18.5.0/24", 55, 9}}};
+
+  const std::string xml = SerializeOperationalRoutes({second, first}, registry);
+  EXPECT_EQ(xml, SerializeOperationalRoutes({first, second}, registry));
+  EXPECT_NE(xml.find("<route-index>55</route-index>"), std::string::npos);
+  EXPECT_NE(xml.find("<nexthop-lb>"), std::string::npos);
+  EXPECT_NE(xml.find("<nexthop-member-id>7</nexthop-member-id>"
+                     "<nexthop-lb-weight>2</nexthop-lb-weight>"),
+            std::string::npos);
+  EXPECT_NE(xml.find("<nexthop-member-id>9</nexthop-member-id>"
+                     "<nexthop-lb-weight>3</nexthop-lb-weight>"),
+            std::string::npos);
+  EXPECT_EQ(xml.find("<nexthop-base>"), std::string::npos);
+  EXPECT_EQ(xml.find("<route-list>", xml.find("<route-list>") + 1U),
+            std::string::npos);
+}
+
+TEST(RibConfigTest, SerializesExternalWeightedPathsWithSnapshotLocalIds) {
+  ObservedRoute first;
+  first.route = {.routing_instance = "default",
+                 .rib = "ipv6-100",
+                 .address_family = "ipv6",
+                 .index = 201,
+                 .destination = "2001:db8:5::/64",
+                 .gateway = "2001:db8::1",
+                 .interface = "dummy0",
+                 .nexthop_ref = std::nullopt,
+                 .preference = 20,
+                 .local_only = false,
+                 .special = std::nullopt};
+  first.weight = 2;
+  ObservedRoute second = first;
+  second.route.index = 202;
+  second.route.gateway = "2001:db8::2";
+  second.route.interface = "dummy1";
+  second.weight = 3;
+
+  PersistentRegistry registry;
+  registry.next_id = 8;
+  const std::string xml = SerializeOperationalRoutes({second, first}, registry);
+  EXPECT_EQ(xml, SerializeOperationalRoutes({first, second}, registry));
+  EXPECT_NE(xml.find("<nexthop-lb>"), std::string::npos);
+  EXPECT_NE(xml.find("<nexthop-member-id>8</nexthop-member-id>"
+                     "<nexthop-lb-weight>2</nexthop-lb-weight>"),
+            std::string::npos);
+  EXPECT_NE(xml.find("<nexthop-member-id>9</nexthop-member-id>"
+                     "<nexthop-lb-weight>3</nexthop-lb-weight>"),
+            std::string::npos);
+  EXPECT_EQ(xml.find("<route-list>", xml.find("<route-list>") + 1U),
+            std::string::npos);
+}
+
+TEST(RibConfigTest, KeepsUnrepresentableNativeWeightsAsBasePaths) {
+  ObservedRoute first;
+  first.route = {.routing_instance = "default",
+                 .rib = "ipv4-100",
+                 .address_family = "ipv4",
+                 .index = 301,
+                 .destination = "198.18.6.0/24",
+                 .gateway = "192.0.2.1",
+                 .interface = "dummy0",
+                 .nexthop_ref = std::nullopt,
+                 .preference = 0,
+                 .local_only = false,
+                 .special = std::nullopt};
+  first.weight = 100;
+  ObservedRoute second = first;
+  second.route.index = 302;
+  second.route.gateway = "192.0.2.2";
+  second.route.interface = "dummy1";
+  second.weight = 3;
+
+  const std::string xml = SerializeOperationalRoutes({first, second});
+  EXPECT_EQ(xml.find("<nexthop-lb>"), std::string::npos);
+  ASSERT_NE(xml.find("<route-list>"), std::string::npos);
+  EXPECT_NE(xml.find("<route-list>", xml.find("<route-list>") + 1U),
+            std::string::npos);
+}
+
 TEST(RibConfigTest, SerializesInstalledAndRemovedRouteNotifications) {
   Route route{.routing_instance = "default",
               .rib = "100&blue",

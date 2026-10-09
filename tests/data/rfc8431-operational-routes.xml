@@ -40,6 +40,34 @@
         <local-only>true</local-only>
       </route-attributes>
     </route-list>
+    <route-list>
+      <route-index>45</route-index>
+      <match>
+        <ipv4><dest-ipv4-prefix>198.18.7.0/24</dest-ipv4-prefix></ipv4>
+      </match>
+      <nexthop>
+        <nexthop-lb>
+          <nexthop-list>
+            <nexthop-member-id>7</nexthop-member-id>
+            <nexthop-lb-weight>2</nexthop-lb-weight>
+          </nexthop-list>
+          <nexthop-list>
+            <nexthop-member-id>9</nexthop-member-id>
+            <nexthop-lb-weight>3</nexthop-lb-weight>
+          </nexthop-list>
+        </nexthop-lb>
+      </nexthop>
+      <route-status>
+        <route-state>active</route-state>
+        <route-installed-state>installed</route-installed-state>
+      </route-status>
+      <route-attributes>
+        <route-preference>10</route-preference>
+        <local-only>false</local-only>
+      </route-attributes>
+    </route-list>
+    <nexthop-list><nexthop-member-id>7</nexthop-member-id></nexthop-list>
+    <nexthop-list><nexthop-member-id>9</nexthop-member-id></nexthop-list>
   </rib-list>
   <rib-list>
     <name>red</name>

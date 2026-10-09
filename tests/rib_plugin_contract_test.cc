@@ -26,8 +26,8 @@ int main(int argc, char** argv) {
   bool valid = base.yang_source_count(base.context) == 2 &&
       base.yang_source_at(base.context, 0, &source, &error) &&
       std::string_view(source.module_name) == "ietf-i2rs-rib" &&
-      source.enabled_features == nullptr &&
-      source.enabled_feature_count == 0;
+      source.enabled_features && source.enabled_feature_count == 1 &&
+      std::string_view(source.enabled_features[0]) == "nexthop-load-balance";
   constexpr char before[] = "<config/>";
   constexpr char proposed[] = R"(<config><routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>default</name><rib-list><name>ipv4-100</name><address-family>ipv4-address-family</address-family><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>198.18.0.0/24</dest-ipv4-prefix></ipv4></match><nexthop><nexthop-base><egress-interface-ipv4-address><outgoing-interface>dummy0</outgoing-interface><ipv4-address>192.0.2.1</ipv4-address></egress-interface-ipv4-address></nexthop-base></nexthop><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes></route-list></rib-list></routing-instance></config>)";
   DangTransactionV1 transaction{before, proposed, "[]"};

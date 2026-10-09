@@ -9,6 +9,17 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Completed the RFC 8431 weighted-nexthop round trip and now advertise the
+  optional `nexthop-load-balance` feature. Native paths for one destination
+  are projected as one schema-valid `nexthop-lb` route with exact weights;
+  managed routes reuse their durable route index and reusable-nexthop IDs,
+  while external routes receive deterministic snapshot-local IDs. Linux and
+  FreeBSD loadable-plugin tests now require weighted operational XML after
+  apply and absence after rollback, and the feature-enabled operational
+  fixture passes direct YANG validation. Operational reads now use the
+  registry's resolution view so bindings reconstructed from dangd's
+  authoritative datastore participate alongside persistent RPC bindings.
+
 - Added reversible native RFC 8431 weighted-nexthop mutation without yet
   advertising the optional `nexthop-load-balance` feature. Linux encodes one
   bounded `RTA_MULTIPATH` request with the exact modeled 1-through-99 weights;

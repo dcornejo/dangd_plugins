@@ -107,13 +107,22 @@ int main(int argc, char** argv) {
     for (const auto& route : matching) {
       if (route.mutable_route != expected_mutable) mutability_ok = false;
     }
+    const bool weighted_state =
+        operational.find("<nexthop-lb>") != std::string::npos &&
+        operational.find("<nexthop-lb-weight>" +
+                         std::string(operation == "observe-multipath" ? "1"
+                                                                       : "2") +
+                         "</nexthop-lb-weight>") != std::string::npos &&
+        operational.find("<nexthop-lb-weight>" +
+                         std::string(operation == "observe-multipath" ? "1"
+                                                                       : "3") +
+                         "</nexthop-lb-weight>") != std::string::npos;
     const bool ok = matching.size() == 2U && interfaces.size() == 2U &&
         interfaces.contains(argv[5]) && interfaces.contains(argv[6]) &&
         weights == (operation == "observe-multipath"
                         ? std::multiset<std::uint32_t>{1U, 1U}
                         : std::multiset<std::uint32_t>{2U, 3U}) &&
-        operational.find(argv[5]) != std::string::npos &&
-        operational.find(argv[6]) != std::string::npos && mutability_ok;
+        weighted_state && mutability_ok;
     if (!ok)
       std::cerr << "multipath path or weight observation mismatch: "
                 << operational << '\n';

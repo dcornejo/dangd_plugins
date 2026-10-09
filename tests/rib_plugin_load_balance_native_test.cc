@@ -121,12 +121,29 @@ int main(int argc, char** argv) {
        v7.v6.v5.v4.apply_hardware_action(base.context, prepared,
                                          action.action_id, &error);
 
+  DangAppliedConfigurationV1 applied{};
+  if (ok) stage = "applied-state reconciliation";
+  ok = ok && v7.v6.reconcile_applied_configuration(
+                 base.context, prepared, candidate.c_str(), &applied, &error) &&
+       applied.applied_xml &&
+       std::string_view(applied.applied_xml) == candidate;
+
   DangOperationalDataV2 installed{};
   if (ok) stage = "installed operational observation";
   ok = ok && v7.v6.v5.get_operational_data_v2(base.context, &installed,
                                                &error) &&
        installed.data_xml &&
        std::string_view(installed.data_xml).find(prefix) !=
+           std::string_view::npos &&
+       std::string_view(installed.data_xml).find("<nexthop-lb>") !=
+           std::string_view::npos &&
+       std::string_view(installed.data_xml).find(
+           "<nexthop-member-id>1</nexthop-member-id>"
+           "<nexthop-lb-weight>2</nexthop-lb-weight>") !=
+           std::string_view::npos &&
+       std::string_view(installed.data_xml).find(
+           "<nexthop-member-id>2</nexthop-member-id>"
+           "<nexthop-lb-weight>3</nexthop-lb-weight>") !=
            std::string_view::npos;
   if (ok) stage = "hardware rollback";
   ok = ok && v7.v6.v5.v4.rollback_hardware_action(

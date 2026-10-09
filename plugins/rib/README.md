@@ -49,11 +49,17 @@ contains one. Linux maps the two writable identities to blackhole and
 unreachable routes. FreeBSD maps them to blackhole and reject routes through
 the corresponding IPv4 or IPv6 loopback gateway, which must exist as it does
 on a normally booted host.
-Linux `RTA_MULTIPATH` routes are expanded into one stable route entry per
-native base nexthop, preserving each gateway/interface path and its installed
-state. This representation avoids publishing an empty nexthop and keeps path
-identity available without advertising RFC 8431's optional load-balance
-feature. A dead native member is inactive and carries the exact RFC 8431
+Linux `RTA_MULTIPATH` paths for one destination are projected into one stable
+route containing the RFC 8431 `nexthop-lb` structure and exact native weights.
+Managed routes retain the configured route index and durable reusable-nexthop
+IDs. External routes have no datastore identity, so each operational snapshot
+assigns deterministic local member IDs above the durable registry range.
+The operational snapshot uses the registry resolution view, which combines
+imperative RPC bindings with bindings reconstructed from dangd's authoritative
+configuration during reconciliation.
+Native weights outside the schema's 1-through-99 range remain separate base
+routes rather than producing invalid weighted XML. A dead native member is
+inactive and carries the exact RFC 8431
 `unresolved-nexthop` route reason; a subsequent installed-state transition is
 reported as `resolved-nexthop` or `unresolved-nexthop` in `route-change`.
 Ordinary route creation, removal, or metric changes do not expose a reliable
@@ -68,8 +74,7 @@ routes. Native ECMP weights are retained exactly in the internal observation
 contract: Linux decodes both classic multipath weights and the complete
 two-byte persistent-group weight, while FreeBSD reads `rmx_weight` separately
 from route preference. A weight-only change is visible to the generic change
-tracker without changing route identity. The weights are intentionally not
-serialized into operational XML. The portable
+tracker without changing route identity. The portable
 configuration parser now understands the optional `nexthop-lb` structure: it
 resolves every reusable-nexthop member within its RIB, canonicalizes members by
 identifier, retains all references for the route lifetime, and enforces the
@@ -81,8 +86,9 @@ route-netlink requests and reverses completed members if a later member fails;
 the outer plugin transaction also retains the exact modeled member list for
 rollback. The retained FreeBSD route(8) argv planner is a deterministic test
 adapter and rejects this multi-request form rather than pretending it is
-atomic. The feature remains unadvertised until weighted operational XML is
-implemented end to end. Object-backed
+atomic. The plugin advertises `nexthop-load-balance` because configuration,
+native mutation, operational projection, schema validation, and rollback are
+covered end to end on both native backends. Object-backed
 routes are operational/read-only: the base view cannot retain the Linux object
 ID and group topology required to recreate the exact route during rollback, so
 imperative mutation fails closed instead of approximating the original object.
@@ -177,8 +183,10 @@ second weighted ECMP route references a persistent Linux nexthop group; both
 member objects must be expanded through route netlink into the same safe base
 view, reported as non-mutable, and retain weights 2 and 3. The FreeBSD workflow
 also creates two equal-metric ECMP paths over separate jail interfaces and
-requires weights 2 and 3 to remain distinct from route preference. These tests
-prove the internal observation prerequisite, not modeled load-balance support.
+requires weights 2 and 3 to remain distinct from route preference. Both native
+workflows require the resulting operational XML to contain one weighted route;
+the loadable-plugin workflows additionally verify durable member IDs through
+apply and rollback.
 
 `route-add` accepts the same destination-prefix/base-nexthop subset as
 configuration commits. Each member is attempted independently, as required by

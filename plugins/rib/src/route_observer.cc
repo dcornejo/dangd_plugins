@@ -6,6 +6,7 @@
 #include "plugins/rib/src/route_observer.h"
 
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -70,6 +71,159 @@ bool EquivalentObservedRoute(const ObservedRoute& left,
   // managed confirmation does not generate a duplicate native notification.
   return normalized_left == normalized_right &&
          left.weight.value_or(1U) == right.weight.value_or(1U);
+}
+
+using RibKey = std::pair<std::string, std::string>;
+
+struct OperationalProjection {
+  std::vector<ObservedRoute> routes;
+  std::map<RibKey, std::vector<std::uint32_t>> synthetic_ids;
+};
+
+std::uint64_t StableRouteIndex(const Route& route) {
+  const std::string key = route.rib + "|" + route.address_family + "|" +
+                          route.destination + "|" +
+                          std::to_string(route.preference) + "|" +
+                          (route.local_only ? "1" : "0");
+  std::uint64_t hash = 1469598103934665603ULL;
+  for (const char byte : key) {
+    hash ^= static_cast<unsigned char>(byte);
+    hash *= 1099511628211ULL;
+  }
+  return hash;
+}
+
+bool SameBaseNexthop(const Route& route, const PersistentNexthop& nexthop) {
+  return route.gateway == nexthop.gateway &&
+         route.interface == nexthop.interface &&
+         route.special == nexthop.special;
+}
+
+/** Collapses representable native ECMP paths into one modeled weighted route. */
+OperationalProjection ProjectWeightedRoutes(
+    const std::vector<ObservedRoute>& input,
+    const PersistentRegistry& registry) {
+  using GroupKey =
+      std::tuple<std::string, std::string, std::string, std::string,
+                 std::uint32_t, bool>;
+  std::map<GroupKey, std::vector<ObservedRoute>> groups;
+  OperationalProjection result;
+  std::uint64_t next_synthetic = std::max<std::uint64_t>(registry.next_id, 1U);
+  for (const PersistentNexthop& nexthop : registry.nexthops)
+    next_synthetic =
+        std::max(next_synthetic, static_cast<std::uint64_t>(nexthop.id) + 1U);
+
+  for (const ObservedRoute& observed : input) {
+    const Route& route = observed.route;
+    if (!observed.weight || *observed.weight < 1U ||
+        *observed.weight > 99U || route.special ||
+        !route.load_balance.empty()) {
+      result.routes.push_back(observed);
+      continue;
+    }
+    groups[{route.routing_instance, route.rib, route.address_family,
+            route.destination, route.preference, route.local_only}]
+        .push_back(observed);
+  }
+
+  for (auto& [key, members] : groups) {
+    if (members.size() < 2U) {
+      result.routes.insert(result.routes.end(), members.begin(), members.end());
+      continue;
+    }
+    std::ranges::sort(members, {}, [](const ObservedRoute& member) {
+      return std::tie(member.route.gateway, member.route.interface,
+                      member.route.special);
+    });
+
+    std::vector<WeightedNexthop> projected;
+    std::set<std::uint32_t> used_ids;
+    std::optional<std::uint64_t> configured_index;
+    bool durable_ids = true;
+    for (const ObservedRoute& member : members) {
+      const auto binding = std::ranges::find_if(
+          registry.bindings, [&](const PersistentRouteBinding& candidate) {
+            if (candidate.rib != member.route.rib ||
+                candidate.address_family != member.route.address_family ||
+                candidate.destination != member.route.destination ||
+                used_ids.contains(candidate.nexthop_id))
+              return false;
+            const auto nexthop = std::ranges::find_if(
+                registry.nexthops, [&](const PersistentNexthop& value) {
+                  return value.rib == candidate.rib &&
+                         value.id == candidate.nexthop_id;
+                });
+            return nexthop != registry.nexthops.end() &&
+                   SameBaseNexthop(member.route, *nexthop);
+          });
+      if (binding == registry.bindings.end() ||
+          (configured_index && *configured_index != binding->route_index)) {
+        durable_ids = false;
+        break;
+      }
+      configured_index = binding->route_index;
+      used_ids.insert(binding->nexthop_id);
+      projected.push_back(
+          {.id = binding->nexthop_id,
+           .gateway = member.route.gateway,
+           .interface = member.route.interface,
+           .weight = static_cast<std::uint8_t>(*member.weight)});
+    }
+
+    if (!durable_ids) {
+      projected.clear();
+      configured_index.reset();
+      if (next_synthetic > std::numeric_limits<std::uint32_t>::max()) {
+        result.routes.insert(result.routes.end(), members.begin(),
+                             members.end());
+        continue;
+      }
+      const std::uint64_t remaining_ids =
+          static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()) -
+          next_synthetic + 1U;
+      if (members.size() > remaining_ids) {
+        result.routes.insert(result.routes.end(), members.begin(),
+                             members.end());
+        continue;
+      }
+      const RibKey rib_key{std::get<1>(key), std::get<2>(key)};
+      // External routes have no datastore identity. Allocate deterministic,
+      // snapshot-local IDs solely so their weighted native state can be
+      // represented by the RFC 8431 reference-based operational schema.
+      for (const ObservedRoute& member : members) {
+        const auto id = static_cast<std::uint32_t>(next_synthetic++);
+        result.synthetic_ids[rib_key].push_back(id);
+        projected.push_back(
+            {.id = id,
+             .gateway = member.route.gateway,
+             .interface = member.route.interface,
+             .weight = static_cast<std::uint8_t>(*member.weight)});
+      }
+    }
+    std::ranges::sort(projected, {}, &WeightedNexthop::id);
+
+    ObservedRoute combined = members.front();
+    combined.route.index = configured_index.value_or(
+        StableRouteIndex(combined.route));
+    combined.route.gateway.reset();
+    combined.route.interface.reset();
+    combined.route.nexthop_ref.reset();
+    combined.route.special.reset();
+    combined.route.load_balance = std::move(projected);
+    combined.installed = std::ranges::any_of(
+        members, [](const ObservedRoute& member) { return member.installed; });
+    combined.mutable_route = std::ranges::all_of(
+        members,
+        [](const ObservedRoute& member) { return member.mutable_route; });
+    combined.weight.reset();
+    const bool same_reason = std::ranges::all_of(
+        members, [&](const ObservedRoute& member) {
+          return member.reason == members.front().reason;
+        });
+    if (!same_reason) combined.reason.reset();
+    result.routes.push_back(std::move(combined));
+  }
+  return result;
 }
 
 }  // namespace
@@ -163,7 +317,8 @@ std::vector<NexthopResolutionChange> NexthopResolutionTracker::Observe(
 std::string SerializeOperationalRoutes(
     const std::vector<ObservedRoute>& input,
     const PersistentRegistry& registry) {
-  std::vector<ObservedRoute> routes = input;
+  OperationalProjection projection = ProjectWeightedRoutes(input, registry);
+  std::vector<ObservedRoute>& routes = projection.routes;
   std::ranges::sort(routes, {}, [](const ObservedRoute& value) {
     return std::tie(value.route.routing_instance, value.route.rib,
                     value.route.address_family, value.route.index);
@@ -174,7 +329,6 @@ std::string SerializeOperationalRoutes(
          "<name>default</name>";
   std::string current_rib;
   std::string current_family;
-  using RibKey = std::pair<std::string, std::string>;
   std::map<RibKey, std::vector<std::uint32_t>> ids;
   std::set<RibKey> registered_ribs;
   for (const PersistentRib& rib : registry.ribs)
@@ -200,6 +354,12 @@ std::string SerializeOperationalRoutes(
     // the containing native RIB supplies one unambiguous family.
     if (!family.empty())
       ids[{nexthop.rib, family}].push_back(nexthop.id);
+  }
+  for (const auto& [key, values] : projection.synthetic_ids)
+    ids[key].insert(ids[key].end(), values.begin(), values.end());
+  for (auto& [key, values] : ids) {
+    std::ranges::sort(values);
+    values.erase(std::unique(values.begin(), values.end()), values.end());
   }
   std::set<RibKey> emitted;
   const auto emit_ids = [&](const RibKey& key) {
@@ -228,9 +388,21 @@ std::string SerializeOperationalRoutes(
         << (ipv4 ? "ipv4><dest-ipv4-prefix>" : "ipv6><dest-ipv6-prefix>")
         << Escape(route.destination)
         << (ipv4 ? "</dest-ipv4-prefix></ipv4>" : "</dest-ipv6-prefix></ipv6>")
-        << "</match><nexthop><nexthop-base>";
-    EmitBaseNexthop(xml, ipv4, route.gateway, route.interface, route.special);
-    xml << "</nexthop-base></nexthop><route-status><route-state>"
+        << "</match><nexthop>";
+    if (route.load_balance.empty()) {
+      xml << "<nexthop-base>";
+      EmitBaseNexthop(xml, ipv4, route.gateway, route.interface, route.special);
+      xml << "</nexthop-base>";
+    } else {
+      xml << "<nexthop-lb>";
+      for (const WeightedNexthop& member : route.load_balance)
+        xml << "<nexthop-list><nexthop-member-id>" << member.id
+            << "</nexthop-member-id><nexthop-lb-weight>"
+            << static_cast<unsigned>(member.weight)
+            << "</nexthop-lb-weight></nexthop-list>";
+      xml << "</nexthop-lb>";
+    }
+    xml << "</nexthop><route-status><route-state>"
         << (observed.installed ? "active" : "inactive")
         << "</route-state>"
         << "<route-installed-state>"
