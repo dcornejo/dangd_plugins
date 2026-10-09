@@ -64,8 +64,14 @@ groups expand into the same base-nexthop view, including gateway, interface,
 special discard identity, and installed state. Cycles, missing members,
 encapsulation, FDB objects, wrong-family objects, interrupted dumps, and other
 unrepresentable forms are omitted rather than emitted as partial or invalid
-routes. Native ECMP weights are intentionally not represented until the
-optional load-balance feature can be implemented end to end. Object-backed
+routes. Native ECMP weights are retained exactly in the internal observation
+contract: Linux decodes both classic multipath weights and the complete
+two-byte persistent-group weight, while FreeBSD reads `rmx_weight` separately
+from route preference. A weight-only change is visible to the generic change
+tracker without changing route identity. The weights are intentionally not
+serialized into operational XML, accepted as configuration, or used for
+rollback until the optional load-balance feature is implemented end to end;
+that feature remains unadvertised. Object-backed
 routes are operational/read-only: the base view cannot retain the Linux object
 ID and group topology required to recreate the exact route during rollback, so
 imperative mutation fails closed instead of approximating the original object.
@@ -145,7 +151,7 @@ failure, and coordinator rollback applies inverse changes in reverse order.
 
 Privileged native tests are opt-in with `-DDANG_RIB_NATIVE_TESTS=ON`. Linux
 creates a disposable network namespace and dummy interface. FreeBSD creates a
-disposable VNET jail and epair, assigns only documentation-prefix addresses,
+disposable VNET jail and epairs, assigns only documentation-prefix addresses,
 initializes standard loopback addresses, and destroys both afterward. Each
 interaction installs ordinary and direct special routes, verifies
 it in the plugin's operational XML and through the native kernel route
@@ -156,7 +162,10 @@ default route is used. The Linux workflow also creates a two-interface ECMP
 route in another private table and requires both paths in operational XML. A
 second weighted ECMP route references a persistent Linux nexthop group; both
 member objects must be expanded through route netlink into the same safe base
-view and reported as non-mutable. The test does not claim weight fidelity.
+view, reported as non-mutable, and retain weights 2 and 3. The FreeBSD workflow
+also creates two equal-metric ECMP paths over separate jail interfaces and
+requires weights 2 and 3 to remain distinct from route preference. These tests
+prove the internal observation prerequisite, not modeled load-balance support.
 
 `route-add` accepts the same destination-prefix/base-nexthop subset as
 configuration commits. Each member is attempted independently, as required by

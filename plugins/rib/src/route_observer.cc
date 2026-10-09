@@ -57,15 +57,19 @@ auto RouteIdentity(const Route& route) {
                     route.special.value_or("")};
 }
 
-bool EquivalentObservedRoute(const Route& left, const Route& right) {
-  Route normalized_left = left;
-  Route normalized_right = right;
+bool EquivalentObservedRoute(const ObservedRoute& left,
+                             const ObservedRoute& right) {
+  Route normalized_left = left.route;
+  Route normalized_right = right.route;
   // route-index is a caller-owned key for managed RPCs but a deterministic
   // synthetic key for native observations.  It must not turn confirmation of
   // the same route into a second notification.
   normalized_left.index = 0;
   normalized_right.index = 0;
-  return normalized_left == normalized_right;
+  // A platform may omit the default single-path weight. Treat that as one so
+  // managed confirmation does not generate a duplicate native notification.
+  return normalized_left == normalized_right &&
+         left.weight.value_or(1U) == right.weight.value_or(1U);
 }
 
 }  // namespace
@@ -93,7 +97,7 @@ std::vector<ObservedRoute> RouteChangeTracker::Observe(
   for (const auto& [key, current] : next) {
     const auto previous = routes_.find(key);
     if (previous == routes_.end() ||
-        !EquivalentObservedRoute(previous->second.route, current.route) ||
+        !EquivalentObservedRoute(previous->second, current) ||
         previous->second.installed != current.installed) {
       ObservedRoute change = current;
       if (previous != routes_.end() &&

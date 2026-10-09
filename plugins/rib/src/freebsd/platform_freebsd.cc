@@ -257,6 +257,13 @@ bool ObserveFreeBsdRoutesForFib(std::uint32_t fib,
       continue;
     route.preference =
         static_cast<std::uint32_t>(message->rtm_rmx.rmx_metric);
+    if (message->rtm_rmx.rmx_weight >
+        std::numeric_limits<std::uint32_t>::max())
+      continue;
+    // rmx_weight is independent of route preference and identifies this
+    // precise path's share when FreeBSD returns an ECMP member.
+    observed.weight =
+        static_cast<std::uint32_t>(message->rtm_rmx.rmx_weight);
 #if defined(RTF_LOCAL)
     // RTF_LOCAL is set for destinations owned by the host.  Do not infer this
     // from RTF_HOST: a host route may still point at a remote peer.

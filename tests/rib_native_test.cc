@@ -20,6 +20,8 @@ int main(int argc, char** argv) {
                  "       rib_native_test linux observe-multipath "
                  "RIB PREFIX INTERFACE INTERFACE\n"
                  "       rib_native_test linux observe-nexthop-group "
+                 "RIB PREFIX INTERFACE INTERFACE\n"
+                 "       rib_native_test freebsd observe-weighted-multipath "
                  "RIB PREFIX INTERFACE INTERFACE\n";
     return 2;
   }
@@ -31,7 +33,8 @@ int main(int argc, char** argv) {
        operation != "delete-special" &&
        operation != "observe-special" &&
        operation != "observe-multipath" &&
-       operation != "observe-nexthop-group"))
+       operation != "observe-nexthop-group" &&
+       operation != "observe-weighted-multipath"))
     return 2;
   if (operation == "observe-special") {
     if (argc != 6 ||
@@ -63,35 +66,51 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (operation == "observe-multipath" ||
-      operation == "observe-nexthop-group") {
-    if (platform_name != "linux" || argc != 7) return 2;
+      operation == "observe-nexthop-group" ||
+      operation == "observe-weighted-multipath") {
+    if (argc != 7 ||
+        (operation == "observe-weighted-multipath"
+             ? platform_name != "freebsd"
+             : platform_name != "linux"))
+      return 2;
     std::vector<dang::rib::ObservedRoute> routes;
     std::string error;
-    if (!dang::rib::ObserveLinuxRoutes(&routes, &error)) {
+    const bool observed = platform_name == "linux"
+        ? dang::rib::ObserveLinuxRoutes(&routes, &error)
+        : dang::rib::ObserveFreeBsdRoutesForFib(
+              static_cast<std::uint32_t>(std::stoul(argv[3])), &routes,
+              &error);
+    if (!observed) {
       std::cerr << error << '\n';
       return 1;
     }
     std::set<std::string> interfaces;
+    std::multiset<std::uint32_t> weights;
     std::vector<dang::rib::ObservedRoute> matching;
     for (const auto& route : routes) {
       if (route.route.rib != argv[3] || route.route.destination != argv[4])
         continue;
       if (route.route.interface) interfaces.insert(*route.route.interface);
+      if (route.weight) weights.insert(*route.weight);
       matching.push_back(route);
     }
     const std::string operational =
         dang::rib::SerializeOperationalRoutes(matching);
     bool mutability_ok = true;
+    const bool expected_mutable = operation != "observe-nexthop-group";
     for (const auto& route : matching) {
-      if (route.mutable_route != (operation == "observe-multipath"))
-        mutability_ok = false;
+      if (route.mutable_route != expected_mutable) mutability_ok = false;
     }
     const bool ok = matching.size() == 2U && interfaces.size() == 2U &&
         interfaces.contains(argv[5]) && interfaces.contains(argv[6]) &&
+        weights == (operation == "observe-multipath"
+                        ? std::multiset<std::uint32_t>{1U, 1U}
+                        : std::multiset<std::uint32_t>{2U, 3U}) &&
         operational.find(argv[5]) != std::string::npos &&
         operational.find(argv[6]) != std::string::npos && mutability_ok;
     if (!ok)
-      std::cerr << "multipath observation mismatch: " << operational << '\n';
+      std::cerr << "multipath path or weight observation mismatch: "
+                << operational << '\n';
     return ok ? 0 : 1;
   }
   dang::rib::Route route;

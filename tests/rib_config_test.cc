@@ -659,7 +659,9 @@ TEST(RibConfigTest, ManagedChangesAdvanceExternalNotificationBaseline) {
   tracker.ApplyManaged(route, true);
   Route observed = route;
   observed.index = 0x123456789abcdef0ULL;
-  EXPECT_TRUE(tracker.Observe({{observed, true}}).empty());
+  ObservedRoute confirmed(observed, true);
+  confirmed.weight = 1;
+  EXPECT_TRUE(tracker.Observe({confirmed}).empty());
   tracker.ApplyManaged(route, false);
   EXPECT_TRUE(tracker.Observe({}).empty());
 }
@@ -682,6 +684,30 @@ TEST(RibConfigTest, TracksSamePrefixMultipathRoutesIndependently) {
   EXPECT_EQ(removed[0].route.gateway, first.gateway);
   EXPECT_FALSE(removed[0].installed);
   EXPECT_TRUE(tracker.Observe({{second, true}}).empty());
+}
+
+TEST(RibConfigTest, TracksNativeWeightChangeWithoutChangingRouteIdentity) {
+  Route route{.routing_instance = "default",
+              .rib = "100",
+              .address_family = "ipv4",
+              .index = 1,
+              .destination = "192.0.2.0/24",
+              .gateway = "198.51.100.1",
+              .interface = "dummy0"};
+  ObservedRoute first(route, true);
+  first.weight = 2;
+  RouteChangeTracker tracker;
+  EXPECT_TRUE(tracker.Observe({first}).empty());
+
+  ObservedRoute changed = first;
+  changed.weight = 3;
+  const auto changes = tracker.Observe({changed});
+  ASSERT_EQ(changes.size(), 1U);
+  EXPECT_EQ(changes[0].route.gateway, route.gateway);
+  EXPECT_EQ(changes[0].weight, 3U);
+  EXPECT_TRUE(changes[0].installed);
+  EXPECT_FALSE(changes[0].reason.has_value());
+  EXPECT_TRUE(tracker.Observe({changed}).empty());
 }
 
 TEST(RibConfigTest, TracksObservedReusableNexthopResolutionTransitions) {

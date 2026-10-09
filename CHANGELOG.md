@@ -9,6 +9,16 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Preserved exact native RFC 8431 ECMP path weights in the route-observation
+  contract without prematurely advertising the optional load-balance feature.
+  Linux now decodes classic `rtnh_hops` weights and both bytes of persistent
+  nexthop-group weights, while FreeBSD reads the distinct `rmx_weight` field.
+  Weight-only changes reach the generic route-change tracker without changing
+  route identity. Isolated native tests require `{1,1}` and `{2,3}` readback on
+  Linux and `{2,3}` readback from a two-interface FreeBSD VNET. XML exposure,
+  writable load-balanced routes, and exact rollback remain explicit follow-on
+  work, so the YANG feature is still unadvertised.
+
 - Corrected FreeBSD RFC 8431 route-preference observation. The routing sysctl
   exposes path weight and route metric separately; the provider now reads
   `rmx_metric`, matching the `NL_RTA_PRIORITY` value it writes, instead of

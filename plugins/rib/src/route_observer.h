@@ -4,6 +4,7 @@
 #ifndef DANG_PLUGINS_RIB_ROUTE_OBSERVER_H_
 #define DANG_PLUGINS_RIB_ROUTE_OBSERVER_H_
 
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <string>
@@ -28,6 +29,8 @@ struct ObservedRoute {
   bool mutable_route = true;
   /** RFC 8431 reason when the native state exposes one without inference. */
   std::optional<std::string> reason;
+  /** Exact native ECMP path weight, when the platform supplies one. */
+  std::optional<std::uint32_t> weight;
 };
 
 /**

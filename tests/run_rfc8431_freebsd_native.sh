@@ -11,17 +11,22 @@ registry="/tmp/dang-rib-registry-$$.json"
 error_output="/tmp/dang-rib-error-$$.txt"
 epair=$(sudo ifconfig epair create)
 peer="${epair%a}b"
+epair2=$(sudo ifconfig epair create)
+peer2="${epair2%a}b"
 cleanup() {
   sudo jail -r "$jail_name" >/dev/null 2>&1 || true
   sudo ifconfig "$epair" destroy >/dev/null 2>&1 || true
+  sudo ifconfig "$epair2" destroy >/dev/null 2>&1 || true
   sudo rm -f "$registry" "$error_output"
 }
 trap cleanup EXIT INT TERM
 
 sudo ifconfig "$epair" inet 192.0.2.1/24 up
 sudo ifconfig "$epair" inet6 2001:db8:8431::1/64
+sudo ifconfig "$epair2" inet 192.0.3.1/24 up
 sudo jail -c name="$jail_name" path=/ host.hostname="$jail_name" \
   persist vnet vnet.interface="$peer"
+sudo ifconfig "$peer2" vnet "$jail_name"
 # A newly created VNET jail has an unconfigured lo0.  FreeBSD resolves
 # blackhole and reject nexthops through the matching loopback address, just as
 # a normal boot configures them on the host.
@@ -29,6 +34,15 @@ sudo jexec "$jail_name" ifconfig lo0 inet 127.0.0.1/8 up
 sudo jexec "$jail_name" ifconfig lo0 inet6 ::1/128
 sudo jexec "$jail_name" ifconfig "$peer" inet 192.0.2.2/24 up
 sudo jexec "$jail_name" ifconfig "$peer" inet6 2001:db8:8431::2/64
+sudo jexec "$jail_name" ifconfig "$peer2" inet 192.0.3.2/24 up
+
+# Exercise the distinct FreeBSD metric and ECMP weight fields. Both paths are
+# installed only inside the disposable VNET, and the observer must return the
+# exact native weights rather than confusing either one with route preference.
+sudo jexec "$jail_name" route add -net 198.18.6.0/24 192.0.2.1 -weight 2
+sudo jexec "$jail_name" route add -net 198.18.6.0/24 192.0.3.1 -weight 3
+sudo jexec "$jail_name" "$binary" freebsd observe-weighted-multipath 0 \
+  198.18.6.0/24 "$peer" "$peer2"
 if [ -n "$plugin_test" ] && [ -n "$plugin" ]; then
   sudo jexec "$jail_name" env DANG_RIB_REGISTRY_FILE="$registry" \
     "$plugin_test" "$plugin" \

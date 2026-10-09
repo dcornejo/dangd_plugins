@@ -33,12 +33,22 @@ namespace dang::rib {
 namespace {
 
 #if defined(__linux__)
+static_assert(offsetof(nexthop_grp, weight) == 4U);
+static_assert(sizeof(nexthop_grp) >= 6U);
+
 /** One native path from RTA_MULTIPATH or an expanded nexthop object. */
 struct LinuxNexthop {
   std::optional<std::string> gateway;
   std::optional<std::string> special;
   unsigned interface_index = 0;
   bool installed = true;
+  std::uint32_t weight = 1;
+};
+
+/** One member reference and its exact positive kernel selection weight. */
+struct LinuxNexthopGroupMember {
+  std::uint32_t id = 0;
+  std::uint32_t weight = 1;
 };
 
 /** One Linux persistent nexthop object or group returned by route netlink. */
@@ -48,7 +58,7 @@ struct LinuxNexthopObject {
   std::optional<std::string> gateway;
   std::optional<std::string> special;
   unsigned interface_index = 0;
-  std::vector<std::uint32_t> members;
+  std::vector<LinuxNexthopGroupMember> members;
   bool unsupported = false;
 };
 
@@ -316,8 +326,18 @@ bool ReadLinuxNexthopObjects(LinuxNexthopObjects* objects,
           const auto* group =
               reinterpret_cast<const nexthop_grp*>(RTA_DATA(attribute));
           for (std::size_t index = 0; index < payload / sizeof(*group);
-               ++index)
-            object.members.push_back(group[index].id);
+               ++index) {
+            // NHA_GROUP encodes weight minus one in two adjacent bytes. The
+            // second byte was formerly reserved, so reading the wire layout
+            // also remains compatible with kernels limited to 8-bit weights.
+            const auto* encoded = reinterpret_cast<const unsigned char*>(
+                &group[index]);
+            const std::uint32_t weight_minus_one =
+                static_cast<std::uint32_t>(encoded[4]) |
+                (static_cast<std::uint32_t>(encoded[5]) << 8U);
+            object.members.push_back(
+                {.id = group[index].id, .weight = weight_minus_one + 1U});
+          }
         } else if (attribute->rta_type == NHA_BLACKHOLE) {
           object.special = "discard";
         } else if (attribute->rta_type == NHA_ENCAP ||
@@ -346,12 +366,24 @@ bool ExpandLinuxNexthopObject(std::uint32_t id, int route_family,
   const std::size_t first_path = paths->size();
   bool valid = true;
   if (!object.members.empty()) {
-    for (const std::uint32_t member : object.members) {
-      if (!ExpandLinuxNexthopObject(member, route_family, objects, visiting,
+    for (const LinuxNexthopGroupMember& member : object.members) {
+      const std::size_t member_first_path = paths->size();
+      if (!ExpandLinuxNexthopObject(member.id, route_family, objects, visiting,
                                     paths)) {
         valid = false;
         break;
       }
+      for (std::size_t index = member_first_path; index < paths->size();
+           ++index) {
+        const std::uint64_t weighted =
+            static_cast<std::uint64_t>((*paths)[index].weight) * member.weight;
+        if (weighted > std::numeric_limits<std::uint32_t>::max()) {
+          valid = false;
+          break;
+        }
+        (*paths)[index].weight = static_cast<std::uint32_t>(weighted);
+      }
+      if (!valid) break;
     }
   } else if ((object.family == AF_UNSPEC || object.family == route_family) &&
              (object.gateway || object.interface_index != 0U ||
@@ -369,6 +401,7 @@ bool ExpandLinuxNexthopObject(std::uint32_t id, int route_family,
     for (std::size_t index = first_path; index < paths->size(); ++index)
       (*paths)[index].installed = false;
   visiting->erase(id);
+  if (!valid) paths->resize(first_path);
   return valid;
 }
 #endif
@@ -659,6 +692,9 @@ bool ObserveLinuxRoutes(std::vector<ObservedRoute>* routes,
             path.interface_index =
                 static_cast<unsigned>(nexthop->rtnh_ifindex);
             path.installed = (nexthop->rtnh_flags & RTNH_F_DEAD) == 0;
+            // rtnh_hops stores the positive route weight minus one.
+            path.weight =
+                static_cast<std::uint32_t>(nexthop->rtnh_hops) + 1U;
             int nested_length = static_cast<int>(nexthop->rtnh_len) -
                                 static_cast<int>(sizeof(*nexthop));
             for (rtattr* nested = RTNH_DATA(nexthop);
@@ -722,9 +758,12 @@ bool ObserveLinuxRoutes(std::vector<ObservedRoute>* routes,
         std::set<std::tuple<std::optional<std::string>,
                             std::optional<std::string>,
                             std::optional<std::string>>> emitted_paths;
+        std::vector<ObservedRoute> members;
+        bool representable = true;
         for (const LinuxNexthop& path : multipath) {
           ObservedRoute member = observed;
           member.installed = path.installed;
+          member.weight = path.weight;
           if (!path.installed) member.reason = "unresolved-nexthop";
           // The RFC base view cannot retain the Linux object ID or group
           // topology needed to recreate this route during rollback. Keep it
@@ -745,10 +784,17 @@ bool ObserveLinuxRoutes(std::vector<ObservedRoute>* routes,
             continue;
           if (!emitted_paths.emplace(member.route.gateway,
                                      member.route.interface,
-                                     member.route.special).second)
-            continue;
-          append(std::move(member));
+                                     member.route.special).second) {
+            // Two paths with the same RFC base identity cannot receive
+            // distinct list keys without inventing model state. Omit the
+            // entire route instead of silently dropping one native weight.
+            representable = false;
+            break;
+          }
+          members.push_back(std::move(member));
         }
+        if (representable)
+          for (ObservedRoute& member : members) append(std::move(member));
       } else if (route.special || route.gateway || route.interface) {
         append(std::move(observed));
       }

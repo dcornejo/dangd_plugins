@@ -35,8 +35,8 @@ sudo ip netns exec "$namespace" "$binary" \
 sudo ip -n "$namespace" address add 192.0.3.1/24 dev dummy1
 sudo ip -n "$namespace" nexthop add id 10 via 192.0.2.2 dev dummy0
 sudo ip -n "$namespace" nexthop add id 11 via 192.0.3.2 dev dummy1
-# Linux group weights are intentionally not advertised: the plugin expands
-# each resolvable object into the already supported RFC base-nexthop view.
+# The observer must retain each exact group weight internally even though the
+# optional RFC load-balance feature is not advertised or serialized yet.
 sudo ip -n "$namespace" nexthop add id 20 group 10,2/11,3
 sudo ip -n "$namespace" route replace 198.18.4.0/24 table 104 nhid 20
 sudo ip netns exec "$namespace" "$binary" \
