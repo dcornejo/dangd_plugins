@@ -9,6 +9,16 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Added the portable RFC 8431 weighted-nexthop foundation without advertising
+  the optional `nexthop-load-balance` feature. Configuration parsing now
+  resolves, validates, and canonicalizes every `nexthop-lb` reusable-nexthop
+  member and its schema-defined 1-through-99 weight, while the registry tracks
+  all member lifetimes for one datastore route. A feature-enabled `yanglint`
+  fixture protects the exact model shape, the plugin contract protects the
+  still-empty advertised feature set, and Linux and FreeBSD validation fail at
+  the attributed `nexthop-lb` path until native mutation and rollback are
+  implemented.
+
 - Preserved exact native RFC 8431 ECMP path weights in the route-observation
   contract without prematurely advertising the optional load-balance feature.
   Linux now decodes classic `rtnh_hops` weights and both bytes of persistent

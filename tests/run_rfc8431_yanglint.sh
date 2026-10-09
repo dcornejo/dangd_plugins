@@ -17,6 +17,10 @@ dang_models=$3
   "$rib_models/ietf-i2rs-rib@2018-09-13.yang"
 
 test_data=$(dirname "$0")/data
+"$yanglint" -p "$rib_models" -p "$dang_models" -t config \
+  -F 'ietf-i2rs-rib:nexthop-load-balance' \
+  "$rib_models/ietf-i2rs-rib@2018-09-13.yang" \
+  "$test_data/rfc8431-load-balance-config.xml"
 "$yanglint" -p "$rib_models" -p "$dang_models" -t notif \
   "$rib_models/ietf-i2rs-rib@2018-09-13.yang" \
   "$test_data/rfc8431-route-change.xml"

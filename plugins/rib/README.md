@@ -69,9 +69,16 @@ contract: Linux decodes both classic multipath weights and the complete
 two-byte persistent-group weight, while FreeBSD reads `rmx_weight` separately
 from route preference. A weight-only change is visible to the generic change
 tracker without changing route identity. The weights are intentionally not
-serialized into operational XML, accepted as configuration, or used for
-rollback until the optional load-balance feature is implemented end to end;
-that feature remains unadvertised. Object-backed
+serialized into operational XML or used for rollback. The portable
+configuration parser now understands the optional `nexthop-lb` structure: it
+resolves every reusable-nexthop member within its RIB, canonicalizes members by
+identifier, retains all references for the route lifetime, and enforces the
+YANG type's normative weight range of 1 through 99. The model description
+mentions zero, but zero is outside that typedef range and therefore fails
+schema and runtime validation. Weighted routes are not yet applied natively;
+both platform validators fail at the attributed `nexthop-lb` path and the
+feature remains unadvertised until mutation, rollback, and operational XML are
+implemented end to end. Object-backed
 routes are operational/read-only: the base view cannot retain the Linux object
 ID and group topology required to recreate the exact route during rollback, so
 imperative mutation fails closed instead of approximating the original object.
@@ -121,8 +128,10 @@ than being applied to the host default instance. It
 requires the RFC 8431 route preference and local-only fields. The portable
 configuration slice accepts only `local-only=false`; native local receive
 routes remain observable read-only state. It rejects source, MPLS, MAC,
-interface-match, chained, replicated, protected, load-balanced, and tunnel
-routes with an attributed model path, and computes replacements as an old-route
+interface-match, chained, replicated, protected, and tunnel routes with an
+attributed model path. Load-balanced routes pass portable parsing and reference
+lifetime checks but are rejected by both native validators at `nexthop-lb`
+before hardware planning. Supported replacements are computed as an old-route
 deletion followed by a new-route installation. Linux and FreeBSD
 production mutation use bounded route-netlink messages and wait for the
 correlated kernel acknowledgement. Retained argv planners are deterministic

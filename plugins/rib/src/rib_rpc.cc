@@ -341,16 +341,20 @@ bool NexthopRegistry::ReplaceConfigurationReferences(
 bool NexthopRegistry::ReplaceConfigurationRouteBindings(
     const std::vector<Route>& routes) {
   std::lock_guard lock(mutex_);
-  std::map<std::tuple<std::string, std::string, std::string, std::uint64_t>,
-           std::uint32_t> replacement;
+  std::multimap<
+      std::tuple<std::string, std::string, std::string, std::uint64_t>,
+      std::uint32_t> replacement;
   for (const Route& route : routes) {
-    if (!route.nexthop_ref) continue;
-    if (!entries_.contains({route.rib, *route.nexthop_ref}) ||
-        !replacement.emplace(
-            std::make_tuple(route.rib, route.address_family, route.destination,
-                            route.index),
-            *route.nexthop_ref).second)
-      return false;
+    const auto key = std::make_tuple(route.rib, route.address_family,
+                                     route.destination, route.index);
+    if (route.nexthop_ref) {
+      if (!entries_.contains({route.rib, *route.nexthop_ref})) return false;
+      replacement.emplace(key, *route.nexthop_ref);
+    }
+    for (const WeightedNexthop& member : route.load_balance) {
+      if (!entries_.contains({route.rib, member.id})) return false;
+      replacement.emplace(key, member.id);
+    }
   }
   configuration_route_references_ = std::move(replacement);
   return true;
@@ -498,7 +502,7 @@ bool NexthopRegistry::ReplacePersistentState(const PersistentRegistry& state,
       *error = "checkpoint omits a datastore-bound nexthop";
       return false;
     }
-    candidate.configuration_route_references_[route] = id;
+    candidate.configuration_route_references_.emplace(route, id);
   }
   entries_ = std::move(candidate.entries_);
   rib_families_ = std::move(candidate.rib_families_);

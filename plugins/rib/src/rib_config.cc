@@ -168,52 +168,108 @@ bool ParseConfig(const char* xml, Config* config, std::string* error,
             "/ietf-i2rs-rib:routing-instance/rib-list/route-list/match",
             error, error_path);
 
-      xmlNodePtr base = Child(Child(route_node, "nexthop"), "nexthop-base");
-      if (!base)
-        return Fail("only base nexthops are currently supported",
+      xmlNodePtr nexthop = Child(route_node, "nexthop");
+      xmlNodePtr base = Child(nexthop, "nexthop-base");
+      xmlNodePtr load_balance = Child(nexthop, "nexthop-lb");
+      if ((base == nullptr) == (load_balance == nullptr))
+        return Fail("exactly one supported nexthop form is required",
                     "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop",
                     error, error_path);
-      route.gateway = Text(Child(base, family == "ipv4" ? "ipv4-address"
-                                                        : "ipv6-address"));
-      route.interface = Text(Child(base, "outgoing-interface"));
-      if (const auto special = Text(Child(base, "special")); special)
-        route.special = LocalIdentity(*special);
-      if (xmlNodePtr combined = Child(
-              base, family == "ipv4" ? "egress-interface-ipv4-address"
-                                      : "egress-interface-ipv6-address")) {
-        route.gateway = Text(Child(combined, family == "ipv4" ? "ipv4-address"
-                                                              : "ipv6-address"));
-        route.interface = Text(Child(combined, "outgoing-interface"));
-      }
-      if (xmlNodePtr reference = Child(base, "nexthop-ref")) {
-        std::uint64_t id = 0;
-        if (route.special || route.gateway || route.interface || !resolver ||
-            !ParseUnsigned(reference, &id) || id > UINT32_MAX ||
-            !resolver(rib_name, static_cast<std::uint32_t>(id), &route.gateway,
-                      &route.interface, &route.special))
-          return Fail("nexthop-ref does not identify a registered nexthop in this RIB",
-                      "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/nexthop-base/nexthop-ref",
+      if (load_balance) {
+        if (!resolver)
+          return Fail("load-balance members require the reusable nexthop registry",
+                      "/ietf-i2rs-rib:routing-instance/rib-list/route-list/"
+                      "nexthop/nexthop-lb",
                       error, error_path);
-        route.nexthop_ref = static_cast<std::uint32_t>(id);
+        std::set<std::uint32_t> member_ids;
+        for (xmlNodePtr member : Children(load_balance, "nexthop-list")) {
+          std::uint64_t id = 0;
+          std::uint64_t weight = 0;
+          std::optional<std::string> gateway;
+          std::optional<std::string> interface;
+          std::optional<std::string> special;
+          if (!ParseUnsigned(Child(member, "nexthop-member-id"), &id) ||
+              id == 0U || id > UINT32_MAX ||
+              !member_ids.emplace(static_cast<std::uint32_t>(id)).second ||
+              !ParseUnsigned(Child(member, "nexthop-lb-weight"), &weight) ||
+              weight < 1U || weight > 99U ||
+              !resolver(rib_name, static_cast<std::uint32_t>(id), &gateway,
+                        &interface, &special))
+            return Fail(
+                "load-balance member requires a unique registered nexthop "
+                "identifier and a weight from 1 through 99",
+                "/ietf-i2rs-rib:routing-instance/rib-list/route-list/"
+                "nexthop/nexthop-lb/nexthop-list",
+                error, error_path);
+          if (special || (!gateway && !interface))
+            return Fail(
+                "load-balance members currently require an IP gateway or "
+                "outgoing interface",
+                "/ietf-i2rs-rib:routing-instance/rib-list/route-list/"
+                "nexthop/nexthop-lb/nexthop-list/nexthop-member-id",
+                error, error_path);
+          route.load_balance.push_back(
+              {.id = static_cast<std::uint32_t>(id),
+               .gateway = std::move(gateway),
+               .interface = std::move(interface),
+               .weight = static_cast<std::uint8_t>(weight)});
+        }
+        if (route.load_balance.empty())
+          return Fail("load-balance nexthop requires at least one member",
+                      "/ietf-i2rs-rib:routing-instance/rib-list/route-list/"
+                      "nexthop/nexthop-lb/nexthop-list",
+                      error, error_path);
+        std::ranges::sort(route.load_balance, {}, &WeightedNexthop::id);
+      } else {
+        route.gateway = Text(Child(base, family == "ipv4" ? "ipv4-address"
+                                                          : "ipv6-address"));
+        route.interface = Text(Child(base, "outgoing-interface"));
+        if (const auto special = Text(Child(base, "special")); special)
+          route.special = LocalIdentity(*special);
+        if (xmlNodePtr combined = Child(
+                base, family == "ipv4" ? "egress-interface-ipv4-address"
+                                        : "egress-interface-ipv6-address")) {
+          route.gateway =
+              Text(Child(combined, family == "ipv4" ? "ipv4-address"
+                                                    : "ipv6-address"));
+          route.interface = Text(Child(combined, "outgoing-interface"));
+        }
+        if (xmlNodePtr reference = Child(base, "nexthop-ref")) {
+          std::uint64_t id = 0;
+          if (route.special || route.gateway || route.interface || !resolver ||
+              !ParseUnsigned(reference, &id) || id > UINT32_MAX ||
+              !resolver(rib_name, static_cast<std::uint32_t>(id),
+                        &route.gateway, &route.interface, &route.special))
+            return Fail(
+                "nexthop-ref does not identify a registered nexthop in this RIB",
+                "/ietf-i2rs-rib:routing-instance/rib-list/route-list/"
+                "nexthop/nexthop-base/nexthop-ref",
+                error, error_path);
+          route.nexthop_ref = static_cast<std::uint32_t>(id);
+        }
+        if (route.special && (*route.special != "discard" &&
+                              *route.special != "discard-with-error"))
+          return Fail(*route.special == "receive"
+                          ? "receive routes are kernel-owned and read-only"
+                          : "the special nexthop is not supported by the "
+                            "portable backend",
+                      "/ietf-i2rs-rib:routing-instance/rib-list/route-list/"
+                      "nexthop/nexthop-base/special",
+                      error, error_path);
+        if (route.special && (route.gateway || route.interface))
+          return Fail(
+              "a special nexthop cannot include another base nexthop",
+              "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/"
+              "nexthop-base",
+              error, error_path);
+        if (!route.special && !route.gateway && !route.interface)
+          return Fail(
+              "base nexthop requires an IP gateway, outgoing interface, or "
+              "supported special identity",
+              "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/"
+              "nexthop-base",
+              error, error_path);
       }
-      if (route.special && (*route.special != "discard" &&
-                            *route.special != "discard-with-error"))
-        return Fail(*route.special == "receive"
-                        ? "receive routes are kernel-owned and read-only"
-                        : "the special nexthop is not supported by the "
-                          "portable backend",
-                    "/ietf-i2rs-rib:routing-instance/rib-list/route-list/"
-                    "nexthop/nexthop-base/special",
-                    error, error_path);
-      if (route.special && (route.gateway || route.interface))
-        return Fail("a special nexthop cannot include another base nexthop",
-                    "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/nexthop-base",
-                    error, error_path);
-      if (!route.special && !route.gateway && !route.interface)
-        return Fail("base nexthop requires an IP gateway, outgoing interface, "
-                    "or supported special identity",
-                    "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/nexthop-base",
-                    error, error_path);
 
       xmlNodePtr attributes = Child(route_node, "route-attributes");
       std::uint64_t preference = 0;
@@ -271,6 +327,9 @@ std::string Describe(const Change& change) {
   if (change.route.gateway) output << " via " << *change.route.gateway;
   if (change.route.interface) output << " dev " << *change.route.interface;
   if (change.route.special) output << " special " << *change.route.special;
+  if (!change.route.load_balance.empty())
+    output << " load-balance " << change.route.load_balance.size()
+           << " members";
   output << " preference " << change.route.preference;
   if (change.route.local_only) output << " local-only";
   return output.str();

@@ -172,8 +172,11 @@ NexthopResolver Resolver(Context* owner) {
 }
 std::vector<Reference> References(const Config& config) {
   std::vector<Reference> result;
-  for (const Route& route : config.routes)
+  for (const Route& route : config.routes) {
     if (route.nexthop_ref) result.emplace_back(route.rib, *route.nexthop_ref);
+    for (const WeightedNexthop& member : route.load_balance)
+      result.emplace_back(route.rib, member.id);
+  }
   return result;
 }
 bool RetainAll(NexthopRegistry* registry, const std::vector<Reference>& refs) {

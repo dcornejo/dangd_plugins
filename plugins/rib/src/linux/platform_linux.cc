@@ -408,6 +408,12 @@ bool ExpandLinuxNexthopObject(std::uint32_t id, int route_family,
 
 bool SafeTableAndInterface(const Route& route, std::string* error,
                            std::string* path) {
+  if (!route.load_balance.empty()) {
+    *error = "Linux weighted load-balance mutation is not implemented yet";
+    *path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/"
+            "nexthop-lb";
+    return false;
+  }
   if (route.local_only) {
     *error = "Linux cannot safely map a configured RFC 8431 local-only route";
     *path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list/"

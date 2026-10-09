@@ -79,8 +79,14 @@ class NexthopRegistry {
   std::map<std::tuple<std::string, std::string, std::string, std::uint64_t>,
            std::uint32_t>
       route_references_;
-  std::map<std::tuple<std::string, std::string, std::string, std::uint64_t>,
-           std::uint32_t>
+  /**
+   * Datastore routes may retain several reusable nexthops through the RFC 8431
+   * weighted load-balance list, so this index deliberately permits duplicate
+   * route keys with distinct nexthop identifiers.
+   */
+  std::multimap<
+      std::tuple<std::string, std::string, std::string, std::uint64_t>,
+      std::uint32_t>
       configuration_route_references_;
   std::uint32_t next_id_ = 1;
 };

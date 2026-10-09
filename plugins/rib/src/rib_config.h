@@ -12,14 +12,24 @@
 
 namespace dang::rib {
 
+/** One resolved member of an RFC 8431 weighted load-balance nexthop. */
+struct WeightedNexthop {
+  std::uint32_t id = 0;
+  std::optional<std::string> gateway{};
+  std::optional<std::string> interface{};
+  std::uint8_t weight = 1;
+
+  bool operator==(const WeightedNexthop&) const = default;
+};
+
 /**
  * A deliberately small, portable projection of one RFC 8431 route.
  *
- * The first backend slice accepts destination-prefix IPv4 and IPv6 routes
- * with a base nexthop expressed as a gateway, interface, both, or one of the
- * portable discard identities. Keeping the projection narrower than the YANG
- * tree makes unsupported forwarding semantics fail during prepare instead of
- * being silently approximated by a host routing API.
+ * The portable projection accepts destination-prefix IPv4 and IPv6 routes
+ * with either a supported base nexthop or resolved weighted references.
+ * Keeping the projection narrower than the YANG tree makes unsupported
+ * forwarding semantics fail during prepare instead of being silently
+ * approximated by a host routing API.
  */
 struct Route {
   std::string routing_instance;
@@ -35,6 +45,8 @@ struct Route {
   bool local_only = false;
   /** Supported RFC 8431 special identity; receive remains observation-only. */
   std::optional<std::string> special;
+  /** Resolved reusable members; mutually exclusive with the base nexthop. */
+  std::vector<WeightedNexthop> load_balance{};
 
   bool operator==(const Route&) const = default;
 };

@@ -187,6 +187,133 @@ TEST(RibConfigTest, ParsesPortableDestinationRoute) {
   EXPECT_EQ(config.routes[0].preference, 10U);
 }
 
+constexpr char kLoadBalance[] = R"xml(<config>
+  <routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib">
+    <name>default</name><rib-list><name>100</name>
+    <address-family>ipv4-address-family</address-family><route-list>
+      <route-index>7</route-index><match><ipv4>
+        <dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix>
+      </ipv4></match><nexthop><nexthop-lb>
+        <nexthop-list><nexthop-member-id>9</nexthop-member-id>
+          <nexthop-lb-weight>3</nexthop-lb-weight></nexthop-list>
+        <nexthop-list><nexthop-member-id>7</nexthop-member-id>
+          <nexthop-lb-weight>2</nexthop-lb-weight></nexthop-list>
+      </nexthop-lb></nexthop><route-attributes>
+        <route-preference>10</route-preference><local-only>false</local-only>
+      </route-attributes>
+    </route-list></rib-list>
+  </routing-instance></config>)xml";
+
+TEST(RibConfigTest, ParsesAndCanonicalizesWeightedReusableNexthops) {
+  const NexthopResolver resolver =
+      [](const std::string& rib, std::uint32_t id,
+         std::optional<std::string>* gateway,
+         std::optional<std::string>* interface,
+         std::optional<std::string>* special) {
+        if (rib != "100" || (id != 7U && id != 9U)) return false;
+        *gateway = id == 7U ? "198.51.100.1" : "198.51.100.2";
+        *interface = id == 7U ? "dummy0" : "dummy1";
+        special->reset();
+        return true;
+      };
+  Config config;
+  std::string error;
+  std::string path;
+  ASSERT_TRUE(ParseConfig(kLoadBalance, &config, &error, &path, resolver))
+      << error;
+  ASSERT_EQ(config.routes.size(), 1U);
+  const Route& route = config.routes[0];
+  EXPECT_FALSE(route.gateway);
+  EXPECT_FALSE(route.interface);
+  EXPECT_FALSE(route.nexthop_ref);
+  ASSERT_EQ(route.load_balance.size(), 2U);
+  EXPECT_EQ(route.load_balance[0].id, 7U);
+  EXPECT_EQ(route.load_balance[0].weight, 2U);
+  EXPECT_EQ(route.load_balance[0].gateway, "198.51.100.1");
+  EXPECT_EQ(route.load_balance[1].id, 9U);
+  EXPECT_EQ(route.load_balance[1].weight, 3U);
+  EXPECT_EQ(Describe({ChangeKind::kInstall, route}),
+            "install ipv4 route 192.0.2.0/24 in RIB 100 load-balance 2 "
+            "members preference 10");
+
+  EXPECT_FALSE(ValidateLinuxChanges(
+      {{ChangeKind::kInstall, route}}, &error, &path));
+  EXPECT_NE(error.find("not implemented yet"), std::string::npos);
+  EXPECT_NE(path.find("nexthop-lb"), std::string::npos);
+  EXPECT_FALSE(ValidateFreeBsdChanges(
+      {{ChangeKind::kInstall, route}}, &error, &path));
+  EXPECT_NE(error.find("not implemented yet"), std::string::npos);
+}
+
+TEST(RibConfigTest, RejectsInvalidOrUnresolvableLoadBalanceMembers) {
+  const NexthopResolver resolver =
+      [](const std::string&, std::uint32_t id,
+         std::optional<std::string>* gateway,
+         std::optional<std::string>* interface,
+         std::optional<std::string>* special) {
+        if (id != 7U && id != 9U) return false;
+        *gateway = "198.51.100.1";
+        *interface = "dummy0";
+        special->reset();
+        return true;
+      };
+  Config config;
+  std::string error;
+  std::string path;
+
+  std::string zero_weight(kLoadBalance);
+  const auto weight = zero_weight.find("<nexthop-lb-weight>2");
+  ASSERT_NE(weight, std::string::npos);
+  zero_weight.replace(weight, std::string("<nexthop-lb-weight>2").size(),
+                      "<nexthop-lb-weight>0");
+  EXPECT_FALSE(ParseConfig(zero_weight.c_str(), &config, &error, &path,
+                           resolver));
+  EXPECT_NE(error.find("weight from 1 through 99"), std::string::npos);
+
+  std::string duplicate(kLoadBalance);
+  const auto member = duplicate.find("<nexthop-member-id>9");
+  ASSERT_NE(member, std::string::npos);
+  duplicate.replace(member, std::string("<nexthop-member-id>9").size(),
+                    "<nexthop-member-id>7");
+  EXPECT_FALSE(ParseConfig(duplicate.c_str(), &config, &error, &path,
+                           resolver));
+  EXPECT_NE(error.find("unique registered"), std::string::npos);
+
+  EXPECT_FALSE(ParseConfig(kLoadBalance, &config, &error, &path, {}));
+  EXPECT_NE(error.find("reusable nexthop registry"), std::string::npos);
+}
+
+TEST(RibConfigTest, TracksSeveralConfigurationBindingsForOneRoute) {
+  NexthopRegistry registry;
+  ASSERT_EQ(registry.Add({.rib = "100", .gateway = "198.51.100.1",
+                          .interface = "dummy0",
+                          .address_family = "ipv4",
+                          .special = std::nullopt}),
+            1U);
+  ASSERT_EQ(registry.Add({.rib = "100", .gateway = "198.51.100.2",
+                          .interface = "dummy1",
+                          .address_family = "ipv4",
+                          .special = std::nullopt}),
+            2U);
+  Route route{.routing_instance = "default",
+              .rib = "100",
+              .address_family = "ipv4",
+              .index = 7,
+              .destination = "192.0.2.0/24",
+              .gateway = std::nullopt,
+              .interface = std::nullopt,
+              .nexthop_ref = std::nullopt,
+              .special = std::nullopt,
+              .load_balance = {{.id = 1, .weight = 2},
+                               {.id = 2, .weight = 3}}};
+  ASSERT_TRUE(registry.ReplaceConfigurationRouteBindings({route}));
+  const PersistentRegistry state = registry.ResolutionState();
+  ASSERT_EQ(state.bindings.size(), 2U);
+  EXPECT_EQ(state.bindings[0].route_index, 7U);
+  EXPECT_EQ(state.bindings[1].route_index, 7U);
+  EXPECT_NE(state.bindings[0].nexthop_id, state.bindings[1].nexthop_id);
+}
+
 TEST(RibConfigTest, RejectsRoutesThatCollapseOntoOneNativeDestination) {
   constexpr char input[] = R"xml(<config>
     <routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib">
