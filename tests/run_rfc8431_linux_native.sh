@@ -6,11 +6,13 @@ set -eu
 binary=$1
 plugin_test=${2:-}
 plugin=${3:-}
+load_balance_plugin_test=${4:-}
 namespace="dang-rib-$$"
 registry="/tmp/dang-rib-registry-$$.json"
+load_balance_registry="/tmp/dang-rib-lb-registry-$$.json"
 cleanup() {
   sudo ip netns del "$namespace" >/dev/null 2>&1 || true
-  sudo rm -f "$registry"
+  sudo rm -f "$registry" "$load_balance_registry"
 }
 trap cleanup EXIT INT TERM
 
@@ -33,6 +35,20 @@ sudo ip -n "$namespace" route replace 198.18.2.0/24 table 101 \
 sudo ip netns exec "$namespace" "$binary" \
   linux observe-multipath 101 198.18.2.0/24 dummy0 dummy1
 sudo ip -n "$namespace" address add 192.0.3.1/24 dev dummy1
+sudo ip netns exec "$namespace" "$binary" linux install-load-balance \
+  107 198.18.7.0/24 dummy0 192.0.2.2 2 dummy1 192.0.3.2 3
+sudo ip netns exec "$namespace" "$binary" linux observe-weighted-multipath \
+  107 198.18.7.0/24 dummy0 dummy1
+sudo ip netns exec "$namespace" "$binary" linux delete-load-balance \
+  107 198.18.7.0/24 dummy0 192.0.2.2 2 dummy1 192.0.3.2 3
+test -z "$(sudo ip -n "$namespace" route show table 107)"
+if [ -n "$load_balance_plugin_test" ] && [ -n "$plugin" ]; then
+  sudo ip netns exec "$namespace" env \
+    DANG_RIB_REGISTRY_FILE="$load_balance_registry" \
+    "$load_balance_plugin_test" "$plugin" \
+    107 198.18.8.0/24 dummy0 192.0.2.2 dummy1 192.0.3.2
+  test -z "$(sudo ip -n "$namespace" route show table 107)"
+fi
 sudo ip -n "$namespace" nexthop add id 10 via 192.0.2.2 dev dummy0
 sudo ip -n "$namespace" nexthop add id 11 via 192.0.3.2 dev dummy1
 # The observer must retain each exact group weight internally even though the

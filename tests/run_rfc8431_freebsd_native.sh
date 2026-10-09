@@ -6,8 +6,10 @@ set -eu
 binary=$(realpath "$1")
 plugin_test=${2:+$(realpath "$2")}
 plugin=${3:+$(realpath "$3")}
+load_balance_plugin_test=${4:+$(realpath "$4")}
 jail_name="dang_rib_$$"
 registry="/tmp/dang-rib-registry-$$.json"
+load_balance_registry="/tmp/dang-rib-lb-registry-$$.json"
 error_output="/tmp/dang-rib-error-$$.txt"
 epair=$(sudo ifconfig epair create)
 peer="${epair%a}b"
@@ -17,7 +19,7 @@ cleanup() {
   sudo jail -r "$jail_name" >/dev/null 2>&1 || true
   sudo ifconfig "$epair" destroy >/dev/null 2>&1 || true
   sudo ifconfig "$epair2" destroy >/dev/null 2>&1 || true
-  sudo rm -f "$registry" "$error_output"
+  sudo rm -f "$registry" "$load_balance_registry" "$error_output"
 }
 trap cleanup EXIT INT TERM
 
@@ -43,6 +45,26 @@ sudo jexec "$jail_name" route add -net 198.18.6.0/24 192.0.2.1 -weight 2
 sudo jexec "$jail_name" route add -net 198.18.6.0/24 192.0.3.1 -weight 3
 sudo jexec "$jail_name" "$binary" freebsd observe-weighted-multipath 0 \
   198.18.6.0/24 "$peer" "$peer2"
+sudo jexec "$jail_name" "$binary" freebsd install-load-balance 0 \
+  198.18.7.0/24 "$peer" 192.0.2.1 2 "$peer2" 192.0.3.1 3
+sudo jexec "$jail_name" "$binary" freebsd observe-weighted-multipath 0 \
+  198.18.7.0/24 "$peer" "$peer2"
+sudo jexec "$jail_name" "$binary" freebsd delete-load-balance 0 \
+  198.18.7.0/24 "$peer" 192.0.2.1 2 "$peer2" 192.0.3.1 3
+if sudo jexec "$jail_name" netstat -rn -f inet |
+    grep -F "198.18.7.0/24"; then
+  exit 1
+fi
+if [ -n "$load_balance_plugin_test" ] && [ -n "$plugin" ]; then
+  sudo jexec "$jail_name" env \
+    DANG_RIB_REGISTRY_FILE="$load_balance_registry" \
+    "$load_balance_plugin_test" "$plugin" \
+    0 198.18.8.0/24 "$peer" 192.0.2.1 "$peer2" 192.0.3.1
+  if sudo jexec "$jail_name" netstat -rn -f inet |
+      grep -F "198.18.8.0/24"; then
+    exit 1
+  fi
+fi
 if [ -n "$plugin_test" ] && [ -n "$plugin" ]; then
   sudo jexec "$jail_name" env DANG_RIB_REGISTRY_FILE="$registry" \
     "$plugin_test" "$plugin" \

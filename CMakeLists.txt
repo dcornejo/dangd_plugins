@@ -406,6 +406,15 @@ if(BUILD_TESTING)
     target_link_libraries(rib_plugin_native_test PRIVATE "${CMAKE_DL_LIBS}")
     target_compile_options(rib_plugin_native_test PRIVATE
       -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    add_executable(rib_plugin_load_balance_native_test
+      tests/rib_plugin_load_balance_native_test.cc)
+    target_compile_features(rib_plugin_load_balance_native_test PRIVATE cxx_std_20)
+    target_include_directories(rib_plugin_load_balance_native_test PRIVATE
+      "${DANGD_INCLUDE_DIR}")
+    target_link_libraries(rib_plugin_load_balance_native_test PRIVATE
+      "${CMAKE_DL_LIBS}")
+    target_compile_options(rib_plugin_load_balance_native_test PRIVATE
+      -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   endif()
 
   add_executable(kea_adapter_test
@@ -632,12 +641,14 @@ if(BUILD_TESTING)
       add_test(NAME rfc8431_linux_namespace_mutation
         COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_rfc8431_linux_native.sh"
         $<TARGET_FILE:rib_native_test> $<TARGET_FILE:rib_plugin_native_test>
-        $<TARGET_FILE:dangd_rib_plugin>)
+        $<TARGET_FILE:dangd_rib_plugin>
+        $<TARGET_FILE:rib_plugin_load_balance_native_test>)
   elseif(DANG_RIB_NATIVE_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
       add_test(NAME rfc8431_freebsd_vnet_mutation
         COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_rfc8431_freebsd_native.sh"
         $<TARGET_FILE:rib_native_test> $<TARGET_FILE:rib_plugin_native_test>
-        $<TARGET_FILE:dangd_rib_plugin>)
+        $<TARGET_FILE:dangd_rib_plugin>
+        $<TARGET_FILE:rib_plugin_load_balance_native_test>)
   endif()
 
   if(TARGET dangd_system_plugin)

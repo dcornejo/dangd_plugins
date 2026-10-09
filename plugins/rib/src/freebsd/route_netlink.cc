@@ -175,103 +175,154 @@ bool ApplyFreeBsdRouteChange(const Change& change, std::string* error) {
   std::string path;
   if (!ValidateFreeBsdChanges({change}, error, &path)) return false;
 
-  unsigned fib = 0;
-  const auto parsed =
-      std::from_chars(change.route.rib.data(),
-                      change.route.rib.data() + change.route.rib.size(), fib);
-  if (parsed.ec != std::errc{} ||
-      parsed.ptr != change.route.rib.data() + change.route.rib.size()) {
-    *error = "FreeBSD route has an invalid FIB number";
-    return false;
-  }
-  int family = AF_UNSPEC;
-  unsigned prefix = 0;
-  std::array<unsigned char, 16> destination{};
-  if (!ParseDestination(change.route, &family, &prefix, &destination, error))
-    return false;
-
-  FreeBsdRouteRequest request{};
-  request.header.nlmsg_len = NLMSG_LENGTH(sizeof(rtmsg));
-  request.header.nlmsg_type =
-      change.kind == ChangeKind::kDelete ? RTM_DELROUTE : RTM_NEWROUTE;
-  request.header.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-  if (change.kind == ChangeKind::kInstall)
-    request.header.nlmsg_flags |= NLM_F_CREATE | NLM_F_REPLACE;
-  else if (change.kind == ChangeKind::kAdd)
-    request.header.nlmsg_flags |= NLM_F_CREATE | NLM_F_EXCL;
-  request.route.rtm_family = static_cast<unsigned char>(family);
-  request.route.rtm_dst_len = static_cast<unsigned char>(prefix);
-  request.route.rtm_table = 0;  // FreeBSD requires RTA_TABLE for one FIB.
-  request.route.rtm_protocol =
-      change.kind != ChangeKind::kDelete ? RTPROT_STATIC : RTPROT_UNSPEC;
-  request.route.rtm_scope =
-      (change.route.gateway || change.route.special) ? RT_SCOPE_UNIVERSE
-                                                     : RT_SCOPE_LINK;
-  request.route.rtm_type =
-      !change.route.special
-          ? RTN_UNICAST
-          : *change.route.special == "discard" ? RTN_BLACKHOLE
-                                                : RTN_PROHIBIT;
-
-  const std::size_t address_size = family == AF_INET ? 4U : 16U;
-  if (!AddAttribute(&request, NL_RTA_DST, destination.data(), address_size,
-                    error))
-    return false;
-  const std::uint32_t table_attribute = fib;
-  if (!AddAttribute(&request, NL_RTA_TABLE, &table_attribute,
-                    sizeof(table_attribute), error))
-    return false;
-
-  // RTM_DELROUTE identifies a FreeBSD route by FIB, destination, and prefix.
-  // Adding nexthop attributes can make a deletion fail to match, so only
-  // installs include the optional gateway, interface, and preference.
-  if (change.kind != ChangeKind::kDelete) {
-    if (change.route.gateway) {
-      std::array<unsigned char, 16> gateway{};
-      if (inet_pton(family, change.route.gateway->c_str(), gateway.data()) !=
-          1) {
-        *error = "FreeBSD route gateway has an invalid address";
-        return false;
-      }
-      if (!AddAttribute(&request, NL_RTA_GATEWAY, gateway.data(), address_size,
-                        error))
-        return false;
-    }
-    if (change.route.special) {
-      // FreeBSD represents blackhole and reject routes as nexthops resolved
-      // through a loopback gateway. This also supplies the interface and
-      // source address required while the kernel finalizes the nexthop.
-      // This is a platform implementation detail: the configured RFC 8431
-      // nexthop remains a direct special nexthop and does not expose lo0.
-      std::array<unsigned char, 16> gateway{};
-      const char* loopback = family == AF_INET ? "127.0.0.1" : "::1";
-      if (inet_pton(family, loopback, gateway.data()) != 1) {
-        *error = "cannot encode the FreeBSD loopback gateway";
-        return false;
-      }
-      if (!AddAttribute(&request, NL_RTA_GATEWAY, gateway.data(), address_size,
-                        error))
-        return false;
-    } else if (change.route.interface) {
-      errno = 0;
-      const unsigned interface_index =
-          if_nametoindex(change.route.interface->c_str());
-      if (interface_index == 0U) {
-        *error = "FreeBSD route outgoing interface does not exist";
-        if (errno != 0) *error += ": " + std::string(std::strerror(errno));
-        return false;
-      }
-      const std::uint32_t interface_attribute = interface_index;
-      if (!AddAttribute(&request, NL_RTA_OIF, &interface_attribute,
-                        sizeof(interface_attribute), error))
-        return false;
-    }
-    const std::uint32_t preference = change.route.preference;
-    if (!AddAttribute(&request, NL_RTA_PRIORITY, &preference,
-                      sizeof(preference), error))
+  const auto apply_member = [&](ChangeKind kind,
+                                const WeightedNexthop* member,
+                                bool append, std::string* why) {
+    unsigned fib = 0;
+    const auto parsed = std::from_chars(
+        change.route.rib.data(),
+        change.route.rib.data() + change.route.rib.size(), fib);
+    if (parsed.ec != std::errc{} ||
+        parsed.ptr != change.route.rib.data() + change.route.rib.size()) {
+      *why = "FreeBSD route has an invalid FIB number";
       return false;
+    }
+    int family = AF_UNSPEC;
+    unsigned prefix = 0;
+    std::array<unsigned char, 16> destination{};
+    if (!ParseDestination(change.route, &family, &prefix, &destination, why))
+      return false;
+
+    const std::optional<std::string>& gateway =
+        member ? member->gateway : change.route.gateway;
+    const std::optional<std::string>& interface =
+        member ? member->interface : change.route.interface;
+    FreeBsdRouteRequest request{};
+    request.header.nlmsg_len = NLMSG_LENGTH(sizeof(rtmsg));
+    request.header.nlmsg_type =
+        kind == ChangeKind::kDelete ? RTM_DELROUTE : RTM_NEWROUTE;
+    request.header.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+    if (kind == ChangeKind::kInstall)
+      request.header.nlmsg_flags |=
+          NLM_F_CREATE | (append ? NLM_F_APPEND : NLM_F_REPLACE);
+    else if (kind == ChangeKind::kAdd)
+      request.header.nlmsg_flags |=
+          NLM_F_CREATE | (append ? NLM_F_APPEND : NLM_F_EXCL);
+    request.route.rtm_family = static_cast<unsigned char>(family);
+    request.route.rtm_dst_len = static_cast<unsigned char>(prefix);
+    request.route.rtm_table = 0;  // FreeBSD requires RTA_TABLE for one FIB.
+    request.route.rtm_protocol =
+        kind != ChangeKind::kDelete ? RTPROT_STATIC : RTPROT_UNSPEC;
+    request.route.rtm_scope =
+        (gateway || change.route.special) ? RT_SCOPE_UNIVERSE : RT_SCOPE_LINK;
+    request.route.rtm_type =
+        !change.route.special
+            ? RTN_UNICAST
+            : *change.route.special == "discard" ? RTN_BLACKHOLE
+                                                  : RTN_PROHIBIT;
+
+    const std::size_t address_size = family == AF_INET ? 4U : 16U;
+    if (!AddAttribute(&request, NL_RTA_DST, destination.data(), address_size,
+                      why))
+      return false;
+    const std::uint32_t table_attribute = fib;
+    if (!AddAttribute(&request, NL_RTA_TABLE, &table_attribute,
+                      sizeof(table_attribute), why))
+      return false;
+
+    // A base-route delete intentionally selects by FIB and destination. A
+    // load-balance delete must include one member's gateway/interface so the
+    // kernel removes that path without collapsing its siblings.
+    if (kind != ChangeKind::kDelete || member) {
+      if (gateway) {
+        std::array<unsigned char, 16> encoded{};
+        if (inet_pton(family, gateway->c_str(), encoded.data()) != 1) {
+          *why = "FreeBSD route gateway has an invalid address";
+          return false;
+        }
+        if (!AddAttribute(&request, NL_RTA_GATEWAY, encoded.data(),
+                          address_size, why))
+          return false;
+      }
+      if (change.route.special) {
+        // FreeBSD represents blackhole and reject routes through the matching
+        // loopback gateway. This native detail is not exposed in RFC 8431.
+        std::array<unsigned char, 16> encoded{};
+        const char* loopback = family == AF_INET ? "127.0.0.1" : "::1";
+        if (inet_pton(family, loopback, encoded.data()) != 1 ||
+            !AddAttribute(&request, NL_RTA_GATEWAY, encoded.data(),
+                          address_size, why)) {
+          if (why->empty()) *why = "cannot encode the FreeBSD loopback gateway";
+          return false;
+        }
+      } else if (interface) {
+        errno = 0;
+        const unsigned index = if_nametoindex(interface->c_str());
+        if (index == 0U) {
+          *why = "FreeBSD route outgoing interface does not exist";
+          if (errno != 0) *why += ": " + std::string(std::strerror(errno));
+          return false;
+        }
+        const std::uint32_t value = index;
+        if (!AddAttribute(&request, NL_RTA_OIF, &value, sizeof(value), why))
+          return false;
+      }
+      if (kind != ChangeKind::kDelete) {
+        const std::uint32_t preference = change.route.preference;
+        if (!AddAttribute(&request, NL_RTA_PRIORITY, &preference,
+                          sizeof(preference), why))
+          return false;
+        if (member) {
+          const std::uint32_t weight = member->weight;
+          if (!AddAttribute(&request, NL_RTA_WEIGHT, &weight, sizeof(weight),
+                            why))
+            return false;
+        }
+      }
+    }
+    return SendAcknowledgedRouteRequest(&request, why);
+  };
+
+  if (change.route.load_balance.empty())
+    return apply_member(change.kind, nullptr, false, error);
+
+  std::size_t completed = 0;
+  for (; completed < change.route.load_balance.size(); ++completed) {
+    const std::size_t index = change.kind == ChangeKind::kDelete
+                                  ? change.route.load_balance.size() - completed - 1U
+                                  : completed;
+    const bool append = change.kind != ChangeKind::kDelete && completed != 0U;
+    if (apply_member(change.kind, &change.route.load_balance[index], append,
+                     error))
+      continue;
+
+    // Keep one modeled route atomic even though FreeBSD mutates each ECMP path
+    // separately. Reverse every completed member before reporting failure.
+    const std::string primary = *error;
+    std::string rollback_error;
+    while (completed > 0U) {
+      --completed;
+      const std::size_t restored_index =
+          change.kind == ChangeKind::kDelete
+              ? change.route.load_balance.size() - completed - 1U
+              : completed;
+      const ChangeKind inverse = change.kind == ChangeKind::kDelete
+                                     ? ChangeKind::kInstall
+                                     : ChangeKind::kDelete;
+      const bool restore_append = inverse != ChangeKind::kDelete;
+      std::string member_error;
+      if (!apply_member(inverse, &change.route.load_balance[restored_index],
+                        restore_append, &member_error)) {
+        if (!rollback_error.empty()) rollback_error += "; ";
+        rollback_error += member_error;
+      }
+    }
+    *error = primary;
+    if (!rollback_error.empty())
+      *error += "; load-balance rollback failed: " + rollback_error;
+    return false;
   }
-  return SendAcknowledgedRouteRequest(&request, error);
+  return true;
 #endif
 }
 

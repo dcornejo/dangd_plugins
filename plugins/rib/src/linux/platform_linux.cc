@@ -6,6 +6,7 @@
 #include "plugins/rib/src/platform_command.h"
 #include "plugins/rib/src/route_observer.h"
 
+#include <algorithm>
 #include <charconv>
 
 #if defined(__linux__)
@@ -68,7 +69,10 @@ using LinuxNexthopObjects = std::map<std::uint32_t, LinuxNexthopObject>;
 struct LinuxRouteRequest {
   nlmsghdr header;
   rtmsg route;
-  std::array<std::byte, 512> attributes;
+  // A modeled load-balance route may carry many nested rtnexthop records.
+  // Keep one explicit stack bound large enough for the common case; the
+  // encoder rejects larger requests rather than truncating member state.
+  std::array<std::byte, 8192> attributes;
 };
 
 bool AddAttribute(LinuxRouteRequest* request, unsigned short type,
@@ -121,6 +125,57 @@ bool ParseDestination(const Route& route, int* family, unsigned* prefix,
     return false;
   }
   return true;
+}
+
+bool AddMultipath(LinuxRouteRequest* request, const Route& route, int family,
+                  std::string* error) {
+  std::array<std::byte, 8192> payload{};
+  std::size_t length = 0;
+  const std::size_t address_size = family == AF_INET ? 4U : 16U;
+  for (const WeightedNexthop& member : route.load_balance) {
+    const std::size_t start = NLMSG_ALIGN(length);
+    const std::size_t header_end = start + RTNH_ALIGN(sizeof(rtnexthop));
+    if (header_end > payload.size()) {
+      *error = "Linux multipath route exceeds its member bound";
+      return false;
+    }
+    auto* nexthop = reinterpret_cast<rtnexthop*>(payload.data() + start);
+    nexthop->rtnh_len = sizeof(rtnexthop);
+    nexthop->rtnh_hops = static_cast<unsigned char>(member.weight - 1U);
+    if (member.interface) {
+      errno = 0;
+      const unsigned index = if_nametoindex(member.interface->c_str());
+      if (index == 0U) {
+        *error = "Linux load-balance outgoing interface does not exist";
+        if (errno != 0) *error += ": " + std::string(std::strerror(errno));
+        return false;
+      }
+      nexthop->rtnh_ifindex = static_cast<int>(index);
+    }
+    std::size_t end = header_end;
+    if (member.gateway) {
+      std::array<unsigned char, 16> gateway{};
+      if (inet_pton(family, member.gateway->c_str(), gateway.data()) != 1) {
+        *error = "Linux load-balance gateway has an invalid address";
+        return false;
+      }
+      const std::size_t attribute_length = RTA_LENGTH(address_size);
+      end = header_end + RTA_ALIGN(attribute_length);
+      if (end > payload.size() ||
+          attribute_length > std::numeric_limits<unsigned short>::max()) {
+        *error = "Linux multipath route exceeds its gateway bound";
+        return false;
+      }
+      auto* attribute =
+          reinterpret_cast<rtattr*>(payload.data() + header_end);
+      attribute->rta_type = RTA_GATEWAY;
+      attribute->rta_len = static_cast<unsigned short>(attribute_length);
+      std::memcpy(RTA_DATA(attribute), gateway.data(), address_size);
+    }
+    nexthop->rtnh_len = static_cast<unsigned short>(end - start);
+    length = end;
+  }
+  return AddAttribute(request, RTA_MULTIPATH, payload.data(), length, error);
 }
 
 bool SendAcknowledgedRouteRequest(LinuxRouteRequest* request,
@@ -408,11 +463,27 @@ bool ExpandLinuxNexthopObject(std::uint32_t id, int route_family,
 
 bool SafeTableAndInterface(const Route& route, std::string* error,
                            std::string* path) {
-  if (!route.load_balance.empty()) {
-    *error = "Linux weighted load-balance mutation is not implemented yet";
-    *path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/"
-            "nexthop-lb";
+  if (!route.load_balance.empty() &&
+      (route.gateway || route.interface || route.nexthop_ref || route.special)) {
+    *error = "Linux load-balance route cannot include a base nexthop";
+    *path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop";
     return false;
+  }
+  for (const WeightedNexthop& member : route.load_balance) {
+    if ((!member.gateway && !member.interface) || member.weight < 1U ||
+        member.weight > 99U) {
+      *error = "Linux load-balance member is incomplete or has invalid weight";
+      *path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/"
+              "nexthop-lb/nexthop-list";
+      return false;
+    }
+    if (member.interface &&
+        (member.interface->empty() || member.interface->front() == '-')) {
+      *error = "unsafe load-balance outgoing interface name";
+      *path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/"
+              "nexthop-lb/nexthop-list/nexthop-member-id";
+      return false;
+    }
   }
   if (route.local_only) {
     *error = "Linux cannot safely map a configured RFC 8431 local-only route";
@@ -475,6 +546,15 @@ bool BuildLinuxCommands(const std::vector<Change>& changes,
       command.arguments.insert(command.arguments.end(), {"via", *change.route.gateway});
     if (change.route.interface)
       command.arguments.insert(command.arguments.end(), {"dev", *change.route.interface});
+    for (const WeightedNexthop& member : change.route.load_balance) {
+      command.arguments.push_back("nexthop");
+      if (member.gateway)
+        command.arguments.insert(command.arguments.end(), {"via", *member.gateway});
+      if (member.interface)
+        command.arguments.insert(command.arguments.end(), {"dev", *member.interface});
+      command.arguments.insert(command.arguments.end(),
+                               {"weight", std::to_string(member.weight)});
+    }
     if (change.kind != ChangeKind::kDelete)
       command.arguments.insert(command.arguments.end(),
                                {"metric", std::to_string(change.route.preference),
@@ -531,9 +611,13 @@ bool ApplyLinuxRouteChange(const Change& change, std::string* error) {
   request.route.rtm_dst_len = static_cast<unsigned char>(prefix);
   request.route.rtm_protocol =
       change.kind != ChangeKind::kDelete ? RTPROT_STATIC : RTPROT_UNSPEC;
-  request.route.rtm_scope =
-      (change.route.gateway || change.route.special) ? RT_SCOPE_UNIVERSE
-                                                     : RT_SCOPE_LINK;
+  const bool multipath_gateway = std::ranges::any_of(
+      change.route.load_balance,
+      [](const WeightedNexthop& member) { return member.gateway.has_value(); });
+  request.route.rtm_scope = (change.route.gateway || change.route.special ||
+                             multipath_gateway)
+                                ? RT_SCOPE_UNIVERSE
+                                : RT_SCOPE_LINK;
   request.route.rtm_type =
       !change.route.special
           ? RTN_UNICAST
@@ -551,7 +635,10 @@ bool ApplyLinuxRouteChange(const Change& change, std::string* error) {
   const std::size_t address_size = family == AF_INET ? 4U : 16U;
   if (!AddAttribute(&request, RTA_DST, destination.data(), address_size, error))
     return false;
-  if (change.route.gateway) {
+  if (change.kind != ChangeKind::kDelete &&
+      !change.route.load_balance.empty()) {
+    if (!AddMultipath(&request, change.route, family, error)) return false;
+  } else if (change.route.gateway) {
     std::array<unsigned char, 16> gateway{};
     if (inet_pton(family, change.route.gateway->c_str(), gateway.data()) != 1) {
       *error = "Linux route gateway has an invalid address";

@@ -84,11 +84,28 @@ bool ResolveInterfaceAddress(const std::string& interface,
 
 bool SafeFibAndInterface(const Route& route, std::string* error,
                          std::string* path) {
-  if (!route.load_balance.empty()) {
-    *error = "FreeBSD weighted load-balance mutation is not implemented yet";
-    *path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/"
-            "nexthop-lb";
+  if (!route.load_balance.empty() &&
+      (route.gateway || route.interface || route.nexthop_ref || route.special)) {
+    *error = "FreeBSD load-balance route cannot include a base nexthop";
+    *path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop";
     return false;
+  }
+  for (const WeightedNexthop& member : route.load_balance) {
+    if ((!member.gateway && !member.interface) || member.weight < 1U ||
+        member.weight > 99U) {
+      *error =
+          "FreeBSD load-balance member is incomplete or has invalid weight";
+      *path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/"
+              "nexthop-lb/nexthop-list";
+      return false;
+    }
+    if (member.interface &&
+        (member.interface->empty() || member.interface->front() == '-')) {
+      *error = "unsafe load-balance outgoing interface name";
+      *path = "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/"
+              "nexthop-lb/nexthop-list/nexthop-member-id";
+      return false;
+    }
   }
   if (route.local_only) {
     *error = "FreeBSD cannot safely map a configured RFC 8431 local-only route";
@@ -135,6 +152,15 @@ bool BuildFreeBsdCommands(const std::vector<Change>& changes,
   commands->clear();
   for (const Change& change : changes) {
     if (!SafeFibAndInterface(change.route, error, error_path)) return false;
+    if (!change.route.load_balance.empty()) {
+      *error = "FreeBSD route(8) test adapter cannot express one atomic "
+               "load-balance change";
+      *error_path =
+          "/ietf-i2rs-rib:routing-instance/rib-list/route-list/nexthop/"
+          "nexthop-lb";
+      commands->clear();
+      return false;
+    }
     NativeCommand command;
     command.arguments = {"route", "-n",
                          change.kind == ChangeKind::kDelete ? "delete" : "add",

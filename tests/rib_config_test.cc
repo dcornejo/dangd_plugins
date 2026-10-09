@@ -236,13 +236,20 @@ TEST(RibConfigTest, ParsesAndCanonicalizesWeightedReusableNexthops) {
             "install ipv4 route 192.0.2.0/24 in RIB 100 load-balance 2 "
             "members preference 10");
 
-  EXPECT_FALSE(ValidateLinuxChanges(
+  EXPECT_TRUE(ValidateLinuxChanges(
       {{ChangeKind::kInstall, route}}, &error, &path));
-  EXPECT_NE(error.find("not implemented yet"), std::string::npos);
+  EXPECT_TRUE(ValidateFreeBsdChanges(
+      {{ChangeKind::kInstall, route}}, &error, &path));
+  std::vector<NativeCommand> commands;
+  ASSERT_TRUE(BuildLinuxCommands({{ChangeKind::kInstall, route}}, &commands,
+                                 &error, &path));
+  ASSERT_EQ(commands.size(), 1U);
+  EXPECT_NE(std::ranges::find(commands[0].arguments, "nexthop"),
+            commands[0].arguments.end());
+  EXPECT_FALSE(BuildFreeBsdCommands({{ChangeKind::kInstall, route}},
+                                    &commands, &error, &path));
+  EXPECT_NE(error.find("test adapter"), std::string::npos);
   EXPECT_NE(path.find("nexthop-lb"), std::string::npos);
-  EXPECT_FALSE(ValidateFreeBsdChanges(
-      {{ChangeKind::kInstall, route}}, &error, &path));
-  EXPECT_NE(error.find("not implemented yet"), std::string::npos);
 }
 
 TEST(RibConfigTest, RejectsInvalidOrUnresolvableLoadBalanceMembers) {
@@ -278,6 +285,28 @@ TEST(RibConfigTest, RejectsInvalidOrUnresolvableLoadBalanceMembers) {
   EXPECT_FALSE(ParseConfig(duplicate.c_str(), &config, &error, &path,
                            resolver));
   EXPECT_NE(error.find("unique registered"), std::string::npos);
+
+  ASSERT_TRUE(ParseConfig(kLoadBalance, &config, &error, &path, resolver));
+  ASSERT_EQ(config.routes.size(), 1U);
+  Route invalid = config.routes.front();
+  invalid.load_balance.front().weight = 0;
+  EXPECT_FALSE(ValidateLinuxChanges({{ChangeKind::kInstall, invalid}}, &error,
+                                    &path));
+  EXPECT_NE(error.find("invalid weight"), std::string::npos);
+  EXPECT_NE(path.find("nexthop-lb"), std::string::npos);
+  EXPECT_FALSE(ValidateFreeBsdChanges({{ChangeKind::kInstall, invalid}},
+                                      &error, &path));
+  EXPECT_NE(error.find("invalid weight"), std::string::npos);
+  EXPECT_NE(path.find("nexthop-lb"), std::string::npos);
+
+  invalid = config.routes.front();
+  invalid.gateway = "198.51.100.254";
+  EXPECT_FALSE(ValidateLinuxChanges({{ChangeKind::kInstall, invalid}}, &error,
+                                    &path));
+  EXPECT_NE(error.find("cannot include a base nexthop"), std::string::npos);
+  EXPECT_FALSE(ValidateFreeBsdChanges({{ChangeKind::kInstall, invalid}},
+                                      &error, &path));
+  EXPECT_NE(error.find("cannot include a base nexthop"), std::string::npos);
 
   EXPECT_FALSE(ParseConfig(kLoadBalance, &config, &error, &path, {}));
   EXPECT_NE(error.find("reusable nexthop registry"), std::string::npos);

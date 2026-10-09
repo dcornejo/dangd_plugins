@@ -9,15 +9,16 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
-- Added the portable RFC 8431 weighted-nexthop foundation without advertising
-  the optional `nexthop-load-balance` feature. Configuration parsing now
-  resolves, validates, and canonicalizes every `nexthop-lb` reusable-nexthop
-  member and its schema-defined 1-through-99 weight, while the registry tracks
-  all member lifetimes for one datastore route. A feature-enabled `yanglint`
-  fixture protects the exact model shape, the plugin contract protects the
-  still-empty advertised feature set, and Linux and FreeBSD validation fail at
-  the attributed `nexthop-lb` path until native mutation and rollback are
-  implemented.
+- Added reversible native RFC 8431 weighted-nexthop mutation without yet
+  advertising the optional `nexthop-load-balance` feature. Linux encodes one
+  bounded `RTA_MULTIPATH` request with the exact modeled 1-through-99 weights;
+  FreeBSD sends acknowledged per-path route-netlink requests and compensates
+  completed members if a later member fails. Both backends validate resolved
+  gateways and interfaces before mutation. Isolated namespace and VNET tests
+  now exercise direct weighted install/readback/delete plus a loadable-plugin
+  transaction from reusable-nexthop RPC allocation through apply,
+  operational observation, and rollback. The feature remains unadvertised
+  until weighted operational XML preserves the modeled structure.
 
 - Preserved exact native RFC 8431 ECMP path weights in the route-observation
   contract without prematurely advertising the optional load-balance feature.
@@ -25,9 +26,9 @@ All notable changes to the external dangd plugin collection are recorded here.
   nexthop-group weights, while FreeBSD reads the distinct `rmx_weight` field.
   Weight-only changes reach the generic route-change tracker without changing
   route identity. Isolated native tests require `{1,1}` and `{2,3}` readback on
-  Linux and `{2,3}` readback from a two-interface FreeBSD VNET. XML exposure,
-  writable load-balanced routes, and exact rollback remain explicit follow-on
-  work, so the YANG feature is still unadvertised.
+  Linux and `{2,3}` readback from a two-interface FreeBSD VNET. Weighted
+  operational XML remains explicit follow-on work, so the YANG feature is
+  still unadvertised.
 
 - Corrected FreeBSD RFC 8431 route-preference observation. The routing sysctl
   exposes path weight and route metric separately; the provider now reads
