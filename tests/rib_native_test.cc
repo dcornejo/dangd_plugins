@@ -124,6 +124,28 @@ int main(int argc, char** argv) {
       platform_name == "linux" ? dang::rib::NativePlatform::kLinux
                                : dang::rib::NativePlatform::kFreeBsd,
       {change});
+  if (result.ok &&
+      (operation == "install" || operation == "install-special")) {
+    std::vector<dang::rib::ObservedRoute> routes;
+    std::string observation_error;
+    const bool observed = platform_name == "linux"
+        ? dang::rib::ObserveLinuxRoutes(&routes, &observation_error)
+        : dang::rib::ObserveFreeBsdRoutesForFib(
+              static_cast<std::uint32_t>(std::stoul(argv[3])), &routes,
+              &observation_error);
+    if (!observed) {
+      std::cerr << observation_error << '\n';
+      return 1;
+    }
+    for (const auto& candidate : routes)
+      if (candidate.route.rib == route.rib &&
+          candidate.route.destination == route.destination &&
+          candidate.route.preference == route.preference)
+        return 0;
+    std::cerr << "installed route preference did not round-trip: expected "
+              << route.preference << '\n';
+    return 1;
+  }
   if (result.ok) return 0;
   std::cerr << result.error << " (" << result.error_path << ")\n";
   for (const auto& failure : result.rollback_failures)

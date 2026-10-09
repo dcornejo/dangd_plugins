@@ -249,7 +249,14 @@ bool ObserveFreeBsdRoutesForFib(std::uint32_t fib,
     route.rib = std::to_string(fib);
     route.address_family = ipv4 ? "ipv4" : "ipv6";
     route.destination = std::string(text) + "/" + std::to_string(prefix);
-    route.preference = static_cast<std::uint32_t>(message->rtm_rmx.rmx_weight);
+    // FreeBSD keeps the route metric and ECMP path weight as distinct native
+    // values. NL_RTA_PRIORITY round-trips through rmx_metric; rmx_weight must
+    // not be exposed as RFC 8431 route-preference.
+    if (message->rtm_rmx.rmx_metric >
+        std::numeric_limits<std::uint32_t>::max())
+      continue;
+    route.preference =
+        static_cast<std::uint32_t>(message->rtm_rmx.rmx_metric);
 #if defined(RTF_LOCAL)
     // RTF_LOCAL is set for destinations owned by the host.  Do not infer this
     // from RTF_HOST: a host route may still point at a remote peer.

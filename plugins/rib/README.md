@@ -126,10 +126,12 @@ order. Linux state is read through rtnetlink and FreeBSD state through
 `NET_RT_DUMP`; command output is never parsed. Installed observations are
 `active`; an explicitly
 uninstalled observation is `inactive`, so contradictory status pairs are never
-emitted. Kernel routes receive deterministic synthetic `route-index`
-values because neither native API exposes the model's list key. Unit tests cover
-successful execution, apply failure, complete rollback, and incomplete
-rollback reporting.
+emitted. Linux `RTA_PRIORITY` and FreeBSD `rmx_metric` round-trip the RFC 8431
+route preference; FreeBSD `rmx_weight` is a separate ECMP path weight and is
+not conflated with that attribute. Kernel routes receive deterministic
+synthetic `route-index` values because neither native API exposes the model's
+list key. Unit tests cover successful execution, apply failure, complete
+rollback, and incomplete rollback reporting.
 
 The current portable projection permits one modeled route for each RIB,
 address family, and destination prefix. Multiple route indexes that collapse
@@ -147,8 +149,9 @@ disposable VNET jail and epair, assigns only documentation-prefix addresses,
 initializes standard loopback addresses, and destroys both afterward. Each
 interaction installs ordinary and direct special routes, verifies
 it in the plugin's operational XML and through the native kernel route
-inventory, verifies that a repeated `route-add` cannot replace it, deletes it,
-and verifies absence. No host LAN interface or host
+inventory, requires the configured route preference to round-trip, verifies
+that a repeated `route-add` cannot replace it, deletes it, and verifies
+absence. No host LAN interface or host
 default route is used. The Linux workflow also creates a two-interface ECMP
 route in another private table and requires both paths in operational XML. A
 second weighted ECMP route references a persistent Linux nexthop group; both

@@ -9,6 +9,13 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Corrected FreeBSD RFC 8431 route-preference observation. The routing sysctl
+  exposes path weight and route metric separately; the provider now reads
+  `rmx_metric`, matching the `NL_RTA_PRIORITY` value it writes, instead of
+  misreporting `rmx_weight`. The isolated Linux and FreeBSD native lifecycle
+  tests now require preference 10 to round-trip after every ordinary and
+  special route installation.
+
 - Preserved the RFC 8431 reason for native nexthop resolution transitions.
   Linux dead multipath members now publish `unresolved-nexthop` in operational
   route status. A later installed-state transition emits `resolved-nexthop` or
