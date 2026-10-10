@@ -390,8 +390,9 @@ int Operational(void* raw_context, DangOperationalDataV2* out, DangPluginErrorV1
   const bool ok = Observer(owner)(&routes, &why);
   if (!ok) return Fail(error, "cannot read host RIB: " + why,
                        "/ietf-i2rs-rib:routing-instance/rib-list");
+  const OperationalRegistryState state = owner->nexthops.OperationalState();
   operational_xml = SerializeOperationalRoutes(
-      routes, owner->nexthops.ResolutionState());
+      routes, state.registry, state.configuration_routes);
   *out = {operational_xml.c_str(), 0}; return 1;
 }
 int Reconcile(void* raw_context, void* raw_prepared, const char* current_xml,

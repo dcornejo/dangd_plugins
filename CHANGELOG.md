@@ -9,6 +9,16 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Preserved modeled RFC 8431 identities for ordinary native route readback.
+  The RIB plugin now snapshots dangd's reconciled applied routes and restores
+  a uniquely matching configured `route-index`; unmatched external routes keep
+  deterministic synthetic indexes. Resolved reusable routes additionally
+  publish their `nexthop-id`, sharing policy, and expanded native definition.
+  The snapshot is transient, remains subordinate to dangd's authoritative
+  datastore, and uses only the generic applied-configuration reconciliation
+  contract. Unit and schema fixtures cover both direct and reusable routes,
+  while the isolated loadable-plugin lifecycle requires the modeled index.
+
 - Completed the RFC 8431 weighted-nexthop round trip and now advertise the
   optional `nexthop-load-balance` feature. Native paths for one destination
   are projected as one schema-valid `nexthop-lb` route with exact weights;

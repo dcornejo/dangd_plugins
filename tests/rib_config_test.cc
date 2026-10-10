@@ -721,6 +721,59 @@ TEST(RibConfigTest, SerializesNativeSpecialNexthopIdentity) {
   EXPECT_EQ(xml.find("<outgoing-interface>"), std::string::npos);
 }
 
+TEST(RibConfigTest, RestoresAppliedRouteIndexAfterNativeReadback) {
+  ObservedRoute observed;
+  observed.route = {.routing_instance = "default",
+                    .rib = "ipv4-100",
+                    .address_family = "ipv4",
+                    .index = 999,
+                    .destination = "198.18.4.0/24",
+                    .gateway = "192.0.2.1",
+                    .interface = "dummy0",
+                    .nexthop_ref = std::nullopt,
+                    .preference = 10,
+                    .local_only = false,
+                    .special = std::nullopt};
+  Route configured = observed.route;
+  configured.index = 44;
+
+  const std::string xml =
+      SerializeOperationalRoutes({observed}, {}, {configured});
+  EXPECT_NE(xml.find("<route-index>44</route-index>"), std::string::npos);
+  EXPECT_EQ(xml.find("<route-index>999</route-index>"), std::string::npos);
+}
+
+TEST(RibConfigTest, PublishesAppliedReusableNexthopDefinition) {
+  ObservedRoute observed;
+  observed.route = {.routing_instance = "default",
+                    .rib = "ipv4-100",
+                    .address_family = "ipv4",
+                    .index = 999,
+                    .destination = "198.18.4.0/24",
+                    .gateway = "192.0.2.1",
+                    .interface = "dummy0",
+                    .nexthop_ref = std::nullopt,
+                    .preference = 10,
+                    .local_only = false,
+                    .special = std::nullopt};
+  Route configured = observed.route;
+  configured.index = 55;
+  configured.nexthop_ref = 7;
+  const PersistentRegistry registry{
+      .next_id = 8,
+      .ribs = {{"ipv4-100", "ipv4"}},
+      .nexthops = {{"ipv4-100", 7, "192.0.2.1", "dummy0", "ipv4", true, {}}},
+      .bindings = {{"ipv4-100", "ipv4", "198.18.4.0/24", 55, 7}}};
+
+  const std::string xml =
+      SerializeOperationalRoutes({observed}, registry, {configured});
+  EXPECT_NE(xml.find("<route-index>55</route-index>"), std::string::npos);
+  EXPECT_NE(xml.find("<nexthop-id>7</nexthop-id>"), std::string::npos);
+  EXPECT_NE(xml.find("<sharing-flag>true</sharing-flag>"), std::string::npos);
+  EXPECT_NE(xml.find("<egress-interface-ipv4-address>"), std::string::npos);
+  EXPECT_EQ(xml.find("<nexthop-ref>"), std::string::npos);
+}
+
 TEST(RibConfigTest, SerializesManagedWeightedPathsAsOneDurableRoute) {
   ObservedRoute first;
   first.route = {.routing_instance = "default",
@@ -1063,16 +1116,21 @@ TEST(RibConfigTest, IncludesDatastoreRoutesInResolutionState) {
               .destination = "198.51.100.0/24",
               .nexthop_ref = 1};
   ASSERT_TRUE(registry.ReplaceConfigurationRouteBindings({route}));
-  const PersistentRegistry state = registry.ResolutionState();
+  const OperationalRegistryState operational = registry.OperationalState();
+  const PersistentRegistry& state = operational.registry;
   ASSERT_EQ(state.bindings.size(), 1U);
   EXPECT_EQ(state.bindings[0].nexthop_id, 1U);
+  EXPECT_EQ(operational.configuration_routes, std::vector<Route>({route}));
   const PersistentRegistry checkpoint = registry.PersistentState();
   std::string restore_error;
   ASSERT_TRUE(registry.ReplacePersistentState(checkpoint, &restore_error))
       << restore_error;
   ASSERT_EQ(registry.ResolutionState().bindings.size(), 1U);
+  EXPECT_EQ(registry.OperationalState().configuration_routes,
+            std::vector<Route>({route}));
   ASSERT_TRUE(registry.ReplaceConfigurationRouteBindings({}));
   EXPECT_TRUE(registry.ResolutionState().bindings.empty());
+  EXPECT_TRUE(registry.OperationalState().configuration_routes.empty());
 }
 
 TEST(RibConfigTest, SerializesRegisteredNexthopsWithAndWithoutRoutes) {

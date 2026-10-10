@@ -153,10 +153,17 @@ order. Linux state is read through rtnetlink and FreeBSD state through
 uninstalled observation is `inactive`, so contradictory status pairs are never
 emitted. Linux `RTA_PRIORITY` and FreeBSD `rmx_metric` round-trip the RFC 8431
 route preference; FreeBSD `rmx_weight` is a separate ECMP path weight and is
-not conflated with that attribute. Kernel routes receive deterministic
-synthetic `route-index` values because neither native API exposes the model's
-list key. Unit tests cover successful execution, apply failure, complete
-rollback, and incomplete rollback reporting.
+not conflated with that attribute. Because neither native API exposes the
+model's list key, the plugin correlates an exact native route with dangd's
+reconciled applied route and restores its configured `route-index`. Imperative
+routes using a reusable nexthop recover the same identity from their registry
+binding. Resolved reusable routes publish the modeled `nexthop-id`, its
+`sharing-flag`, and the expanded native nexthop definition. Routes not managed
+through either source receive deterministic synthetic `route-index` values.
+The applied-route snapshot is transient and is rebuilt from dangd's
+authoritative configuration through the generic reconciliation contract; it
+is not a second configuration database. Unit tests cover successful execution,
+apply failure, complete rollback, and incomplete rollback reporting.
 
 The current portable projection permits one modeled route for each RIB,
 address family, and destination prefix. Multiple route indexes that collapse

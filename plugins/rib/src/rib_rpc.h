@@ -11,12 +11,19 @@
 #include <optional>
 #include <string>
 #include <tuple>
+#include <vector>
 
 #include "plugins/rib/src/platform_executor.h"
 #include "plugins/rib/src/rib_persistence.h"
 #include "plugins/rib/src/route_observer.h"
 
 namespace dang::rib {
+
+/** One atomic view used to correlate native routes with applied identities. */
+struct OperationalRegistryState {
+  PersistentRegistry registry;
+  std::vector<Route> configuration_routes;
+};
 
 /** Process-local, thread-safe store for RFC 8431 reusable nexthops. */
 class NexthopRegistry {
@@ -62,6 +69,8 @@ class NexthopRegistry {
   [[nodiscard]] PersistentRegistry PersistentState();
   /** Returns durable state plus transient datastore route bindings. */
   [[nodiscard]] PersistentRegistry ResolutionState();
+  /** Atomically adds applied datastore route identities to resolution state. */
+  [[nodiscard]] OperationalRegistryState OperationalState();
   /** Replaces an empty process registry with validated durable state. */
   [[nodiscard]] bool RestorePersistentState(const PersistentRegistry& state,
                                             std::string* error);
@@ -88,6 +97,8 @@ class NexthopRegistry {
       std::tuple<std::string, std::string, std::string, std::uint64_t>,
       std::uint32_t>
       configuration_route_references_;
+  /** Applied datastore routes retained only until the next reconciliation. */
+  std::vector<Route> configuration_routes_;
   std::uint32_t next_id_ = 1;
 };
 

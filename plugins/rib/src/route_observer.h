@@ -89,10 +89,14 @@ class NexthopResolutionTracker {
  * successful rib-add remains visible even before its first route or nexthop.
  * Representable native ECMP paths are projected as one weighted route. Managed
  * paths reuse durable member IDs; external paths receive snapshot-local IDs.
+ * Applied configuration routes restore their modeled route indexes after
+ * otherwise identity-free native readback. Resolved reusable nexthops publish
+ * their definition ID and sharing policy with the expanded native path.
  */
 [[nodiscard]] std::string SerializeOperationalRoutes(
     const std::vector<ObservedRoute>& routes,
-    const PersistentRegistry& registry = {});
+    const PersistentRegistry& registry = {},
+    const std::vector<Route>& configuration_routes = {});
 
 /** Serializes one RFC 8431 route-change event without an RFC 5277 wrapper. */
 [[nodiscard]] std::string SerializeRouteChange(const Route& route,

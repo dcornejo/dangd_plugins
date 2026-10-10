@@ -357,6 +357,7 @@ bool NexthopRegistry::ReplaceConfigurationRouteBindings(
     }
   }
   configuration_route_references_ = std::move(replacement);
+  configuration_routes_ = routes;
   return true;
 }
 
@@ -397,8 +398,13 @@ PersistentRegistry NexthopRegistry::PersistentState() {
 }
 
 PersistentRegistry NexthopRegistry::ResolutionState() {
+  return OperationalState().registry;
+}
+
+OperationalRegistryState NexthopRegistry::OperationalState() {
   std::lock_guard lock(mutex_);
-  PersistentRegistry state;
+  OperationalRegistryState snapshot;
+  PersistentRegistry& state = snapshot.registry;
   state.next_id = next_id_;
   for (const auto& [name, family] : rib_families_)
     state.ribs.push_back({name, family});
@@ -414,7 +420,8 @@ PersistentRegistry NexthopRegistry::ResolutionState() {
     state.bindings.push_back(
         {std::get<0>(route), std::get<1>(route), std::get<2>(route),
          std::get<3>(route), id});
-  return state;
+  snapshot.configuration_routes = configuration_routes_;
+  return snapshot;
 }
 
 bool NexthopRegistry::RestorePersistentState(const PersistentRegistry& state,
@@ -473,7 +480,7 @@ bool NexthopRegistry::RestorePersistentState(const PersistentRegistry& state,
   std::lock_guard lock(mutex_);
   if (!entries_.empty() || !rib_families_.empty() || !references_.empty() ||
       !configuration_references_.empty() || !route_references_.empty() ||
-      !configuration_route_references_.empty()) {
+      !configuration_route_references_.empty() || !configuration_routes_.empty()) {
     *error = "persistent state can only restore an empty registry";
     return false;
   }

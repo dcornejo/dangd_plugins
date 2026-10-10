@@ -6,6 +6,7 @@
 #include "plugins/rib/src/route_observer.h"
 
 #include <algorithm>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <set>
@@ -99,10 +100,60 @@ bool SameBaseNexthop(const Route& route, const PersistentNexthop& nexthop) {
          route.special == nexthop.special;
 }
 
+/** Restores a modeled list key and reusable identity after native readback. */
+void RestoreModeledIdentity(ObservedRoute* observed,
+                            const PersistentRegistry& registry,
+                            const std::vector<Route>& configured_routes) {
+  if (!observed || !observed->route.load_balance.empty()) return;
+  Route& route = observed->route;
+  const auto same_route = [&](const Route& candidate) {
+    return candidate.load_balance.empty() &&
+           candidate.routing_instance == route.routing_instance &&
+           candidate.rib == route.rib &&
+           candidate.address_family == route.address_family &&
+           candidate.destination == route.destination &&
+           candidate.preference == route.preference &&
+           candidate.local_only == route.local_only &&
+           candidate.gateway == route.gateway &&
+           candidate.interface == route.interface &&
+           candidate.special == route.special;
+  };
+  const auto configured = std::ranges::find_if(configured_routes, same_route);
+  if (configured != configured_routes.end() &&
+      std::ranges::find_if(std::next(configured), configured_routes.end(),
+                           same_route) == configured_routes.end()) {
+    route.index = configured->index;
+    route.nexthop_ref = configured->nexthop_ref;
+    return;
+  }
+
+  const PersistentRouteBinding* matched = nullptr;
+  for (const PersistentRouteBinding& binding : registry.bindings) {
+    if (binding.rib != route.rib ||
+        binding.address_family != route.address_family ||
+        binding.destination != route.destination)
+      continue;
+    const auto nexthop = std::ranges::find_if(
+        registry.nexthops, [&](const PersistentNexthop& value) {
+          return value.rib == binding.rib && value.id == binding.nexthop_id;
+        });
+    if (nexthop == registry.nexthops.end() ||
+        !SameBaseNexthop(route, *nexthop))
+      continue;
+    if (matched) return;
+    matched = &binding;
+  }
+  if (matched) {
+    route.index = matched->route_index;
+    route.nexthop_ref = matched->nexthop_id;
+  }
+}
+
 /** Collapses representable native ECMP paths into one modeled weighted route. */
 OperationalProjection ProjectWeightedRoutes(
     const std::vector<ObservedRoute>& input,
-    const PersistentRegistry& registry) {
+    const PersistentRegistry& registry,
+    const std::vector<Route>& configured_routes) {
   using GroupKey =
       std::tuple<std::string, std::string, std::string, std::string,
                  std::uint32_t, bool>;
@@ -113,7 +164,8 @@ OperationalProjection ProjectWeightedRoutes(
     next_synthetic =
         std::max(next_synthetic, static_cast<std::uint64_t>(nexthop.id) + 1U);
 
-  for (const ObservedRoute& observed : input) {
+  for (ObservedRoute observed : input) {
+    RestoreModeledIdentity(&observed, registry, configured_routes);
     const Route& route = observed.route;
     if (!observed.weight || *observed.weight < 1U ||
         *observed.weight > 99U || route.special ||
@@ -316,8 +368,10 @@ std::vector<NexthopResolutionChange> NexthopResolutionTracker::Observe(
 
 std::string SerializeOperationalRoutes(
     const std::vector<ObservedRoute>& input,
-    const PersistentRegistry& registry) {
-  OperationalProjection projection = ProjectWeightedRoutes(input, registry);
+    const PersistentRegistry& registry,
+    const std::vector<Route>& configuration_routes) {
+  OperationalProjection projection =
+      ProjectWeightedRoutes(input, registry, configuration_routes);
   std::vector<ObservedRoute>& routes = projection.routes;
   std::ranges::sort(routes, {}, [](const ObservedRoute& value) {
     return std::tie(value.route.routing_instance, value.route.rib,
@@ -389,6 +443,18 @@ std::string SerializeOperationalRoutes(
         << Escape(route.destination)
         << (ipv4 ? "</dest-ipv4-prefix></ipv4>" : "</dest-ipv6-prefix></ipv6>")
         << "</match><nexthop>";
+    if (route.nexthop_ref) {
+      const auto definition = std::ranges::find_if(
+          registry.nexthops, [&](const PersistentNexthop& candidate) {
+            return candidate.rib == route.rib &&
+                   candidate.id == *route.nexthop_ref;
+          });
+      if (definition != registry.nexthops.end())
+        xml << "<nexthop-id>" << definition->id
+            << "</nexthop-id><sharing-flag>"
+            << (definition->sharable ? "true" : "false")
+            << "</sharing-flag>";
+    }
     if (route.load_balance.empty()) {
       xml << "<nexthop-base>";
       EmitBaseNexthop(xml, ipv4, route.gateway, route.interface, route.special);

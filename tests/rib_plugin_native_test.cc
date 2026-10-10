@@ -129,11 +129,22 @@ int main(int argc, char** argv) {
                                                &action, &error) &&
       v7.v6.v5.v4.apply_hardware_action(base.context, prepared,
                                           action.action_id, &error);
+  DangAppliedConfigurationV1 applied{};
+  ok = ok && v7.v6.reconcile_applied_configuration(
+      base.context, prepared, candidate.c_str(), &applied, &error) &&
+      applied.applied_xml &&
+      std::string_view(applied.applied_xml) == candidate;
   DangOperationalDataV2 state{};
   ok = ok && v7.v6.v5.get_operational_data_v2(base.context, &state, &error) &&
-      state.data_xml && std::string_view(state.data_xml).find(prefix) != std::string_view::npos &&
+      state.data_xml &&
+      std::string_view(state.data_xml).find(prefix) != std::string_view::npos &&
+      std::string_view(state.data_xml).find("<route-index>1</route-index>") !=
+          std::string_view::npos &&
       v7.v6.v5.v4.rollback_hardware_action(base.context, prepared,
                                              action.action_id, &error);
+  applied = {};
+  ok = ok && v7.v6.reconcile_applied_configuration(
+      base.context, nullptr, before, &applied, &error);
   std::ostringstream rpc;
   rpc << "<route-add xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\">"
          "<return-failure-detail>true</return-failure-detail><rib-name>"
