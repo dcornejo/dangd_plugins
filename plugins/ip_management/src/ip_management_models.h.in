@@ -16,6 +16,10 @@ inline constexpr std::string_view kIetfIpYang = R"DANG_MODEL(
 @DANGD_IETF_IP_YANG@
 )DANG_MODEL";
 
+inline constexpr std::string_view kIanaIfTypeYang = R"DANG_MODEL(
+@DANGD_IANA_IF_TYPE_YANG@
+)DANG_MODEL";
+
 }  // namespace dangd::ip_management
 
 #endif  // DANGD_PLUGINS_IP_MANAGEMENT_MODELS_H_

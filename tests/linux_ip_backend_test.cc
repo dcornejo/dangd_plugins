@@ -133,12 +133,29 @@ TEST(LinuxIpBackendTest, PublishesLiveLinkAndAddressState) {
   std::string state;
   std::string error;
   ASSERT_TRUE(backend->OperationalXml(configured, &state, &error)) << error;
+  EXPECT_NE(state.find("<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">"),
+            std::string::npos) << state;
+  EXPECT_NE(state.find(
+                "<interfaces xmlns=\"urn:ietf:params:xml:ns:yang:ietf-interfaces\""),
+            std::string::npos) << state;
+  EXPECT_NE(state.find(
+                "<interfaces-state xmlns=\"urn:ietf:params:xml:ns:yang:ietf-interfaces\""),
+            std::string::npos) << state;
   EXPECT_NE(state.find("<name>lo</name>"), std::string::npos) << state;
   EXPECT_NE(state.find("<admin-status>up</admin-status>"), std::string::npos)
       << state;
   EXPECT_NE(state.find("<oper-status>up</oper-status>"), std::string::npos)
       << state;
   EXPECT_NE(state.find("<ip>127.0.0.1</ip>"), std::string::npos) << state;
+  EXPECT_NE(state.find(
+                "<ipv4 xmlns=\"urn:ietf:params:xml:ns:yang:ietf-ip\">"),
+            std::string::npos) << state;
+  const std::size_t ipv4_start = state.find("<ipv4 ");
+  const std::size_t ipv4_end = state.find("</ipv4>", ipv4_start);
+  ASSERT_NE(ipv4_start, std::string::npos) << state;
+  ASSERT_NE(ipv4_end, std::string::npos) << state;
+  EXPECT_EQ(state.substr(ipv4_start, ipv4_end - ipv4_start).find("<status>"),
+            std::string::npos) << state;
   EXPECT_NE(state.find("<prefix-length>8</prefix-length>"), std::string::npos)
       << state;
   EXPECT_NE(state.find("<status>preferred</status>"), std::string::npos)

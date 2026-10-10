@@ -141,6 +141,14 @@ TEST(FreeBsdIpBackendTest, AppliesPublishesRepairsAndRollsBackStaticNeighbor) {
   ASSERT_TRUE(backend->Reconcile("<config/>", configured, &error)) << error;
   std::string state;
   ASSERT_TRUE(backend->OperationalXml(configured, &state, &error)) << error;
+  EXPECT_NE(state.find("<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">"),
+            std::string::npos) << state;
+  EXPECT_NE(state.find(
+                "<interfaces xmlns=\"urn:ietf:params:xml:ns:yang:ietf-interfaces\""),
+            std::string::npos) << state;
+  EXPECT_NE(state.find(
+                "<interfaces-state xmlns=\"urn:ietf:params:xml:ns:yang:ietf-interfaces\""),
+            std::string::npos) << state;
   EXPECT_NE(state.find("<name>" + std::string(interface) + "</name>"),
             std::string::npos) << state;
   EXPECT_NE(state.find("<admin-status>up</admin-status>"), std::string::npos)
@@ -161,6 +169,18 @@ TEST(FreeBsdIpBackendTest, AppliesPublishesRepairsAndRollsBackStaticNeighbor) {
                        "</mtu>"),
             std::string::npos) << state;
   EXPECT_NE(state.find("<ip>198.51.100.123</ip>"), std::string::npos) << state;
+  EXPECT_NE(state.find(
+                "<ipv4 xmlns=\"urn:ietf:params:xml:ns:yang:ietf-ip\">"),
+            std::string::npos) << state;
+  EXPECT_NE(state.find(
+                "<ipv6 xmlns=\"urn:ietf:params:xml:ns:yang:ietf-ip\">"),
+            std::string::npos) << state;
+  const std::size_t ipv4_start = state.find("<ipv4 ");
+  const std::size_t ipv4_end = state.find("</ipv4>", ipv4_start);
+  ASSERT_NE(ipv4_start, std::string::npos) << state;
+  ASSERT_NE(ipv4_end, std::string::npos) << state;
+  EXPECT_EQ(state.substr(ipv4_start, ipv4_end - ipv4_start).find("<status>"),
+            std::string::npos) << state;
   EXPECT_NE(state.find("<prefix-length>24</prefix-length>"), std::string::npos)
       << state;
   EXPECT_NE(state.find("<ip>198.51.100.200</ip>"), std::string::npos) << state;

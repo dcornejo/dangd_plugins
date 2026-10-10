@@ -93,6 +93,15 @@ routes are operational/read-only: the base view cannot retain the Linux object
 ID and group topology required to recreate the exact route during rollback, so
 imperative mutation fails closed instead of approximating the original object.
 
+The isolated native suite also drives an actual bidirectional NETCONF session
+through dangd and its supervised plugin workers. It loads the independent
+RFC 8343/8344 interface provider, locks candidate, replaces it with a modeled
+discard route, validates and commits, confirms the route and stable modeled
+`route-index` in operational data, deletes the routing instance, commits, and
+confirms the Linux table or FreeBSD FIB is clean. Cross-plugin interface
+leafrefs are satisfied entirely through the generic operational-fragment
+contract; dangd contains no RIB- or interface-specific integration logic.
+
 ## Installation status and dependencies
 
 The `dangd-plugin-rib` package contains the provider, pinned sources, and guide.

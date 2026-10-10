@@ -602,6 +602,8 @@ bool AppendAddresses(const std::string& name, pugi::xml_node entry,
     pugi::xml_node* family_node = value.ipv6 ? &ipv6 : &ipv4;
     if (!*family_node) {
       *family_node = entry.append_child(value.ipv6 ? "ipv6" : "ipv4");
+      family_node->append_attribute("xmlns") =
+          "urn:ietf:params:xml:ns:yang:ietf-ip";
       // RFC 8344 deliberately gives IPv4 MTU a uint16 representation. Linux
       // loopback commonly reports 65536, so omit that unrepresentable value
       // instead of publishing invalid instance data.
@@ -612,7 +614,8 @@ bool AppendAddresses(const std::string& name, pugi::xml_node entry,
     address.append_child("ip").text() = value.address.c_str();
     address.append_child("prefix-length").text() = value.prefix_length;
     address.append_child("origin").text() = "other";
-    address.append_child("status").text() = value.status.c_str();
+    if (value.ipv6)
+      address.append_child("status").text() = value.status.c_str();
   }
   return true;
 }
@@ -629,7 +632,11 @@ bool AppendNeighbors(const std::string& name, pugi::xml_node entry,
   pugi::xml_node ipv6 = Child(entry, "ipv6");
   for (const LiveNeighbor& value : neighbors) {
     pugi::xml_node* family = value.ipv6 ? &ipv6 : &ipv4;
-    if (!*family) *family = entry.append_child(value.ipv6 ? "ipv6" : "ipv4");
+    if (!*family) {
+      *family = entry.append_child(value.ipv6 ? "ipv6" : "ipv4");
+      family->append_attribute("xmlns") =
+          "urn:ietf:params:xml:ns:yang:ietf-ip";
+    }
     pugi::xml_node neighbor = family->append_child("neighbor");
     neighbor.append_child("ip").text() = value.address.c_str();
     neighbor.append_child("link-layer-address").text() =
@@ -925,7 +932,10 @@ class LinuxBackend final : public PlatformBackend {
       return false;
     }
     pugi::xml_document state;
-    pugi::xml_node root = state.append_child("interfaces-state");
+    pugi::xml_node wrapper = state.append_child("data");
+    wrapper.append_attribute("xmlns") =
+        "urn:ietf:params:xml:ns:netconf:base:1.0";
+    pugi::xml_node root = wrapper.append_child("interfaces-state");
     root.append_attribute("xmlns") =
         "urn:ietf:params:xml:ns:yang:ietf-interfaces";
     root.append_attribute("xmlns:iana-if-type") =
@@ -975,6 +985,19 @@ class LinuxBackend final : public PlatformBackend {
       }
     }
     if_freenameindex(interfaces);
+    // RFC 8343's NMDA tree is the authoritative operational interface
+    // inventory. The deprecated interfaces-state tree remains alongside it
+    // for older clients, but references from other current models (including
+    // RFC 8431) resolve through /interfaces/interface/name. System-created
+    // interfaces therefore have to appear in both views even when dangd has
+    // no user configuration for them yet.
+    pugi::xml_node nmda = wrapper.prepend_child("interfaces");
+    nmda.append_attribute("xmlns") =
+        "urn:ietf:params:xml:ns:yang:ietf-interfaces";
+    nmda.append_attribute("xmlns:iana-if-type") =
+        "urn:ietf:params:xml:ns:yang:iana-if-type";
+    for (const pugi::xml_node entry : root.children("interface"))
+      nmda.append_copy(entry);
     std::ostringstream serialized;
     state.print(serialized, "", pugi::format_raw);
     *output = serialized.str();

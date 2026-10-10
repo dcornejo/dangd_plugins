@@ -48,7 +48,12 @@ struct Prepared {
 
 constexpr std::string_view kInterfacesModule = "ietf-interfaces";
 constexpr std::string_view kIpModule = "ietf-ip";
-std::string active_configuration;
+constexpr const char* kInterfacesFeatures[] = {"if-mib"};
+// A plugin may be loaded even when its modules have no configuration and no
+// prepare callback is therefore needed. Keep a valid empty document so live
+// operational reads work immediately after startup and in mixed-module
+// transactions that affect only another plugin.
+std::string active_configuration = "<config/>";
 // ABI v3 returns borrowed bytes. Keeping the serialized document here makes
 // the pointer valid until the next callback. A production plugin should put
 // both configuration and operational snapshots in its context object and
@@ -69,7 +74,7 @@ bool Reconcile(std::string_view before, std::string_view desired,
   return false;
 }
 
-size_t SourceCount(void*) { return 2; }
+size_t SourceCount(void*) { return 3; }
 
 int SourceAt(void*, size_t index, DangYangSourceV1* source,
              DangPluginErrorV1*) {
@@ -78,7 +83,8 @@ int SourceAt(void*, size_t index, DangYangSourceV1* source,
     *source = {"ietf-interfaces", "2018-02-20",
                dangd::ip_management::kIetfInterfacesYang.data(),
                dangd::ip_management::kIetfInterfacesYang.size(),
-               "urn:ietf:rfc:8343", DANG_YANG_IMPLEMENTED_V1, nullptr, 0};
+               "urn:ietf:rfc:8343", DANG_YANG_IMPLEMENTED_V1,
+               kInterfacesFeatures, 1};
     return 1;
   }
   if (index == 1) {
@@ -86,6 +92,15 @@ int SourceAt(void*, size_t index, DangYangSourceV1* source,
                dangd::ip_management::kIetfIpYang.data(),
                dangd::ip_management::kIetfIpYang.size(),
                "urn:ietf:rfc:8344", DANG_YANG_IMPLEMENTED_V1, nullptr, 0};
+    return 1;
+  }
+  if (index == 2) {
+    *source = {"iana-if-type", "2026-03-17",
+               dangd::ip_management::kIanaIfTypeYang.data(),
+               dangd::ip_management::kIanaIfTypeYang.size(),
+               "https://www.iana.org/assignments/yang-parameters/"
+               "iana-if-type@2026-03-17.yang",
+               DANG_YANG_IMPORT_ONLY_V1, nullptr, 0};
     return 1;
   }
   return 0;
@@ -296,13 +311,12 @@ int OperationalData(void*, DangOperationalDataV1* result,
   // kernel. Assign accurate RFC 8342 origin metadata once the plugin API carries
   // per-node origins. Do not echo intended configuration as if it were observed.
   //
-  // This demonstration instead derives the deprecated RFC 8343
-  // /interfaces-state compatibility tree from the last successfully applied
-  // configuration. It intentionally omits volatile counters and IP/neighbor
-  // state. Each returned element must use the model's exact XML namespace;
-  // dangd copies the borrowed string immediately and validates it as typed
-  // partial instance data. A real provider should still build one coherent
-  // snapshot because constraints spanning providers cannot yet be checked.
+  // Both native backends publish the RFC 8343 NMDA /interfaces inventory and
+  // the deprecated /interfaces-state compatibility view from one coherent
+  // kernel snapshot, including interface counters and RFC 8344 address and
+  // neighbor state. Each returned element must use the model's exact XML
+  // namespace; dangd copies the borrowed string immediately and validates it
+  // as typed partial instance data before composing other providers.
   if (!result) return 0;
   backend_error.clear();
   if (!platform_backend->OperationalXml(active_configuration, &operational_xml,

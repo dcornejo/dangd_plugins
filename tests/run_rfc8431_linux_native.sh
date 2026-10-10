@@ -7,12 +7,17 @@ binary=$1
 plugin_test=${2:-}
 plugin=${3:-}
 load_balance_plugin_test=${4:-}
+netconf_test=${5:-}
+dangd=${6:-}
+plugin_worker=${7:-}
+interface_plugin=${8:-}
 namespace="dang-rib-$$"
 registry="/tmp/dang-rib-registry-$$.json"
 load_balance_registry="/tmp/dang-rib-lb-registry-$$.json"
+netconf_registry="/tmp/dang-rib-netconf-registry-$$.json"
 cleanup() {
   sudo ip netns del "$namespace" >/dev/null 2>&1 || true
-  sudo rm -f "$registry" "$load_balance_registry"
+  sudo rm -f "$registry" "$load_balance_registry" "$netconf_registry"
 }
 trap cleanup EXIT INT TERM
 
@@ -48,6 +53,16 @@ if [ -n "$load_balance_plugin_test" ] && [ -n "$plugin" ]; then
     "$load_balance_plugin_test" "$plugin" \
     107 198.18.8.0/24 dummy0 192.0.2.2 dummy1 192.0.3.2
   test -z "$(sudo ip -n "$namespace" route show table 107)"
+fi
+if [ -n "$netconf_test" ] && [ -n "$dangd" ] &&
+   [ -n "$plugin_worker" ] && [ -n "$interface_plugin" ] &&
+   [ -n "$plugin" ]; then
+  sudo ip netns exec "$namespace" env \
+    DANG_RIB_REGISTRY_FILE="$netconf_registry" \
+    "$netconf_test" "$dangd" "$plugin_worker" "$plugin" \
+    "$interface_plugin" \
+    ipv4-108 198.18.9.0/24
+  test -z "$(sudo ip -n "$namespace" route show table 108)"
 fi
 sudo ip -n "$namespace" nexthop add id 10 via 192.0.2.2 dev dummy0
 sudo ip -n "$namespace" nexthop add id 11 via 192.0.3.2 dev dummy1

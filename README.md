@@ -132,7 +132,10 @@ only with one another. Packaging does not weaken dangd's duplicate-owner check.
 - `rib` provides the ABI-v8 RFC 8431 configuration and notification provider,
   claims the
   `routing` resource against FRR, and applies its supported route slice on Linux
-  and FreeBSD. RPC, notification, and operational work remains in progress.
+  and FreeBSD. Its supported slice has native RPC, notification, reversible
+  commit, operational readback, and full NETCONF candidate lifecycle coverage
+  on both systems; unsupported kernel route kinds and RFC attributes remain
+  explicit completion work.
 
 ## Planned plugins
 

@@ -9,6 +9,19 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Completed a real RFC 8431 NETCONF candidate transaction on isolated Linux
+  and FreeBSD kernels. The native harness now loads both the IP-management and
+  RIB plugins, locks and edits candidate, validates, commits a discard route,
+  reads its modeled operational state, deletes it, commits again, and verifies
+  the native table or FIB is empty. This exposed and fixed common RFC 8343/8344
+  provider gaps: empty startup state is valid, `if-mib` and the official
+  import-only `iana-if-type@2026-03-17` identity library are advertised,
+  IPv4/IPv6 augment namespaces are explicit, IPv4 no longer receives the
+  IPv6-only address-status leaf, and system-created interfaces are published
+  in the NMDA `/interfaces` tree as well as deprecated `/interfaces-state` so
+  cross-model leafrefs resolve. The shared discovery checker now accepts
+  quoted or unquoted YANG revision arguments.
+
 - Unified RFC 8431 native route notifications with the operational projection.
   Polling now restores applied route indexes and collapses representable ECMP
   members before change tracking, so one modeled weighted route produces one

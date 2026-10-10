@@ -65,12 +65,25 @@ int main(int argc, char** argv) {
         valid = false;
         break;
       }
-      const bool expected_revision = argc == 4 ||
+      const std::string revision =
+          argc == 5 ? std::string(argv[4]) : std::string{};
+      const std::string_view source_text(source.source, source.source_size);
+      // RFC 7950 permits quoted and unquoted statement arguments. Accept all
+      // three spellings so discovery tests do not reject published modules
+      // merely because their revision-date uses quotes.
+      const bool revision_in_source =
+          argc == 4 ||
+          source_text.find("revision " + revision) != std::string_view::npos ||
+          source_text.find("revision \"" + revision + "\"") !=
+              std::string_view::npos ||
+          source_text.find("revision '" + revision + "'") !=
+              std::string_view::npos;
+      const bool expected_revision =
+          argc == 4 ||
           (source.revision && std::string_view(source.revision) == argv[4] &&
-           std::string_view(source.source, source.source_size).find(
-               std::string("revision ") + argv[4]) != std::string_view::npos);
+           revision_in_source);
       if (std::string_view(source.module_name) == argv[3] &&
-          std::string_view(source.source, source.source_size).find(
+          source_text.find(
               std::string("module ") + argv[3]) != std::string_view::npos &&
           expected_revision)
         found_source = true;

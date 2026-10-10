@@ -100,6 +100,8 @@ file(READ plugins/rib/models/ietf-interfaces@2018-02-20.yang
   DANGD_IETF_INTERFACES_YANG)
 file(READ plugins/ip_management/models/ietf-ip@2018-02-22.yang
   DANGD_IETF_IP_YANG)
+file(READ plugins/ip_management/models/iana-if-type@2026-03-17.yang
+  DANGD_IANA_IF_TYPE_YANG)
 configure_file(plugins/ip_management/src/ip_management_models.h.in
   generated/ip_management_models.h @ONLY)
 
@@ -355,6 +357,18 @@ if(BUILD_TESTING)
   add_test(NAME ip_management_plugin_discovery
     COMMAND plugin_loader_smoke_test $<TARGET_FILE:dangd_ip_management_plugin>
       dangd-ip-management ietf-ip)
+  add_executable(ip_management_plugin_contract_test
+    tests/ip_management_plugin_contract_test.cc)
+  target_compile_features(ip_management_plugin_contract_test PRIVATE cxx_std_20)
+  target_include_directories(ip_management_plugin_contract_test PRIVATE
+    "${DANGD_INCLUDE_DIR}")
+  target_link_libraries(ip_management_plugin_contract_test PRIVATE
+    "${CMAKE_DL_LIBS}")
+  target_compile_options(ip_management_plugin_contract_test PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME ip_management_empty_startup_state
+    COMMAND ip_management_plugin_contract_test
+      $<TARGET_FILE:dangd_ip_management_plugin>)
 
   add_executable(ip_management_platform_test
     tests/ip_management_platform_test.cc
@@ -637,18 +651,39 @@ if(BUILD_TESTING)
   target_link_libraries(rib_native_test PRIVATE LibXml2::LibXml2)
   target_compile_options(rib_native_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+
+  set(DANG_RIB_NETCONF_TEST_ARGUMENTS)
+  if(DANG_RIB_NATIVE_TESTS)
+    set(DANGD_RUNTIME_EXECUTABLE "${DANGD_ROOT}/build/dangd")
+    set(DANGD_PLUGIN_WORKER_EXECUTABLE
+      "${DANGD_ROOT}/build/dangd-plugin-worker")
+    if(EXISTS "${DANGD_RUNTIME_EXECUTABLE}" AND
+       EXISTS "${DANGD_PLUGIN_WORKER_EXECUTABLE}")
+      list(APPEND DANG_RIB_NETCONF_TEST_ARGUMENTS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_rfc8431_netconf.sh"
+        "${DANGD_RUNTIME_EXECUTABLE}"
+        "${DANGD_PLUGIN_WORKER_EXECUTABLE}"
+        $<TARGET_FILE:dangd_ip_management_plugin>)
+    else()
+      message(STATUS
+        "RFC 8431 native NETCONF test disabled: build dangd and "
+        "dangd-plugin-worker under DANGD_ROOT first")
+    endif()
+  endif()
   if(DANG_RIB_NATIVE_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
       add_test(NAME rfc8431_linux_namespace_mutation
         COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_rfc8431_linux_native.sh"
         $<TARGET_FILE:rib_native_test> $<TARGET_FILE:rib_plugin_native_test>
         $<TARGET_FILE:dangd_rib_plugin>
-        $<TARGET_FILE:rib_plugin_load_balance_native_test>)
+        $<TARGET_FILE:rib_plugin_load_balance_native_test>
+        ${DANG_RIB_NETCONF_TEST_ARGUMENTS})
   elseif(DANG_RIB_NATIVE_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
       add_test(NAME rfc8431_freebsd_vnet_mutation
         COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_rfc8431_freebsd_native.sh"
         $<TARGET_FILE:rib_native_test> $<TARGET_FILE:rib_plugin_native_test>
         $<TARGET_FILE:dangd_rib_plugin>
-        $<TARGET_FILE:rib_plugin_load_balance_native_test>)
+        $<TARGET_FILE:rib_plugin_load_balance_native_test>
+        ${DANG_RIB_NETCONF_TEST_ARGUMENTS})
   endif()
 
   if(TARGET dangd_system_plugin)

@@ -7,9 +7,14 @@ binary=$(realpath "$1")
 plugin_test=${2:+$(realpath "$2")}
 plugin=${3:+$(realpath "$3")}
 load_balance_plugin_test=${4:+$(realpath "$4")}
+netconf_test=${5:+$(realpath "$5")}
+dangd=${6:+$(realpath "$6")}
+plugin_worker=${7:+$(realpath "$7")}
+interface_plugin=${8:+$(realpath "$8")}
 jail_name="dang_rib_$$"
 registry="/tmp/dang-rib-registry-$$.json"
 load_balance_registry="/tmp/dang-rib-lb-registry-$$.json"
+netconf_registry="/tmp/dang-rib-netconf-registry-$$.json"
 error_output="/tmp/dang-rib-error-$$.txt"
 epair=$(sudo ifconfig epair create)
 peer="${epair%a}b"
@@ -19,7 +24,8 @@ cleanup() {
   sudo jail -r "$jail_name" >/dev/null 2>&1 || true
   sudo ifconfig "$epair" destroy >/dev/null 2>&1 || true
   sudo ifconfig "$epair2" destroy >/dev/null 2>&1 || true
-  sudo rm -f "$registry" "$load_balance_registry" "$error_output"
+  sudo rm -f "$registry" "$load_balance_registry" "$netconf_registry" \
+    "$error_output"
 }
 trap cleanup EXIT INT TERM
 
@@ -62,6 +68,18 @@ if [ -n "$load_balance_plugin_test" ] && [ -n "$plugin" ]; then
     0 198.18.8.0/24 "$peer" 192.0.2.1 "$peer2" 192.0.3.1
   if sudo jexec "$jail_name" netstat -rn -f inet |
       grep -F "198.18.8.0/24"; then
+    exit 1
+  fi
+fi
+if [ -n "$netconf_test" ] && [ -n "$dangd" ] &&
+   [ -n "$plugin_worker" ] && [ -n "$interface_plugin" ] &&
+   [ -n "$plugin" ]; then
+  sudo jexec "$jail_name" env DANG_RIB_REGISTRY_FILE="$netconf_registry" \
+    "$netconf_test" "$dangd" "$plugin_worker" "$plugin" \
+    "$interface_plugin" \
+    ipv4-0 198.18.9.0/24
+  if sudo jexec "$jail_name" netstat -rn -f inet |
+      grep -F "198.18.9.0/24"; then
     exit 1
   fi
 fi

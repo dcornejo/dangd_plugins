@@ -533,6 +533,8 @@ bool AppendAddresses(const std::string& name, pugi::xml_node entry,
     pugi::xml_node* family_node = family == AF_INET ? &ipv4 : &ipv6;
     if (!*family_node) {
       *family_node = entry.append_child(family == AF_INET ? "ipv4" : "ipv6");
+      family_node->append_attribute("xmlns") =
+          "urn:ietf:params:xml:ns:yang:ietf-ip";
       if (family == AF_INET6 || mtu <= 65535)
         family_node->append_child("mtu").text() = mtu;
     }
@@ -548,10 +550,10 @@ bool AppendAddresses(const std::string& name, pugi::xml_node entry,
     address.append_child("prefix-length").text() =
         PrefixLength(value->ifa_netmask);
     address.append_child("origin").text() = "other";
-    address.append_child("status").text() = family == AF_INET6
-        ? AddressStatus(name, *reinterpret_cast<const sockaddr_in6*>(
-                                  value->ifa_addr)).c_str()
-        : "preferred";
+    if (family == AF_INET6)
+      address.append_child("status").text() =
+          AddressStatus(name, *reinterpret_cast<const sockaddr_in6*>(
+                                  value->ifa_addr)).c_str();
   }
   freeifaddrs(values);
   return true;
@@ -571,7 +573,11 @@ bool AppendNeighbors(const std::string& name, pugi::xml_node entry,
   pugi::xml_node ipv6 = Child(entry, "ipv6");
   for (const LiveNeighbor& value : neighbors) {
     pugi::xml_node* family = value.ipv6 ? &ipv6 : &ipv4;
-    if (!*family) *family = entry.append_child(value.ipv6 ? "ipv6" : "ipv4");
+    if (!*family) {
+      *family = entry.append_child(value.ipv6 ? "ipv6" : "ipv4");
+      family->append_attribute("xmlns") =
+          "urn:ietf:params:xml:ns:yang:ietf-ip";
+    }
     pugi::xml_node neighbor = family->append_child("neighbor");
     neighbor.append_child("ip").text() = value.address.c_str();
     neighbor.append_child("link-layer-address").text() =
@@ -904,7 +910,10 @@ class FreeBsdBackend final : public PlatformBackend {
       return false;
     }
     pugi::xml_document state;
-    pugi::xml_node root = state.append_child("interfaces-state");
+    pugi::xml_node wrapper = state.append_child("data");
+    wrapper.append_attribute("xmlns") =
+        "urn:ietf:params:xml:ns:netconf:base:1.0";
+    pugi::xml_node root = wrapper.append_child("interfaces-state");
     root.append_attribute("xmlns") =
         "urn:ietf:params:xml:ns:yang:ietf-interfaces";
     root.append_attribute("xmlns:iana-if-type") =
@@ -955,6 +964,17 @@ class FreeBsdBackend final : public PlatformBackend {
       AppendStatistics(*data, entry);
     }
     if_freenameindex(interfaces);
+    // Publish the RFC 8343 NMDA interface inventory as well as the deprecated
+    // compatibility tree. Cross-model leafrefs such as RFC 8431's
+    // outgoing-interface target /interfaces/interface/name, including for
+    // system-created interfaces that are absent from intended configuration.
+    pugi::xml_node nmda = wrapper.prepend_child("interfaces");
+    nmda.append_attribute("xmlns") =
+        "urn:ietf:params:xml:ns:yang:ietf-interfaces";
+    nmda.append_attribute("xmlns:iana-if-type") =
+        "urn:ietf:params:xml:ns:yang:iana-if-type";
+    for (const pugi::xml_node entry : root.children("interface"))
+      nmda.append_copy(entry);
     std::ostringstream serialized;
     state.print(serialized, "", pugi::format_raw);
     *output = serialized.str();
