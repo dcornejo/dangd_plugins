@@ -435,6 +435,70 @@ TEST(RibConfigTest, RejectsUnmappedRoutingInstanceInsteadOfUsingDefault) {
   EXPECT_TRUE(config.routes.empty());
 }
 
+TEST(RibConfigTest, RejectsUnsupportedRoutingInstanceControls) {
+  struct Case {
+    std::string xml;
+    std::string path;
+  };
+  const std::vector<Case> cases{
+      {"<interface-list><name>dummy0</name></interface-list>",
+       "/ietf-i2rs-rib:routing-instance/interface-list"},
+      {"<router-id>192.0.2.1</router-id>",
+       "/ietf-i2rs-rib:routing-instance/router-id"},
+      {"<lookup-limit>2</lookup-limit>",
+       "/ietf-i2rs-rib:routing-instance/lookup-limit"},
+  };
+  for (const Case& value : cases) {
+    const std::string xml =
+        "<config><routing-instance "
+        "xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\">"
+        "<name>default</name>" + value.xml +
+        "</routing-instance></config>";
+    Config config;
+    std::string error;
+    std::string path;
+    EXPECT_FALSE(ParseConfig(xml.c_str(), &config, &error, &path));
+    EXPECT_NE(error.find("not implemented"), std::string::npos) << error;
+    EXPECT_EQ(path, value.path);
+    EXPECT_TRUE(config.routes.empty());
+  }
+}
+
+TEST(RibConfigTest, RejectsUnenforcedRibStateInsteadOfSilentlyIgnoringIt) {
+  const auto parse = [](std::string_view rib_children, Config* config,
+                        std::string* error, std::string* path) {
+    const std::string xml =
+        "<config><routing-instance "
+        "xmlns=\"urn:ietf:params:xml:ns:yang:ietf-i2rs-rib\">"
+        "<name>default</name><rib-list><name>ipv4-100</name>"
+        "<address-family>ipv4-address-family</address-family>" +
+        std::string(rib_children) +
+        "</rib-list></routing-instance></config>";
+    return ParseConfig(xml.c_str(), config, error, path);
+  };
+
+  Config config;
+  std::string error;
+  std::string path;
+  EXPECT_FALSE(parse("<ip-rpf-check>true</ip-rpf-check>", &config, &error,
+                     &path));
+  EXPECT_NE(error.find("RPF"), std::string::npos) << error;
+  EXPECT_EQ(path,
+            "/ietf-i2rs-rib:routing-instance/rib-list/ip-rpf-check");
+
+  EXPECT_FALSE(parse("<nexthop-list><nexthop-member-id>1</nexthop-member-id>"
+                     "</nexthop-list>",
+                     &config, &error, &path));
+  EXPECT_NE(error.find("nh-add"), std::string::npos) << error;
+  EXPECT_EQ(path,
+            "/ietf-i2rs-rib:routing-instance/rib-list/nexthop-list");
+
+  EXPECT_TRUE(parse("<ip-rpf-check>false</ip-rpf-check>", &config, &error,
+                    &path))
+      << error;
+  EXPECT_TRUE(config.routes.empty());
+}
+
 TEST(RibConfigTest, RejectsUnsupportedSourceRouteWithAttributedPath) {
   std::string xml(kBefore);
   const auto prefix = xml.find("dest-ipv4-prefix");

@@ -130,6 +130,21 @@ bool ParseConfig(const char* xml, Config* config, std::string* error,
         "the native RIB backend supports only routing-instance 'default'; "
         "VRF or VNET instance mapping is not implemented",
         "/ietf-i2rs-rib:routing-instance/name", error, error_path);
+  if (Child(instance, "interface-list"))
+    return Fail(
+        "routing-instance interface membership is not implemented by the "
+        "portable backend",
+        "/ietf-i2rs-rib:routing-instance/interface-list", error, error_path);
+  if (Child(instance, "router-id"))
+    return Fail("routing-instance router-id is not implemented by the "
+                "portable backend",
+                "/ietf-i2rs-rib:routing-instance/router-id", error,
+                error_path);
+  if (Child(instance, "lookup-limit"))
+    return Fail("routing-instance lookup-limit is not implemented by the "
+                "portable backend",
+                "/ietf-i2rs-rib:routing-instance/lookup-limit", error,
+                error_path);
 
   std::set<std::tuple<std::string, std::uint64_t>> route_keys;
   std::set<std::tuple<std::string, std::string, std::string>> native_route_keys;
@@ -141,6 +156,23 @@ bool ParseConfig(const char* xml, Config* config, std::string* error,
       return Fail("the initial backend supports only named IPv4 and IPv6 RIBs",
                   "/ietf-i2rs-rib:routing-instance/rib-list/address-family",
                   error, error_path);
+    if (xmlNodePtr rpf = Child(rib, "ip-rpf-check")) {
+      bool enabled = false;
+      if (!ParseBoolean(rpf, &enabled))
+        return Fail("ip-rpf-check must be boolean",
+                    "/ietf-i2rs-rib:routing-instance/rib-list/ip-rpf-check",
+                    error, error_path);
+      if (enabled)
+        return Fail("IP RPF checks are not implemented by this provider",
+                    "/ietf-i2rs-rib:routing-instance/rib-list/ip-rpf-check",
+                    error, error_path);
+    }
+    if (Child(rib, "nexthop-list"))
+      return Fail(
+          "datastore-created reusable nexthop identifiers are not supported; "
+          "use the nh-add operation",
+          "/ietf-i2rs-rib:routing-instance/rib-list/nexthop-list", error,
+          error_path);
     for (xmlNodePtr route_node : Children(rib, "route-list")) {
       Route route;
       route.routing_instance = instance_name;

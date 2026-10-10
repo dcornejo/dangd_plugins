@@ -77,7 +77,7 @@ if [ -n "$netconf_test" ] && [ -n "$dangd" ] &&
   sudo jexec "$jail_name" env DANG_RIB_REGISTRY_FILE="$netconf_registry" \
     "$netconf_test" "$dangd" "$plugin_worker" "$plugin" \
     "$interface_plugin" \
-    ipv4-0 198.18.9.0/24
+    ipv4-0 198.18.9.0/24 "$peer" 192.0.2.2 192.0.2.1
   if sudo jexec "$jail_name" netstat -rn -f inet |
       grep -F "198.18.9.0/24"; then
     exit 1

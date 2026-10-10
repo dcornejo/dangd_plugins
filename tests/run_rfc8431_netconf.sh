@@ -5,9 +5,10 @@
 # Drives one complete RFC 8431 candidate transaction through dangd's actual
 # NETCONF framing, schema, plugin-worker, commit, and operational-data path.
 # The caller must already have placed this process in disposable network
-# isolation and supplies only a documentation prefix and an isolated RIB.  A
-# discard route deliberately keeps this test independent of the separate
-# ietf-interfaces provider while still exercising a real native mutation.
+# isolation and supplies only documentation addresses, an interface, and an
+# isolated RIB. The candidate configures that interface through the independent
+# RFC 8343/8344 provider and references it from the RFC 8431 route, proving the
+# generic cross-module leafref and two-plugin transaction contract.
 
 set -eu
 
@@ -17,6 +18,9 @@ plugin=$3
 interface_plugin=$4
 rib=$5
 prefix=$6
+interface=$7
+local_address=$8
+gateway=$9
 runtime=$(mktemp -d /tmp/dang-rib-netconf.XXXXXX)
 
 fail() {
@@ -58,7 +62,7 @@ EOF
 cat >"$runtime/session.xml" <<EOF
 <hello xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"><capabilities><capability>urn:ietf:params:netconf:base:1.0</capability></capabilities></hello>]]>]]>
 <rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="lock"><lock><target><candidate/></target></lock></rpc>]]>]]>
-<rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="edit"><edit-config><target><candidate/></target><default-operation>replace</default-operation><config><routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>default</name><rib-list><name>$rib</name><address-family>ipv4-address-family</address-family><route-list><route-index>8431</route-index><match><ipv4><dest-ipv4-prefix>$prefix</dest-ipv4-prefix></ipv4></match><nexthop><nexthop-base><special>discard</special></nexthop-base></nexthop><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes></route-list></rib-list></routing-instance></config></edit-config></rpc>]]>]]>
+<rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="edit"><edit-config><target><candidate/></target><default-operation>replace</default-operation><config><interfaces xmlns="urn:ietf:params:xml:ns:yang:ietf-interfaces" xmlns:iana-if-type="urn:ietf:params:xml:ns:yang:iana-if-type"><interface><name>$interface</name><type>iana-if-type:ethernetCsmacd</type><enabled>true</enabled><ipv4 xmlns="urn:ietf:params:xml:ns:yang:ietf-ip"><address><ip>$local_address</ip><prefix-length>24</prefix-length></address></ipv4></interface></interfaces><routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>default</name><rib-list><name>$rib</name><address-family>ipv4-address-family</address-family><route-list><route-index>8431</route-index><match><ipv4><dest-ipv4-prefix>$prefix</dest-ipv4-prefix></ipv4></match><nexthop><nexthop-base><egress-interface-ipv4-address><outgoing-interface>$interface</outgoing-interface><ipv4-address>$gateway</ipv4-address></egress-interface-ipv4-address></nexthop-base></nexthop><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes></route-list></rib-list></routing-instance></config></edit-config></rpc>]]>]]>
 <rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="validate"><validate><source><candidate/></source></validate></rpc>]]>]]>
 <rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="commit-add"><commit/></rpc>]]>]]>
 <rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="get"><get/></rpc>]]>]]>
@@ -87,7 +91,13 @@ grep -F "<route-index>8431</route-index>" "$runtime/replies.xml" >/dev/null ||
   fail "operational reply lost the modeled route index"
 grep -F "$prefix" "$runtime/replies.xml" >/dev/null ||
   fail "operational reply omitted the committed route"
+grep -F "<outgoing-interface>$interface</outgoing-interface>" \
+  "$runtime/replies.xml" >/dev/null ||
+  fail "operational reply omitted the cross-module interface reference"
+grep -F "<ipv4-address>$gateway</ipv4-address>" \
+  "$runtime/replies.xml" >/dev/null ||
+  fail "operational reply omitted the native gateway"
 grep -F 'message-id="close"' "$runtime/replies.xml" >/dev/null ||
   fail "close-session reply is missing"
 
-echo "RFC 8431 NETCONF add, operational read, and delete passed for $rib"
+echo "RFC 8431 NETCONF interface/route commit, read, and delete passed for $rib"

@@ -95,12 +95,14 @@ imperative mutation fails closed instead of approximating the original object.
 
 The isolated native suite also drives an actual bidirectional NETCONF session
 through dangd and its supervised plugin workers. It loads the independent
-RFC 8343/8344 interface provider, locks candidate, replaces it with a modeled
-discard route, validates and commits, confirms the route and stable modeled
-`route-index` in operational data, deletes the routing instance, commits, and
-confirms the Linux table or FreeBSD FIB is clean. Cross-plugin interface
-leafrefs are satisfied entirely through the generic operational-fragment
-contract; dangd contains no RIB- or interface-specific integration logic.
+RFC 8343/8344 interface provider, locks candidate, configures the disposable
+interface, and adds an RFC 8431 gateway route whose outgoing-interface leafref
+targets that same modeled interface. It validates and commits both modules in
+one transaction, confirms the route, gateway, interface reference, and stable
+modeled `route-index` in operational data, deletes the routing instance,
+commits, and confirms the Linux table or FreeBSD FIB is clean. Cross-plugin
+leafrefs and transaction ordering are handled entirely through generic plugin
+contracts; dangd contains no RIB- or interface-specific integration logic.
 
 ## Installation status and dependencies
 
@@ -148,10 +150,15 @@ requires the RFC 8431 route preference and local-only fields. The portable
 configuration slice accepts only `local-only=false`; native local receive
 routes remain observable read-only state. It rejects source, MPLS, MAC,
 interface-match, chained, replicated, protected, and tunnel routes with an
-attributed model path. Load-balanced routes pass portable parsing, reference
-lifetime, native validation, acknowledged mutation, and compensated rollback
-on both platforms. Supported replacements are computed as an old-route
-deletion followed by a new-route installation. Linux and FreeBSD
+attributed model path. It also rejects routing-instance interface membership,
+router ID, and lookup limit because the native backend cannot enforce them.
+An enabled per-RIB `ip-rpf-check` is rejected while an explicitly disabled
+value is accepted as a no-op. Reusable nexthop identifiers must be allocated
+through `nh-add`; placing `nexthop-list` entries directly in the datastore is
+rejected instead of being silently ignored. Load-balanced routes pass portable
+parsing, reference lifetime, native validation, acknowledged mutation, and
+compensated rollback on both platforms. Supported replacements are computed as
+an old-route deletion followed by a new-route installation. Linux and FreeBSD
 production mutation use bounded route-netlink messages and wait for the
 correlated kernel acknowledgement. Retained argv planners are deterministic
 unit-test adapters and are never executed by production. The shared executor stops

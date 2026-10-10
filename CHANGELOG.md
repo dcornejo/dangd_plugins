@@ -9,9 +9,19 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Made the RFC 8431 configuration boundary fail closed for modeled controls
+  the portable backend does not enforce. Datastore commits now reject routing
+  instance interface membership, router ID, lookup limit, enabled RPF checks,
+  and directly configured reusable-nexthop identifiers at their exact schema
+  paths instead of acknowledging and ignoring them. Explicitly disabled RPF
+  remains a valid no-op. The native NETCONF test now commits an RFC 8343/8344
+  interface and an RFC 8431 gateway route that references it in one generic
+  two-plugin transaction, proving cross-module leafref resolution on Linux and
+  FreeBSD rather than merely loading both providers beside a discard route.
+
 - Completed a real RFC 8431 NETCONF candidate transaction on isolated Linux
   and FreeBSD kernels. The native harness now loads both the IP-management and
-  RIB plugins, locks and edits candidate, validates, commits a discard route,
+  RIB plugins, locks and edits candidate, validates, commits a native route,
   reads its modeled operational state, deletes it, commits again, and verifies
   the native table or FIB is empty. This exposed and fixed common RFC 8343/8344
   provider gaps: empty startup state is valid, `if-mib` and the official

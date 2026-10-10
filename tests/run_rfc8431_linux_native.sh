@@ -61,7 +61,7 @@ if [ -n "$netconf_test" ] && [ -n "$dangd" ] &&
     DANG_RIB_REGISTRY_FILE="$netconf_registry" \
     "$netconf_test" "$dangd" "$plugin_worker" "$plugin" \
     "$interface_plugin" \
-    ipv4-108 198.18.9.0/24
+    ipv4-108 198.18.9.0/24 dummy0 192.0.2.1 192.0.2.2
   test -z "$(sudo ip -n "$namespace" route show table 108)"
 fi
 sudo ip -n "$namespace" nexthop add id 10 via 192.0.2.2 dev dummy0
