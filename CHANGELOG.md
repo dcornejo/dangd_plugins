@@ -9,6 +9,15 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Unified RFC 8431 native route notifications with the operational projection.
+  Polling now restores applied route indexes and collapses representable ECMP
+  members before change tracking, so one modeled weighted route produces one
+  route-level transition instead of synthetic per-path events. Reusable
+  nexthop resolution still evaluates the uncollapsed native paths. Unit tests
+  cover direct and weighted identity, and the isolated loadable-plugin test
+  establishes a quiet baseline before apply and requires exactly one managed
+  route-change plus the two expected member-resolution transitions.
+
 - Preserved modeled RFC 8431 identities for ordinary native route readback.
   The RIB plugin now snapshots dangd's reconciled applied routes and restores
   a uniquely matching configured `route-index`; unmatched external routes keep

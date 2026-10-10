@@ -280,6 +280,13 @@ OperationalProjection ProjectWeightedRoutes(
 
 }  // namespace
 
+std::vector<ObservedRoute> ProjectOperationalRoutes(
+    const std::vector<ObservedRoute>& routes,
+    const PersistentRegistry& registry,
+    const std::vector<Route>& configuration_routes) {
+  return ProjectWeightedRoutes(routes, registry, configuration_routes).routes;
+}
+
 std::vector<ObservedRoute> RouteChangeTracker::Observe(
     const std::vector<ObservedRoute>& routes) {
   std::map<Key, ObservedRoute> next;

@@ -85,6 +85,13 @@ int main(int argc, char** argv) {
                 &error);
   }
 
+  // Establish a quiet native baseline before the managed transaction. This
+  // makes the later drain prove that two kernel ECMP paths confirm one
+  // modeled route instead of creating per-path synthetic notifications.
+  DangNotificationV1 baseline_event{};
+  if (ok) stage = "notification baseline";
+  ok = ok && api->next_notification(base.context, &baseline_event, &error) == 0;
+
   std::ostringstream proposed;
   proposed
       << "<config><routing-instance "
@@ -145,6 +152,41 @@ int main(int argc, char** argv) {
            "<nexthop-member-id>2</nexthop-member-id>"
            "<nexthop-lb-weight>3</nexthop-lb-weight>") !=
            std::string_view::npos;
+
+  unsigned route_change_count = 0;
+  unsigned resolution_change_count = 0;
+  bool notifications_drained = false;
+  if (ok) stage = "modeled notification projection";
+  for (unsigned attempt = 0; ok && attempt < 8U; ++attempt) {
+    DangNotificationV1 event{};
+    const int available =
+        api->next_notification(base.context, &event, &error);
+    if (available < 0) {
+      ok = false;
+      break;
+    }
+    if (available == 0) {
+      notifications_drained = true;
+      break;
+    }
+    if (event.notification_name &&
+        std::string_view(event.notification_name) == "route-change") {
+      ++route_change_count;
+      ok = event.content_xml &&
+           std::string_view(event.content_xml).find(
+               "<route-index>1</route-index>") != std::string_view::npos &&
+           std::string_view(event.content_xml).find(prefix) !=
+               std::string_view::npos;
+    } else if (event.notification_name &&
+               std::string_view(event.notification_name) ==
+                   "nexthop-resolution-status-change") {
+      ++resolution_change_count;
+    } else {
+      ok = false;
+    }
+  }
+  ok = ok && notifications_drained && route_change_count == 1U &&
+       resolution_change_count == 2U;
   if (ok) stage = "hardware rollback";
   ok = ok && v7.v6.v5.v4.rollback_hardware_action(
                  base.context, prepared, action.action_id, &error);

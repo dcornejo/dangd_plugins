@@ -36,6 +36,8 @@ struct ObservedRoute {
 /**
  * Tracks a native RIB snapshot and reports additions, removals, and changes.
  *
+ * Callers pass ProjectOperationalRoutes() output so one model route has one
+ * baseline identity even when the platform exposes several native ECMP paths.
  * The first observation establishes a quiet baseline. Managed changes update
  * an established baseline immediately so their later kernel observation does
  * not generate a duplicate event.
@@ -81,6 +83,17 @@ class NexthopResolutionTracker {
 [[nodiscard]] bool ObserveFreeBsdRoutesForFib(
     std::uint32_t fib, std::vector<ObservedRoute>* routes,
     std::string* error);
+
+/**
+ * Converts native paths into the same modeled route view used operationally.
+ *
+ * This restores managed identities and collapses representable ECMP paths so
+ * notifications and operational retrieval describe the same RFC 8431 route.
+ */
+[[nodiscard]] std::vector<ObservedRoute> ProjectOperationalRoutes(
+    const std::vector<ObservedRoute>& routes,
+    const PersistentRegistry& registry = {},
+    const std::vector<Route>& configuration_routes = {});
 
 /**
  * Serializes a partial RFC 8431 operational-data subtree.

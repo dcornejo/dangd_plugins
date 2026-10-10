@@ -442,8 +442,13 @@ int NextNotification(void* raw_context, DangNotificationV1* event,
                "/ietf-i2rs-rib:routing-instance/rib-list");
     return -1;
   }
+  const OperationalRegistryState state = owner->nexthops.OperationalState();
+  const std::vector<ObservedRoute> modeled_routes =
+      ProjectOperationalRoutes(routes, state.registry,
+                               state.configuration_routes);
   std::lock_guard lock(owner->notification_mutex);
-  for (const ObservedRoute& change : owner->route_changes.Observe(routes)) {
+  for (const ObservedRoute& change :
+       owner->route_changes.Observe(modeled_routes)) {
     if (owner->notifications.size() >= kMaximumPendingNotifications) break;
     owner->notifications.push_back({
         "route-change",
@@ -451,8 +456,7 @@ int NextNotification(void* raw_context, DangNotificationV1* event,
                              change.reason.value_or(""))});
   }
   for (const NexthopResolutionChange& change :
-       owner->nexthop_resolutions.Observe(owner->nexthops.ResolutionState(),
-                                          routes)) {
+       owner->nexthop_resolutions.Observe(state.registry, routes)) {
     if (owner->notifications.size() >= kMaximumPendingNotifications) break;
     owner->notifications.push_back(
         {"nexthop-resolution-status-change",

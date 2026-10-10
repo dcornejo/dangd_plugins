@@ -979,6 +979,79 @@ TEST(RibConfigTest, ManagedChangesAdvanceExternalNotificationBaseline) {
   EXPECT_TRUE(tracker.Observe({}).empty());
 }
 
+TEST(RibConfigTest, ProjectsAppliedIdentityBeforeNativeChangeTracking) {
+  Route observed{.routing_instance = "default",
+                 .rib = "ipv4-100",
+                 .address_family = "ipv4",
+                 .index = 0x123456789abcdef0ULL,
+                 .destination = "192.0.2.0/24",
+                 .gateway = "192.0.2.1",
+                 .interface = "dummy0",
+                 .nexthop_ref = std::nullopt,
+                 .preference = 10,
+                 .local_only = false,
+                 .special = std::nullopt};
+  Route configured = observed;
+  configured.index = 44;
+  const auto projected =
+      ProjectOperationalRoutes({{observed, true}}, {}, {configured});
+  ASSERT_EQ(projected.size(), 1U);
+  EXPECT_EQ(projected[0].route.index, 44U);
+
+  RouteChangeTracker tracker;
+  EXPECT_TRUE(tracker.Observe(projected).empty());
+  const auto removed = tracker.Observe({});
+  ASSERT_EQ(removed.size(), 1U);
+  EXPECT_EQ(removed[0].route.index, 44U);
+  EXPECT_FALSE(removed[0].installed);
+}
+
+TEST(RibConfigTest, ProjectsWeightedRouteAsOneNativeChangeIdentity) {
+  Route first{.routing_instance = "default",
+              .rib = "ipv4-100",
+              .address_family = "ipv4",
+              .index = 1001,
+              .destination = "198.18.7.0/24",
+              .gateway = "192.0.2.1",
+              .interface = "dummy0",
+              .nexthop_ref = std::nullopt,
+              .preference = 10,
+              .local_only = false,
+              .special = std::nullopt};
+  Route second = first;
+  second.index = 1002;
+  second.gateway = "192.0.2.2";
+  second.interface = "dummy1";
+  ObservedRoute first_path(first, true);
+  first_path.weight = 2;
+  ObservedRoute second_path(second, true);
+  second_path.weight = 3;
+  const PersistentRegistry registry{
+      .next_id = 10,
+      .ribs = {{"ipv4-100", "ipv4"}},
+      .nexthops = {{"ipv4-100", 7, "192.0.2.1", "dummy0", "ipv4", true, {}},
+                   {"ipv4-100", 9, "192.0.2.2", "dummy1", "ipv4", true, {}}},
+      .bindings = {{"ipv4-100", "ipv4", "198.18.7.0/24", 45, 7},
+                   {"ipv4-100", "ipv4", "198.18.7.0/24", 45, 9}}};
+  const auto installed =
+      ProjectOperationalRoutes({first_path, second_path}, registry);
+  ASSERT_EQ(installed.size(), 1U);
+  EXPECT_EQ(installed[0].route.index, 45U);
+  ASSERT_EQ(installed[0].route.load_balance.size(), 2U);
+
+  RouteChangeTracker tracker;
+  EXPECT_TRUE(tracker.Observe(installed).empty());
+  first_path.installed = false;
+  second_path.installed = false;
+  const auto uninstalled =
+      ProjectOperationalRoutes({first_path, second_path}, registry);
+  const auto changes = tracker.Observe(uninstalled);
+  ASSERT_EQ(changes.size(), 1U);
+  EXPECT_EQ(changes[0].route.index, 45U);
+  EXPECT_FALSE(changes[0].installed);
+  EXPECT_EQ(changes[0].reason, "unresolved-nexthop");
+}
+
 TEST(RibConfigTest, TracksSamePrefixMultipathRoutesIndependently) {
   Route first{.routing_instance = "default",
               .rib = "100",

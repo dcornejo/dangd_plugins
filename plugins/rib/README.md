@@ -298,17 +298,20 @@ commit does not leak a success event. Native installed-state transitions
 include the exact RFC `resolved-nexthop` or `unresolved-nexthop` reason; events
 whose cause is not available from the kernel omit the optional reason list.
 The bounded queue contains at most 1024 events. When dangd drains
-notifications, the provider also compares a fresh
-native route inventory with a synchronized baseline. The initial inventory is
-quiet; later external additions, removals, and route-property changes produce
-`route-change` events. Managed changes advance the same baseline when their
-event is queued, preventing a duplicate when the kernel subsequently reports
-the completed operation. The tracking identity includes RIB, family, prefix,
-gateway, interface, and special-nexthop identity, so parallel paths for one
-prefix remain distinct. The modeled RPC route index is ignored when comparing
-a managed success with native readback because observed routes use a
-deterministic synthetic index. The separate `nexthop-resolution-status-change`
-notification is also implemented for reusable nexthops. Resolution means at
+notifications, the provider also compares a fresh native route inventory with
+a synchronized baseline. It first applies the same modeled projection used by
+operational retrieval: applied ordinary routes recover their configured
+indexes and representable ECMP members collapse into one weighted route with
+durable or deterministic member identities. The initial inventory is quiet;
+later external additions, removals, and route-property changes produce
+`route-change` events. Managed changes advance the same modeled baseline when
+their event is queued, preventing both a duplicate when the kernel confirms
+the operation and synthetic per-path events for one weighted route. External
+base routes remain distinguished by RIB, family, prefix, gateway, interface,
+and special identity before any representable ECMP group is collapsed. The
+separate `nexthop-resolution-status-change` notification is also implemented
+for reusable nexthops and deliberately evaluates the uncollapsed native paths.
+Resolution means at
 least one imperative or datastore route bound through `nexthop-ref` is present
 and installed in the observed native RIB with the referenced gateway,
 interface, and/or special identity. A different parallel path for the same
