@@ -9,6 +9,15 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Started the separately packaged RFC 9249 NTP provider with the authoritative
+  `ietf-ntp@2022-07-05` module and its pinned ACL, packet-field, ethertype, and
+  routing-type import closure. A direct yanglint interoperability test loads
+  the existing RFC 7317, RFC 8343, and dangd library revisions explicitly.
+  The RFC 7317 system provider now uses ABI v7 to claim the generic exclusive
+  `ntp` resource domain, and its package carries the matching ownership marker,
+  preventing future RFC 7317/RFC 9249 providers from controlling one daemon at
+  the same time without adding any plugin-specific behavior to dangd.
+
 - Hardened RFC 8431 route-attribute extension handling. The two concrete base
   attributes are already covered: preference round-trips on both kernels, and
   local-only is observed exactly while unsafe configuration fails closed.

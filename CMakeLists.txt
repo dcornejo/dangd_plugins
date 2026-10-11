@@ -460,6 +460,13 @@ if(BUILD_TESTING)
         "${DANG_YANGLINT_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/plugins/rib/models"
         "${DANGD_ROOT}/dangd/models")
+    add_test(NAME rfc9249_schema_interoperability
+      COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_rfc9249_yanglint.sh"
+        "${DANG_YANGLINT_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ntp/models"
+        "${CMAKE_CURRENT_SOURCE_DIR}/plugins/system/models"
+        "${CMAKE_CURRENT_SOURCE_DIR}/plugins/rib/models"
+        "${DANGD_ROOT}/dangd/models")
   endif()
 
   add_executable(rib_config_test
@@ -861,6 +868,9 @@ install(FILES packaging/resource-domains/routing
 install(FILES packaging/resource-domains/routing
   DESTINATION "${CMAKE_INSTALL_DATADIR}/dangd/resource-domains"
   COMPONENT rib)
+install(FILES packaging/resource-domains/ntp
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/dangd/resource-domains"
+  COMPONENT system)
 install(FILES plugins/example/models/dang-plugins-example.yang
   DESTINATION "${CMAKE_INSTALL_DATADIR}/yang/modules"
   COMPONENT example)

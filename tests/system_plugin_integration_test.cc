@@ -16,6 +16,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <string_view>
 
 namespace {
 
@@ -109,11 +110,15 @@ int main(int argc, char** argv) {
     std::cerr << dlerror() << '\n';
     return 1;
   }
-  auto initialize = reinterpret_cast<DangPluginInitV3>(
-      dlsym(library, "dang_plugin_init_v3"));
-  const DangPluginV3* v3 = initialize ? initialize() : nullptr;
-  if (!v3) return 3;
-  const DangPluginV1& plugin = v3->v2.v1;
+  auto initialize = reinterpret_cast<DangPluginInitV7>(
+      dlsym(library, "dang_plugin_init_v7"));
+  const DangPluginV7* v7 = initialize ? initialize() : nullptr;
+  if (!v7) return 3;
+  const DangPluginV1& plugin = v7->v6.v5.v4.v3.v2.v1;
+  if (!v7->resource_domain_count || !v7->resource_domain_at ||
+      v7->resource_domain_count(plugin.context) != 1 ||
+      std::string_view(v7->resource_domain_at(plugin.context, 0)) != "ntp")
+    return 15;
   const std::string before = Read(argv[2]);
   const std::string proposed = Read(argv[3]);
   DangTransactionV1 transaction{before.c_str(), proposed.c_str(), "[]"};
@@ -159,7 +164,8 @@ int main(int argc, char** argv) {
     return 5;
   }
   DangOperationalDataV1 operational{};
-  if (!v3->get_operational_data(plugin.context, &operational, &error) ||
+  if (!v7->v6.v5.v4.v3.get_operational_data(plugin.context, &operational,
+                                             &error) ||
       !operational.data_xml ||
       std::string_view(operational.data_xml).find("<os-name>") ==
           std::string_view::npos)

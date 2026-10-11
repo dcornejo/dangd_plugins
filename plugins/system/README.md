@@ -13,6 +13,12 @@ advertised. It builds only on Linux and FreeBSD, and both native variants are
 required to pass the same parsing, transaction, operational-state, and PAM
 tests.
 
+The provider claims dangd's exclusive `ntp` resource domain because its
+RFC 7317 subtree controls the host NTP daemon. It therefore cannot be loaded
+beside the separately packaged RFC 9249 provider under development, even
+though the two providers implement different YANG modules. This is enforced
+through the generic plugin contract rather than module-specific dangd logic.
+
 ## Dependencies, privileges, and installation
 
 The runtime requires dangd 0.1.0 or newer, libxml2, the platform `crypt(3)`

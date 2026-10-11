@@ -209,8 +209,17 @@ int Operational(void* raw, DangOperationalDataV1* result,
   return 1;
 }
 
-const DangPluginV3 plugin = {
-    .v2 = {.v1 = {.abi_version = DANG_PLUGIN_ABI_V3,
+/** The RFC 7317 NTP subtree exclusively owns one native resource domain. */
+std::size_t ResourceDomainCount(void*) { return 1; }
+
+/** Return the daemon/configuration ownership token shared with RFC 9249. */
+const char* ResourceDomainAt(void*, std::size_t index) {
+  return index == 0 ? "ntp" : nullptr;
+}
+
+const DangPluginV7 plugin = {
+    .v6 = {.v5 = {.v4 = {.v3 = {.v2 = {.v1 = {
+                  .abi_version = DANG_PLUGIN_ABI_V7,
                   .plugin_name = "ietf-system",
                   .context = &context,
                   .yang_source_count = SourceCount,
@@ -224,8 +233,16 @@ const DangPluginV3 plugin = {
                   .release = Release,
                   .destroy = nullptr},
            .invoke = Invoke},
-    .get_operational_data = Operational};
+           .get_operational_data = Operational},
+    .hardware_action_count = nullptr,
+    .hardware_action_at = nullptr,
+    .apply_hardware_action = nullptr,
+    .rollback_hardware_action = nullptr},
+    .get_operational_data_v2 = nullptr},
+    .reconcile_applied_configuration = nullptr},
+    .resource_domain_count = ResourceDomainCount,
+    .resource_domain_at = ResourceDomainAt};
 
 }  // namespace
 
-extern "C" const DangPluginV3* dang_plugin_init_v3() { return &plugin; }
+extern "C" const DangPluginV7* dang_plugin_init_v7() { return &plugin; }

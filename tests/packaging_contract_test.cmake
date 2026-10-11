@@ -28,6 +28,31 @@ foreach(component IN ITEMS frr rib)
   endif()
 endforeach()
 
+# RFC 7317 /system/ntp owns the same native daemon resources as the planned
+# RFC 9249 provider.  Its package marker makes that exclusivity visible even
+# before dangd performs the matching runtime-domain check.
+set(system_stage "${BINARY_DIR}/packaging-contract-system")
+file(REMOVE_RECURSE "${system_stage}")
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" --install "${BINARY_DIR}"
+    --prefix "${system_stage}" --component system
+  RESULT_VARIABLE system_result
+  ERROR_VARIABLE system_error)
+if(NOT system_result EQUAL 0)
+  message(FATAL_ERROR "cannot stage system package: ${system_error}")
+endif()
+file(GLOB_RECURSE ntp_markers
+  "${system_stage}/*/dangd/resource-domains/ntp")
+list(LENGTH ntp_markers ntp_marker_count)
+if(NOT ntp_marker_count EQUAL 1)
+  message(FATAL_ERROR
+    "system package has ${ntp_marker_count} NTP ownership markers")
+endif()
+file(READ "${ntp_markers}" ntp_contents)
+if(NOT ntp_contents STREQUAL "exclusive dangd resource domain: ntp\n")
+  message(FATAL_ERROR "system NTP ownership marker is invalid")
+endif()
+
 # The Kea component is deliberately self-contained.  Keep unrelated provider
 # models and binaries out of its native package as the collection grows.
 set(kea_stage "${BINARY_DIR}/packaging-contract-kea")

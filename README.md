@@ -144,11 +144,10 @@ only with one another. Packaging does not weaken dangd's duplicate-owner check.
 
 ## Planned plugins
 
-- `ntp` will implement the pinned RFC 9249
-  `ietf-ntp@2022-07-05` configuration and NMDA operational model for Linux and
-  FreeBSD. Its package must declare exclusive ownership of the native NTP
-  service and configuration resources, define migration from the RFC 7317
-  `system` plugin's NTP subtree, and fail closed if both providers would manage
-  the same daemon. Native programmatic daemon APIs are preferred; unsupported
-  model features and daemon-specific behavior will be documented and tested on
-  both operating systems.
+- `ntp` has a pinned, schema-validated RFC 9249
+  `ietf-ntp@2022-07-05` foundation and documented migration policy. The
+  RFC 7317 `system` provider now claims the generic exclusive `ntp` resource
+  domain which the future provider must also claim, so dangd will fail closed
+  if both would manage the same daemon without containing plugin-specific
+  logic. Transaction, native Linux/FreeBSD, operational-state, and packaging
+  implementation remains planned; see `plugins/ntp/README.md`.
