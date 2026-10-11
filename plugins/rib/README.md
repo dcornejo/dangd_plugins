@@ -248,7 +248,12 @@ fails. The nexthop selector compares either one exact portable base nexthop,
 including a durable `nexthop-ref`, or one complete weighted load-balance set.
 Weighted members are resolved through the reusable registry, native ECMP paths
 are projected into one modeled route, and list order does not affect the match;
-partial-set and vendor selectors remain explicitly unsupported.
+partial-set matching is not permitted. RFC 8431's optional
+`route-vendor-attributes` grouping contains no leaves, so this plugin does not
+advertise that feature. Schema-valid clients therefore cannot send a vendor
+selector, and a direct plugin call receives an attributed fail-closed error.
+Enabling it requires a separate YANG augmentation with concrete identity,
+persistence, replacement, and native forwarding semantics.
 
 `rib-add` validates a numeric native namespace. Linux tables are created by
 their first route, while FreeBSD FIBs must already exist in `net.fibs`; no

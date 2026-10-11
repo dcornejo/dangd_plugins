@@ -9,6 +9,13 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Closed the RFC 8431 vendor-selector review as an explicit capability
+  boundary. The standard module's `route-vendor-attributes` grouping is empty,
+  so the plugin does not advertise the optional feature and direct calls fail
+  closed with an attributed diagnostic rather than treating an empty selector
+  as match-all. A future vendor augmentation must define concrete identity,
+  persistence, and native semantics before enabling the feature.
+
 - Completed portable RFC 8431 nexthop-selected `route-update` with exact
   weighted load-balance-set matching. Native ECMP paths are projected into the
   modeled route before selection, selector members are resolved through the

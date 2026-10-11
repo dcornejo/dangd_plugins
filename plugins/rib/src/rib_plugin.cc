@@ -218,6 +218,9 @@ int Fail(DangPluginErrorV1* error, std::string text, std::string where = {}) {
 }
 size_t SourceCount(void*) { return 2; }
 int SourceAt(void*, size_t index, DangYangSourceV1* out, DangPluginErrorV1* error) {
+  // RFC 8431's route-vendor-attributes grouping is intentionally empty. Do
+  // not advertise that extension point until a separate augmentation defines
+  // concrete match, update, persistence, and native forwarding semantics.
   static constexpr const char* kRibFeatures[]{"nexthop-load-balance"};
   static const DangYangSourceV1 sources[]{
     {"ietf-i2rs-rib", "2018-09-13", kIetfI2rsRibYang, std::strlen(kIetfI2rsRibYang), "RFC 8431", DANG_YANG_IMPLEMENTED_V1, kRibFeatures, 1},

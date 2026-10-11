@@ -1711,6 +1711,20 @@ TEST(RibConfigTest, RouteUpdateAttributeSelectorRejectsIncompletePair) {
             "/ietf-i2rs-rib:route-update/input-route-attributes");
 }
 
+TEST(RibConfigTest, RouteUpdateRejectsUnadvertisedVendorSelector) {
+  std::string output;
+  std::string error;
+  std::string path;
+  EXPECT_FALSE(InvokeRouteUpdate(
+      NativePlatform::kLinux,
+      R"(<route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><input-route-vendor-attributes/><update-parameters-vendor><updated-route-attr><route-preference>20</route-preference><local-only>false</local-only></updated-route-attr></update-parameters-vendor></route-update>)",
+      &output, &error, &path));
+  EXPECT_NE(error.find("unadvertised extension point"), std::string::npos);
+  EXPECT_EQ(
+      path,
+      "/ietf-i2rs-rib:route-update/input-route-vendor-attributes");
+}
+
 TEST(RibConfigTest, RouteUpdateSelectsAllMatchingPortableBaseNexthops) {
   ObservedRoute first;
   first.route = {.routing_instance = "default", .rib = "100",

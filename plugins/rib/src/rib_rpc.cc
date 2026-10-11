@@ -951,9 +951,19 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
   xmlNodePtr input_routes = Child(root, "input-routes");
   xmlNodePtr input_attributes = Child(root, "input-route-attributes");
   xmlNodePtr update_parameters = Child(root, "update-parameters");
+  xmlNodePtr input_vendor = Child(root, "input-route-vendor-attributes");
+  xmlNodePtr update_parameters_vendor =
+      Child(root, "update-parameters-vendor");
   xmlNodePtr input_nexthop = Child(root, "input-nexthop");
   xmlNodePtr update_parameters_nexthop =
       Child(root, "update-parameters-nexthop");
+  if (input_vendor || update_parameters_vendor) {
+    *error = "route-vendor-attributes is an unadvertised extension point "
+             "without portable match semantics";
+    *error_path =
+        "/ietf-i2rs-rib:route-update/input-route-vendor-attributes";
+    return false;
+  }
   const bool prefix_selected = input_routes != nullptr;
   const bool attribute_selected =
       input_attributes != nullptr && update_parameters != nullptr;

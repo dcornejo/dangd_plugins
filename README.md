@@ -138,9 +138,9 @@ only with one another. Packaging does not weaken dangd's duplicate-owner check.
   systems. Linux whole-table deletion succeeds in its disposable table;
   FreeBSD FIB 0 returns a modeled refusal while immutable kernel routes remain.
   Prefix-, attribute-, and portable nexthop-selected route updates are
-  implemented, including exact weighted load-balance sets; vendor selectors,
-  unsupported kernel route kinds, and RFC attributes remain explicit
-  completion work.
+  implemented, including exact weighted load-balance sets. The empty optional
+  vendor-attribute extension is deliberately not advertised; unsupported
+  kernel route kinds and RFC attributes remain explicit completion work.
 
 ## Planned plugins
 
