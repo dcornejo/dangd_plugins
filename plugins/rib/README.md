@@ -100,9 +100,16 @@ interface, and adds an RFC 8431 gateway route whose outgoing-interface leafref
 targets that same modeled interface. It validates and commits both modules in
 one transaction, confirms the route, gateway, interface reference, and stable
 modeled `route-index` in operational data, deletes the routing instance,
-commits, and confirms the Linux table or FreeBSD FIB is clean. Cross-plugin
-leafrefs and transaction ordering are handled entirely through generic plugin
-contracts; dangd contains no RIB- or interface-specific integration logic.
+commits, and confirms the test route is absent. The same session then exercises
+all seven imperative RPC families: RIB registration/deletion, reusable
+nexthop creation/deletion, and route add/update/delete. It checks the allocated
+nexthop identifier, updated preference in operational readback, and RFC error
+code 1 for a repeated destination. Linux safely deletes the otherwise empty
+disposable table. FreeBSD FIB 0 contains connected kernel routes, so whole-FIB
+deletion returns modeled `false` with a reason and leaves those routes intact.
+Cross-plugin leafrefs and transaction ordering are handled entirely through
+generic plugin contracts; dangd contains no RIB- or interface-specific
+integration logic.
 
 ## Installation status and dependencies
 
@@ -241,7 +248,10 @@ their first route, while FreeBSD FIBs must already exist in `net.fibs`; no
 synthetic kernel object is created. Requests for `ip-rpf-check=true` return a
 modeled failure because RPF enforcement is not implemented. `rib-delete`
 removes every observed route in the selected namespace as one compensated
-plan, restoring earlier deletions if a later native operation fails.
+plan, restoring earlier deletions if a later native operation fails. It
+refuses the whole operation before mutation when the namespace contains a
+kernel-owned or otherwise unrepresentable route; consequently a normal
+FreeBSD FIB 0 is not treated as an empty disposable RIB.
 
 `nh-add` allocates an identifier for a base IP-address, outgoing-interface,
 combined nexthop, `discard`, or `discard-with-error` identity and retains it in

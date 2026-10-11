@@ -133,9 +133,12 @@ only with one another. Packaging does not weaken dangd's duplicate-owner check.
   claims the
   `routing` resource against FRR, and applies its supported route slice on Linux
   and FreeBSD. Its supported slice has native RPC, notification, reversible
-  commit, operational readback, and full NETCONF candidate lifecycle coverage
-  on both systems; unsupported kernel route kinds and RFC attributes remain
-  explicit completion work.
+  commit, operational readback, full NETCONF candidate lifecycle coverage, and
+  one NETCONF session covering every implemented imperative RPC on both
+  systems. Linux whole-table deletion succeeds in its disposable table;
+  FreeBSD FIB 0 returns a modeled refusal while immutable kernel routes remain.
+  Unsupported kernel route kinds and RFC attributes remain explicit completion
+  work.
 
 ## Planned plugins
 

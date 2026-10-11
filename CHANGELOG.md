@@ -9,6 +9,15 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Expanded the isolated RFC 8431 NETCONF session to cover every implemented
+  imperative operation after the candidate lifecycle: `rib-add`, `nh-add`,
+  `nh-delete`, `route-add`, duplicate `route-add`, `route-update`,
+  `route-delete`, and `rib-delete`. The test verifies multi-element operation
+  output, durable nexthop allocation, operational preference readback, and RFC
+  duplicate-route error code 1. Linux deletes its disposable table; FreeBSD
+  FIB 0 proves the fail-closed modeled refusal required while immutable native
+  routes remain. Both systems finish without the test-created routes.
+
 - Made the RFC 8431 configuration boundary fail closed for modeled controls
   the portable backend does not enforce. Datastore commits now reject routing
   instance interface membership, router ID, lookup limit, enabled RPF checks,
