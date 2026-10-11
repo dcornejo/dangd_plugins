@@ -187,6 +187,47 @@ TEST(RibConfigTest, ParsesPortableDestinationRoute) {
   EXPECT_EQ(config.routes[0].preference, 10U);
 }
 
+TEST(RibConfigTest, RejectsUnsupportedAugmentedRouteAttributes) {
+  const auto insert_before = [](std::string xml, std::string_view marker,
+                                std::string_view content) {
+    const std::size_t position = xml.find(marker);
+    EXPECT_NE(position, std::string::npos);
+    if (position != std::string::npos) xml.insert(position, content);
+    return xml;
+  };
+  Config config;
+  std::string error;
+  std::string path;
+  std::string empty = insert_before(
+      kBefore, "</route-attributes>",
+      "<address-family-route-attributes/>");
+  empty = insert_before(empty, "</route-list>",
+                        "<route-vendor-attributes/>");
+  ASSERT_TRUE(ParseConfig(empty.c_str(), &config, &error, &path)) << error;
+
+  const std::string family = insert_before(
+      kBefore, "</route-attributes>",
+      "<address-family-route-attributes><x:color "
+      "xmlns:x=\"urn:example:rib-augment\">red</x:color>"
+      "</address-family-route-attributes>");
+  EXPECT_FALSE(ParseConfig(family.c_str(), &config, &error, &path));
+  EXPECT_NE(error.find("augmented address-family"), std::string::npos);
+  EXPECT_EQ(path,
+            "/ietf-i2rs-rib:routing-instance/rib-list/route-list/"
+            "route-attributes/address-family-route-attributes");
+
+  const std::string vendor = insert_before(
+      kBefore, "</route-list>",
+      "<route-vendor-attributes><x:color "
+      "xmlns:x=\"urn:example:rib-augment\">red</x:color>"
+      "</route-vendor-attributes>");
+  EXPECT_FALSE(ParseConfig(vendor.c_str(), &config, &error, &path));
+  EXPECT_NE(error.find("augmented vendor"), std::string::npos);
+  EXPECT_EQ(path,
+            "/ietf-i2rs-rib:routing-instance/rib-list/route-list/"
+            "route-vendor-attributes");
+}
+
 constexpr char kLoadBalance[] = R"xml(<config>
   <routing-instance xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib">
     <name>default</name><rib-list><name>100</name>

@@ -140,7 +140,7 @@ only with one another. Packaging does not weaken dangd's duplicate-owner check.
   Prefix-, attribute-, and portable nexthop-selected route updates are
   implemented, including exact weighted load-balance sets. The empty optional
   vendor-attribute extension is deliberately not advertised; unsupported
-  kernel route kinds and RFC attributes remain explicit completion work.
+  non-portable kernel route kinds remain explicit future capability work.
 
 ## Planned plugins
 

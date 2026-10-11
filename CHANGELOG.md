@@ -9,6 +9,13 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Hardened RFC 8431 route-attribute extension handling. The two concrete base
+  attributes are already covered: preference round-trips on both kernels, and
+  local-only is observed exactly while unsafe configuration fails closed.
+  Empty standard address-family and vendor extension containers remain valid,
+  but augmented content is now rejected at its exact model path instead of
+  being silently ignored.
+
 - Closed the RFC 8431 vendor-selector review as an explicit capability
   boundary. The standard module's `route-vendor-attributes` grouping is empty,
   so the plugin does not advertise the optional feature and direct calls fail

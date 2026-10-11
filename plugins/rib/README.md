@@ -156,7 +156,10 @@ not implemented, so any other name fails at `/routing-instance/name` rather
 than being applied to the host default instance. It
 requires the RFC 8431 route preference and local-only fields. The portable
 configuration slice accepts only `local-only=false`; native local receive
-routes remain observable read-only state. It rejects source, MPLS, MAC,
+routes remain observable read-only state. These are the model's only concrete
+base route attributes; the address-family cases and vendor grouping are empty
+extension points. Empty containers are accepted, while any augmented content
+fails at the exact extension path instead of being ignored. It rejects source, MPLS, MAC,
 interface-match, chained, replicated, protected, and tunnel routes with an
 attributed model path. It also rejects routing-instance interface membership,
 router ID, and lookup limit because the native backend cannot enforce them.

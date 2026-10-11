@@ -49,6 +49,14 @@ std::vector<xmlNodePtr> Children(xmlNodePtr parent, std::string_view name) {
   return result;
 }
 
+/** Returns true when an extension container carries any modeled content. */
+bool HasElementChildren(xmlNodePtr parent) {
+  for (xmlNodePtr node = parent ? parent->children : nullptr; node;
+       node = node->next)
+    if (node->type == XML_ELEMENT_NODE) return true;
+  return false;
+}
+
 std::optional<std::string> Text(xmlNodePtr node) {
   if (!node) return std::nullopt;
   xmlChar* raw = xmlNodeGetContent(node);
@@ -320,6 +328,21 @@ bool ParseConfig(const char* xml, Config* config, std::string* error,
             "the portable native backend cannot configure local-only routes; "
             "kernel-owned receive routes are published as read-only state",
             "/ietf-i2rs-rib:routing-instance/rib-list/route-list/route-attributes/local-only",
+            error, error_path);
+      if (HasElementChildren(
+              Child(attributes, "address-family-route-attributes")))
+        return Fail(
+            "augmented address-family route attributes are not implemented "
+            "by the portable backend",
+            "/ietf-i2rs-rib:routing-instance/rib-list/route-list/"
+            "route-attributes/address-family-route-attributes",
+            error, error_path);
+      if (HasElementChildren(Child(route_node, "route-vendor-attributes")))
+        return Fail(
+            "augmented vendor route attributes are not implemented by the "
+            "portable backend",
+            "/ietf-i2rs-rib:routing-instance/rib-list/route-list/"
+            "route-vendor-attributes",
             error, error_path);
       config->routes.push_back(std::move(route));
     }
