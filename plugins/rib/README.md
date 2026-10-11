@@ -244,9 +244,11 @@ the RFC attribute selector: all routes in the named RIB whose complete
 replacement. Both forms capture each matching observed route as a before-image,
 reject an unrepresentable local-only replacement before deletion, install the
 supported replacement, and restore the exact before-image if installation
-fails. The nexthop selector compares one exact portable base nexthop, including
-a durable `nexthop-ref`; load-balance-wide and vendor selectors remain
-explicitly unsupported.
+fails. The nexthop selector compares either one exact portable base nexthop,
+including a durable `nexthop-ref`, or one complete weighted load-balance set.
+Weighted members are resolved through the reusable registry, native ECMP paths
+are projected into one modeled route, and list order does not affect the match;
+partial-set and vendor selectors remain explicitly unsupported.
 
 `rib-add` validates a numeric native namespace. Linux tables are created by
 their first route, while FreeBSD FIBs must already exist in `net.fibs`; no

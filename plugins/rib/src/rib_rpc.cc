@@ -5,6 +5,7 @@
 
 #include "plugins/rib/src/rib_rpc.h"
 
+#include <algorithm>
 #include <cstring>
 #include <charconv>
 #include <limits>
@@ -193,7 +194,7 @@ std::optional<Route> NativeRoute(const Route& route,
  * Applies one modeled route-update option to a captured native before-image.
  *
  * Keeping this parser independent of the match selector is important: the
- * prefix, attribute, and (eventually) nexthop selectors must all enforce the
+ * prefix, attribute, and nexthop selectors must all enforce the
  * same portable replacement boundary. The returned error code uses RFC
  * 8431's route-operation-state values: 2 means an unresolved reference and 3
  * means malformed or unsupported input.
@@ -209,6 +210,7 @@ bool ApplyRouteUpdate(xmlNodePtr options, bool ipv6,
     replacement->interface.reset();
     replacement->nexthop_ref.reset();
     replacement->special.reset();
+    replacement->load_balance.clear();
     const std::string gateway = Text(
         Child(base, ipv6 ? "ipv6-address" : "ipv4-address"));
     const std::string interface = Text(Child(base, "outgoing-interface"));
@@ -278,11 +280,40 @@ bool ApplyRouteUpdate(xmlNodePtr options, bool ipv6,
   return false;
 }
 
-/** Parses the exact portable base-nexthop subset accepted as a selector. */
+/** Parses the exact portable nexthop subset accepted as a selector. */
 bool ParseNexthopSelector(xmlNodePtr input, const std::string& rib_name,
                           const NexthopResolver& resolver, Route* selector) {
   xmlNodePtr base = Child(input, "nexthop-base");
-  if (!base) return false;
+  xmlNodePtr load_balance = Child(input, "nexthop-lb");
+  if ((base == nullptr) == (load_balance == nullptr)) return false;
+  if (load_balance) {
+    if (!resolver) return false;
+    std::set<std::uint32_t> member_ids;
+    for (xmlNodePtr member = load_balance->children; member;
+         member = member->next) {
+      if (!Is(member, "nexthop-list")) continue;
+      std::uint32_t id = 0;
+      std::uint32_t weight = 0;
+      std::optional<std::string> gateway;
+      std::optional<std::string> interface;
+      std::optional<std::string> special;
+      if (!Unsigned(Child(member, "nexthop-member-id"), &id) || id == 0U ||
+          !member_ids.emplace(id).second ||
+          !Unsigned(Child(member, "nexthop-lb-weight"), &weight) ||
+          weight < 1U || weight > 99U ||
+          !resolver(rib_name, id, &gateway, &interface, &special) || special ||
+          (!gateway && !interface))
+        return false;
+      selector->load_balance.push_back(
+          {.id = id,
+           .gateway = std::move(gateway),
+           .interface = std::move(interface),
+           .weight = static_cast<std::uint8_t>(weight)});
+    }
+    if (selector->load_balance.empty()) return false;
+    std::ranges::sort(selector->load_balance, {}, &WeightedNexthop::id);
+    return true;
+  }
   const std::string ipv4 = Text(Child(base, "ipv4-address"));
   const std::string ipv6 = Text(Child(base, "ipv6-address"));
   if (!ipv4.empty()) {
@@ -331,6 +362,19 @@ bool ParseNexthopSelector(xmlNodePtr input, const std::string& rib_name,
        !selector->nexthop_ref))
     return false;
   return true;
+}
+
+/** Compares the forwarding identity and weight of two complete ECMP sets. */
+bool SameLoadBalance(const std::vector<WeightedNexthop>& left,
+                     const std::vector<WeightedNexthop>& right) {
+  const auto identity = [](const WeightedNexthop& member) {
+    return std::tie(member.gateway, member.interface, member.weight);
+  };
+  std::vector<WeightedNexthop> sorted_left = left;
+  std::vector<WeightedNexthop> sorted_right = right;
+  std::ranges::sort(sorted_left, {}, identity);
+  std::ranges::sort(sorted_right, {}, identity);
+  return std::ranges::equal(sorted_left, sorted_right, {}, identity, identity);
 }
 
 bool PersistRegistryChange(NativePlatform platform, NexthopRegistry* registry,
@@ -920,7 +964,7 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
                                   static_cast<unsigned>(nexthop_selected);
   if (rib_name.empty() || selector_count != 1U) {
     *error = "route-update requires exactly one supported prefix, route-"
-             "attribute, or base-nexthop selector";
+             "attribute, or nexthop selector";
     *error_path = "/ietf-i2rs-rib:route-update";
     return false;
   }
@@ -928,7 +972,8 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
   if (nexthop_selected &&
       !ParseNexthopSelector(input_nexthop, rib_name, resolver,
                             &nexthop_selector)) {
-    *error = "nexthop selector requires one supported portable base nexthop";
+    *error = "nexthop selector requires one supported portable base or "
+             "weighted nexthop";
     *error_path = "/ietf-i2rs-rib:route-update/input-nexthop";
     return false;
   }
@@ -938,6 +983,11 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
     *error = "cannot read host RIB: " + observe_error;
     *error_path = "/ietf-i2rs-rib:route-update";
     return false;
+  }
+  if (registry) {
+    const OperationalRegistryState state = registry->OperationalState();
+    observed = ProjectOperationalRoutes(observed, state.registry,
+                                        state.configuration_routes);
   }
   const bool details = Boolean(Child(root, "return-failure-detail"));
   const PersistentRegistry before =
@@ -954,7 +1004,7 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
     const Route original = observed_route.route;
     Route replacement = original;
     replacement.index = index;
-    if (registry)
+    if (registry && !replacement.nexthop_ref)
       replacement.nexthop_ref = registry->RouteReference(replacement);
     unsigned update_error = 0;
     if (!ApplyRouteUpdate(options,
@@ -1033,9 +1083,15 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
     for (const ObservedRoute& candidate : observed) {
       if (candidate.route.rib != rib_name) continue;
       const std::optional<std::uint32_t> reference =
-          registry ? registry->RouteReference(candidate.route) : std::nullopt;
+          candidate.route.nexthop_ref
+              ? candidate.route.nexthop_ref
+              : (registry ? registry->RouteReference(candidate.route)
+                          : std::nullopt);
       bool matches = false;
-      if (nexthop_selector.nexthop_ref) {
+      if (!nexthop_selector.load_balance.empty()) {
+        matches = SameLoadBalance(candidate.route.load_balance,
+                                  nexthop_selector.load_balance);
+      } else if (nexthop_selector.nexthop_ref) {
         matches = reference == nexthop_selector.nexthop_ref;
       } else {
         matches = !reference &&

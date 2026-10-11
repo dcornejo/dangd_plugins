@@ -9,10 +9,17 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Completed portable RFC 8431 nexthop-selected `route-update` with exact
+  weighted load-balance-set matching. Native ECMP paths are projected into the
+  modeled route before selection, selector members are resolved through the
+  reusable nexthop registry, and only a complete identity-and-weight match is
+  updated. Base replacement now also clears an earlier weighted choice. Unit
+  coverage exercises order-independent matching of a real two-path inventory.
+
 - Implemented RFC 8431 nexthop-selected `route-update` for the exact portable
   base-nexthop subset. Gateway, outgoing-interface, combined, special, and
   durable reference identities can select every matching route in one RIB;
-  load-balance-wide and vendor selection remain explicit gaps. The shared
+  weighted-set and vendor selection remained explicit gaps. The shared
   replacement path preserves per-route acknowledgement, rollback, persistence,
   and notification behavior. Unit and real Linux/FreeBSD NETCONF tests now
   exercise all three supported selectors.

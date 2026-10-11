@@ -1742,6 +1742,123 @@ TEST(RibConfigTest, RouteUpdateSelectsAllMatchingPortableBaseNexthops) {
   EXPECT_NE(output.find(">0</failed-count>"), std::string::npos) << output;
 }
 
+TEST(RibConfigTest, RouteUpdateSelectsCompleteWeightedNexthopSet) {
+  NexthopRegistry registry;
+  ASSERT_EQ(registry.Add({.rib = "100", .gateway = "192.0.2.1",
+                          .interface = "dummy0", .address_family = "ipv4"}),
+            1U);
+  ASSERT_EQ(registry.Add({.rib = "100", .gateway = "192.0.2.2",
+                          .interface = "dummy1", .address_family = "ipv4"}),
+            2U);
+  ObservedRoute first;
+  first.route = {.routing_instance = "default", .rib = "100",
+                 .address_family = "ipv4", .destination = "198.51.100.0/24",
+                 .gateway = "192.0.2.1", .interface = "dummy0",
+                 .preference = 10};
+  first.weight = 2;
+  ObservedRoute second = first;
+  second.route.gateway = "192.0.2.2";
+  second.route.interface = "dummy1";
+  second.weight = 3;
+  std::vector<NativeCommand> commands;
+  std::string output;
+  std::string error;
+  std::string path;
+  const auto resolver = [&](const std::string& rib, std::uint32_t id,
+                            std::optional<std::string>* gateway,
+                            std::optional<std::string>* interface,
+                            std::optional<std::string>* special) {
+    return registry.Resolve(rib, id, gateway, interface, special);
+  };
+  ASSERT_TRUE(InvokeRouteUpdate(
+      NativePlatform::kLinux,
+      R"(<route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><input-nexthop><nexthop-lb><nexthop-list><nexthop-member-id>2</nexthop-member-id><nexthop-lb-weight>3</nexthop-lb-weight></nexthop-list><nexthop-list><nexthop-member-id>1</nexthop-member-id><nexthop-lb-weight>2</nexthop-lb-weight></nexthop-list></nexthop-lb></input-nexthop><update-parameters-nexthop><updated-route-attr><route-preference>40</route-preference><local-only>false</local-only></updated-route-attr></update-parameters-nexthop></route-update>)",
+      &output, &error, &path,
+      [&](const NativeCommand& command, std::string*) {
+        commands.push_back(command);
+        return true;
+      },
+      [&](std::vector<ObservedRoute>* routes, std::string*) {
+        *routes = {first, second};
+        return true;
+      },
+      resolver, &registry)) << error;
+  ASSERT_EQ(commands.size(), 2U);
+  EXPECT_EQ(commands[0].arguments[3], "delete");
+  EXPECT_EQ(commands[1].arguments[3], "replace");
+  EXPECT_NE(std::ranges::find(commands[1].arguments, "40"),
+            commands[1].arguments.end());
+  EXPECT_NE(output.find(">1</success-count>"), std::string::npos) << output;
+  EXPECT_NE(output.find(">0</failed-count>"), std::string::npos) << output;
+
+  commands.clear();
+  ASSERT_TRUE(InvokeRouteUpdate(
+      NativePlatform::kLinux,
+      R"(<route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><input-nexthop><nexthop-lb><nexthop-list><nexthop-member-id>1</nexthop-member-id><nexthop-lb-weight>2</nexthop-lb-weight></nexthop-list><nexthop-list><nexthop-member-id>2</nexthop-member-id><nexthop-lb-weight>4</nexthop-lb-weight></nexthop-list></nexthop-lb></input-nexthop><update-parameters-nexthop><updated-route-attr><route-preference>50</route-preference><local-only>false</local-only></updated-route-attr></update-parameters-nexthop></route-update>)",
+      &output, &error, &path,
+      [&](const NativeCommand& command, std::string*) {
+        commands.push_back(command);
+        return true;
+      },
+      [&](std::vector<ObservedRoute>* routes, std::string*) {
+        *routes = {first, second};
+        return true;
+      },
+      resolver, &registry)) << error;
+  EXPECT_TRUE(commands.empty());
+  EXPECT_NE(output.find(">0</success-count>"), std::string::npos) << output;
+}
+
+TEST(RibConfigTest, RouteUpdatePreservesProjectedDatastoreReferenceIdentity) {
+  NexthopRegistry registry;
+  ASSERT_EQ(registry.Add({.rib = "100", .gateway = "192.0.2.1",
+                          .interface = "dummy0", .address_family = "ipv4"}),
+            1U);
+  ObservedRoute observed;
+  observed.route = {.routing_instance = "default", .rib = "100",
+                    .address_family = "ipv4", .destination = "192.0.2.0/24",
+                    .gateway = "192.0.2.1", .interface = "dummy0",
+                    .preference = 10};
+  Route configured = observed.route;
+  configured.index = 77;
+  configured.nexthop_ref = 1;
+  ASSERT_TRUE(registry.ReplaceConfigurationRouteBindings({configured}));
+  const auto resolver = [&](const std::string& rib, std::uint32_t id,
+                            std::optional<std::string>* gateway,
+                            std::optional<std::string>* interface,
+                            std::optional<std::string>* special) {
+    return registry.Resolve(rib, id, gateway, interface, special);
+  };
+  unsigned commands = 0;
+  std::string output;
+  std::string error;
+  std::string path;
+  const auto invoke = [&](const char* selector) {
+    return InvokeRouteUpdate(
+        NativePlatform::kLinux, selector, &output, &error, &path,
+        [&](const NativeCommand&, std::string*) {
+          ++commands;
+          return true;
+        },
+        [&](std::vector<ObservedRoute>* routes, std::string*) {
+          *routes = {observed};
+          return true;
+        },
+        resolver, &registry);
+  };
+  ASSERT_TRUE(invoke(
+      R"(<route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><input-nexthop><nexthop-base><egress-interface-ipv4-address><outgoing-interface>dummy0</outgoing-interface><ipv4-address>192.0.2.1</ipv4-address></egress-interface-ipv4-address></nexthop-base></input-nexthop><update-parameters-nexthop><updated-route-attr><route-preference>20</route-preference><local-only>false</local-only></updated-route-attr></update-parameters-nexthop></route-update>)"))
+      << error;
+  EXPECT_EQ(commands, 0U);
+  EXPECT_NE(output.find(">0</success-count>"), std::string::npos) << output;
+
+  ASSERT_TRUE(invoke(
+      R"(<route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>100</rib-name><input-nexthop><nexthop-base><nexthop-ref>1</nexthop-ref></nexthop-base></input-nexthop><update-parameters-nexthop><updated-route-attr><route-preference>20</route-preference><local-only>false</local-only></updated-route-attr></update-parameters-nexthop></route-update>)"))
+      << error;
+  EXPECT_EQ(commands, 2U);
+  EXPECT_NE(output.find(">1</success-count>"), std::string::npos) << output;
+}
+
 TEST(RibConfigTest, RouteUpdateRejectsUnrepresentableLocalOnlyAttribute) {
   constexpr char input[] = R"xml(<route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><return-failure-detail>true</return-failure-detail><rib-name>100</rib-name><input-routes><route-list><route-index>7</route-index><match><ipv4><dest-ipv4-prefix>192.0.2.0/24</dest-ipv4-prefix></ipv4></match><updated-route-attr><route-preference>20</route-preference><local-only>true</local-only></updated-route-attr></route-list></input-routes></route-update>)xml";
   ObservedRoute route;

@@ -137,9 +137,10 @@ only with one another. Packaging does not weaken dangd's duplicate-owner check.
   one NETCONF session covering every implemented imperative RPC on both
   systems. Linux whole-table deletion succeeds in its disposable table;
   FreeBSD FIB 0 returns a modeled refusal while immutable kernel routes remain.
-  Prefix-, attribute-, and portable base-nexthop-selected route updates are
-  implemented; load-balance/vendor selectors, unsupported kernel route kinds,
-  and RFC attributes remain explicit completion work.
+  Prefix-, attribute-, and portable nexthop-selected route updates are
+  implemented, including exact weighted load-balance sets; vendor selectors,
+  unsupported kernel route kinds, and RFC attributes remain explicit
+  completion work.
 
 ## Planned plugins
 
