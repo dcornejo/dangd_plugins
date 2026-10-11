@@ -3,15 +3,16 @@
 
 # RFC 9249 NTP plugin
 
-This directory contains the pinned standards foundation for a separately
-packaged `ietf-ntp@2022-07-05` provider.  The loadable plugin and native
-Linux/FreeBSD adapters are not implemented yet; installing the current source
-tree does not advertise RFC 9249 support.
+This directory contains the pinned standards foundation and platform-neutral
+configuration planner for a separately packaged `ietf-ntp@2022-07-05`
+provider. The loadable plugin and native Linux/FreeBSD adapters are not
+implemented yet; installing the current source tree does not advertise
+RFC 9249 support.
 
 RFC 9249 defines a top-level `/ntp` presence container for NTPv4 and NTPv3
 compatibility.  It covers unicast, broadcast, multicast, and manycast modes;
-symmetric-key authentication; ACL references; interface and VRF-related
-configuration; clock and association state; statistics; and the
+symmetric-key authentication; ACL references; interface configuration; clock
+and association state; statistics; and the
 `statistics-reset` RPC.  Each feature will be advertised only after its native
 configuration, operational projection, rollback, and platform tests exist.
 
@@ -62,6 +63,32 @@ There is deliberately no automatic translation: the models have different
 feature sets and translating an unsupported mode or authentication choice
 silently would violate dangd's fail-closed transaction policy.
 
+## Configuration and transaction-planning boundary
+
+`src/ntp_config.cc` parses complete datastore snapshots without reading or
+changing host state. It currently projects the `/ntp` presence state, listener
+port, local reference-clock stratum, non-deprecated symmetric authentication
+keys, access-rule bindings, and unicast server/peer associations. YANG defaults
+are explicit, identity prefixes are normalized, system-ordered lists are
+canonicalized, key references are checked, and malformed or augmented content
+fails with an attributed RFC 9249 path. The deprecated cleartext `keystring`
+case is deliberately rejected; only the hexadecimal representation and
+non-deprecated HMAC-SHA-2 or AES-CMAC identities are accepted.
+
+The planner compares two parsed snapshots and emits deterministic English
+actions plus dependency edges. It never includes key bytes in descriptions.
+Service shutdown precedes destructive association removal, old associations
+precede obsolete key replacement, authentication/access/port prerequisites
+precede new associations, and service startup depends on every configuration
+step. These are plans only: they make transaction ordering testable before a
+daemon-specific adapter is allowed to act.
+
+Broadcast, multicast, and manycast interface modes currently fail closed at
+`/ietf-ntp:ntp/interfaces`. They require explicit cross-daemon mappings before
+the parser accepts them. VRF behavior is also still pending because the base
+RFC 9249 module does not contain a VRF node; any supporting augmentation must
+be selected and pinned rather than inferred.
+
 ## Development and validation
 
 Run the schema test through CTest after configuring against a dang checkout:
@@ -73,10 +100,11 @@ cmake --build build
 ctest --test-dir build -R rfc9249 --output-on-failure
 ```
 
-The next implementation increment must add a parser and a side-effect-free
-transaction plan before introducing native adapters.  Linux and FreeBSD
-adapters must then implement acknowledged apply, retained before-image
-rollback, NMDA operational readback, and isolated tests.  Programmatic daemon
-or service-manager APIs are required where the platform supplies them; a
-process boundary is acceptable only when no supported API exists and must use
-an absolute executable path and fixed argument vector without a shell.
+The next implementation increment must wrap the parser and planner in the
+loadable plugin transaction lifecycle without advertising unimplemented
+features. Linux and FreeBSD adapters must then implement acknowledged apply,
+retained before-image rollback, NMDA operational readback, and isolated tests.
+Programmatic daemon or service-manager APIs are required where the platform
+supplies them; a process boundary is acceptable only when no supported API
+exists and must use an absolute executable path and fixed argument vector
+without a shell.

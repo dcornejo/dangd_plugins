@@ -441,6 +441,17 @@ if(BUILD_TESTING)
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME kea_xml_to_control_json COMMAND kea_adapter_test)
 
+  add_executable(ntp_config_test
+    tests/ntp_config_test.cc plugins/ntp/src/ntp_config.cc)
+  target_compile_features(ntp_config_test PRIVATE cxx_std_20)
+  target_include_directories(ntp_config_test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(ntp_config_test PRIVATE
+    LibXml2::LibXml2 GTest::gtest_main)
+  target_compile_options(ntp_config_test PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME rfc9249_configuration_planning COMMAND ntp_config_test)
+
   find_program(DANG_YANGLINT_EXECUTABLE yanglint)
   if(DANG_YANGLINT_EXECUTABLE)
     add_test(NAME kea_ha_operational_schema

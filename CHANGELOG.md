@@ -9,6 +9,15 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Added the first daemon-independent RFC 9249 implementation layer. The strict
+  parser projects listener, reference-clock, modern symmetric authentication,
+  ACL binding, and unicast server/peer configuration with defaults and stable
+  system-list ordering; unsupported interface modes and augmented content fail
+  at attributed paths. The transaction planner expresses changes as English
+  actions with explicit safety dependencies, brackets changes with service
+  stop/start ordering, and never exposes key bytes. Unit tests cover valid
+  projection, errors, secret redaction, ordering, and semantic no-op behavior.
+
 - Started the separately packaged RFC 9249 NTP provider with the authoritative
   `ietf-ntp@2022-07-05` module and its pinned ACL, packet-field, ethertype, and
   routing-type import closure. A direct yanglint interoperability test loads
