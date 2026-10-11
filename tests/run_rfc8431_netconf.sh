@@ -79,6 +79,7 @@ cat >"$runtime/session.xml" <<EOF
 <rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="route-add"><route-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><return-failure-detail>true</return-failure-detail><rib-name>$rib</rib-name><routes><route-list><route-index>8432</route-index><match><ipv4><dest-ipv4-prefix>$rpc_prefix</dest-ipv4-prefix></ipv4></match><route-attributes><route-preference>10</route-preference><local-only>false</local-only></route-attributes><nexthop><nexthop-base><egress-interface-ipv4-address><outgoing-interface>$interface</outgoing-interface><ipv4-address>$gateway</ipv4-address></egress-interface-ipv4-address></nexthop-base></nexthop></route-list></routes></route-add></rpc>]]>]]>
 <rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="route-add-repeat"><route-add xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><return-failure-detail>true</return-failure-detail><rib-name>$rib</rib-name><routes><route-list><route-index>8433</route-index><match><ipv4><dest-ipv4-prefix>$rpc_prefix</dest-ipv4-prefix></ipv4></match><route-attributes><route-preference>99</route-preference><local-only>false</local-only></route-attributes><nexthop><nexthop-base><special>discard</special></nexthop-base></nexthop></route-list></routes></route-add></rpc>]]>]]>
 <rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="route-update"><route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>$rib</rib-name><input-routes><route-list><route-index>8432</route-index><match><ipv4><dest-ipv4-prefix>$rpc_prefix</dest-ipv4-prefix></ipv4></match><updated-route-attr><route-preference>20</route-preference><local-only>false</local-only></updated-route-attr></route-list></input-routes></route-update></rpc>]]>]]>
+<rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="route-update-attributes"><route-update xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><rib-name>$rib</rib-name><input-route-attributes><route-preference>20</route-preference><local-only>false</local-only></input-route-attributes><update-parameters><updated-route-attr><route-preference>30</route-preference><local-only>false</local-only></updated-route-attr></update-parameters></route-update></rpc>]]>]]>
 <rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="get-rpc"><get/></rpc>]]>]]>
 <rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="route-delete"><route-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><return-failure-detail>true</return-failure-detail><rib-name>$rib</rib-name><routes><route-list><route-index>8432</route-index><match><ipv4><dest-ipv4-prefix>$rpc_prefix</dest-ipv4-prefix></ipv4></match></route-list></routes></route-delete></rpc>]]>]]>
 <rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="rib-delete"><rib-delete xmlns="urn:ietf:params:xml:ns:yang:ietf-i2rs-rib"><name>$rib</name></rib-delete></rpc>]]>]]>
@@ -132,8 +133,8 @@ else
     grep -E '<result[^>]*>true</result>' >/dev/null ||
     fail "rib-delete did not report success"
 fi
-[ "$(grep -Eo '<success-count[^>]*>1</success-count>' "$runtime/replies.xml" | wc -l | tr -d ' ')" -eq 3 ] ||
-  fail "expected successful route-add, route-update, and route-delete replies"
+[ "$(grep -Eo '<success-count[^>]*>1</success-count>' "$runtime/replies.xml" | wc -l | tr -d ' ')" -eq 4 ] ||
+  fail "expected successful route-add, both route-update forms, and route-delete replies"
 grep -E '<success-count[^>]*>0</success-count><failed-count[^>]*>1</failed-count>' \
   "$runtime/replies.xml" >/dev/null ||
   fail "repeated route-add did not report one modeled failure"
@@ -141,9 +142,9 @@ grep -E '<error-code[^>]*>1</error-code>' "$runtime/replies.xml" >/dev/null ||
   fail "repeated route-add did not preserve the RFC duplicate-route code"
 grep -F "$rpc_prefix" "$runtime/replies.xml" >/dev/null ||
   fail "RPC-created route was absent from operational readback"
-grep -F '<route-preference>20</route-preference>' \
+grep -F '<route-preference>30</route-preference>' \
   "$runtime/replies.xml" >/dev/null ||
-  fail "route-update preference was absent from operational readback"
+  fail "attribute-selected route-update was absent from operational readback"
 grep -F 'message-id="close"' "$runtime/replies.xml" >/dev/null ||
   fail "close-session reply is missing"
 

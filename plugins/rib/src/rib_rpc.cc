@@ -188,6 +188,95 @@ std::optional<Route> NativeRoute(const Route& route,
   return result;
 }
 
+/**
+ * Applies one modeled route-update option to a captured native before-image.
+ *
+ * Keeping this parser independent of the match selector is important: the
+ * prefix, attribute, and (eventually) nexthop selectors must all enforce the
+ * same portable replacement boundary. The returned error code uses RFC
+ * 8431's route-operation-state values: 2 means an unresolved reference and 3
+ * means malformed or unsupported input.
+ */
+bool ApplyRouteUpdate(xmlNodePtr options, bool ipv6,
+                      const std::string& rib_name,
+                      const NexthopResolver& resolver, Route* replacement,
+                      unsigned* error_code) {
+  if (xmlNodePtr updated = Child(options, "updated-nexthop")) {
+    xmlNodePtr base = Child(updated, "nexthop-base");
+    if (!base) { *error_code = 3U; return false; }
+    replacement->gateway.reset();
+    replacement->interface.reset();
+    replacement->nexthop_ref.reset();
+    replacement->special.reset();
+    const std::string gateway = Text(
+        Child(base, ipv6 ? "ipv6-address" : "ipv4-address"));
+    const std::string interface = Text(Child(base, "outgoing-interface"));
+    if (!gateway.empty()) replacement->gateway = gateway;
+    if (!interface.empty()) replacement->interface = interface;
+    const std::string special = LocalIdentity(Text(Child(base, "special")));
+    if (!special.empty()) replacement->special = special;
+    if (xmlNodePtr combined = Child(
+            base, ipv6 ? "egress-interface-ipv6-address"
+                       : "egress-interface-ipv4-address")) {
+      const std::string combined_gateway = Text(
+          Child(combined, ipv6 ? "ipv6-address" : "ipv4-address"));
+      const std::string combined_interface =
+          Text(Child(combined, "outgoing-interface"));
+      replacement->gateway = combined_gateway.empty()
+                                 ? std::nullopt
+                                 : std::optional(combined_gateway);
+      replacement->interface = combined_interface.empty()
+                                   ? std::nullopt
+                                   : std::optional(combined_interface);
+    }
+    if (xmlNodePtr reference = Child(base, "nexthop-ref")) {
+      std::uint32_t id = 0;
+      if (replacement->special || replacement->gateway ||
+          replacement->interface || !resolver || !Unsigned(reference, &id) ||
+          !resolver(rib_name, id, &replacement->gateway,
+                    &replacement->interface, &replacement->special)) {
+        *error_code = 2U;
+        return false;
+      }
+      replacement->nexthop_ref = id;
+    }
+    if (replacement->special &&
+        (*replacement->special != "discard" &&
+         *replacement->special != "discard-with-error")) {
+      *error_code = 3U;
+      return false;
+    }
+    if ((replacement->special &&
+         (replacement->gateway || replacement->interface)) ||
+        (!replacement->special && !replacement->gateway &&
+         !replacement->interface)) {
+      *error_code = 3U;
+      return false;
+    }
+    return true;
+  }
+
+  if (xmlNodePtr attributes = Child(options, "updated-route-attr")) {
+    const std::string local = Text(Child(attributes, "local-only"));
+    if (!Unsigned(Child(attributes, "route-preference"),
+                  &replacement->preference) ||
+        (local != "true" && local != "1" && local != "false" &&
+         local != "0")) {
+      *error_code = 3U;
+      return false;
+    }
+    replacement->local_only = local == "true" || local == "1";
+    if (replacement->local_only) {
+      *error_code = 3U;
+      return false;
+    }
+    return true;
+  }
+
+  *error_code = 3U;
+  return false;
+}
+
 bool PersistRegistryChange(NativePlatform platform, NexthopRegistry* registry,
                            const PersistentRegistry& before,
                            const RegistryWriter& writer,
@@ -760,16 +849,22 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
   }
   const std::string rib_name = Text(Child(root, "rib-name"));
   xmlNodePtr input_routes = Child(root, "input-routes");
-  if (rib_name.empty() || !input_routes) {
-    *error = "only prefix-matched route-update is currently supported";
-    *error_path = "/ietf-i2rs-rib:route-update/input-routes";
+  xmlNodePtr input_attributes = Child(root, "input-route-attributes");
+  xmlNodePtr update_parameters = Child(root, "update-parameters");
+  const bool prefix_selected = input_routes != nullptr;
+  const bool attribute_selected =
+      input_attributes != nullptr && update_parameters != nullptr;
+  if (rib_name.empty() || prefix_selected == attribute_selected) {
+    *error = "route-update requires exactly one supported prefix or route-"
+             "attribute selector";
+    *error_path = "/ietf-i2rs-rib:route-update";
     return false;
   }
   std::vector<ObservedRoute> observed;
   std::string observe_error;
   if (!Inventory(platform, observer, &observed, &observe_error)) {
     *error = "cannot read host RIB: " + observe_error;
-    *error_path = "/ietf-i2rs-rib:route-update/input-routes";
+    *error_path = "/ietf-i2rs-rib:route-update";
     return false;
   }
   const bool details = Boolean(Child(root, "return-failure-detail"));
@@ -778,109 +873,34 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
   unsigned success = 0;
   std::vector<std::pair<std::uint64_t, unsigned>> failed;
   std::vector<std::pair<Route, Route>> replacements;
-  for (xmlNodePtr node = input_routes->children; node; node = node->next) {
-    if (!Is(node, "route-list")) continue;
-    std::uint64_t index = 0;
-    try { index = std::stoull(Text(Child(node, "route-index"))); }
-    catch (...) { failed.emplace_back(0U, 3U); continue; }
-    xmlNodePtr match = Child(node, "match");
-    xmlNodePtr family = Child(match, "ipv4");
-    bool ipv6 = false;
-    if (!family) { family = Child(match, "ipv6"); ipv6 = true; }
-    const std::string destination = Text(Child(
-        family, ipv6 ? "dest-ipv6-prefix" : "dest-ipv4-prefix"));
-    if (destination.empty()) { failed.emplace_back(index, 3U); continue; }
-    std::vector<const ObservedRoute*> matches;
-    for (const ObservedRoute& candidate : observed)
-      if (candidate.route.rib == rib_name &&
-          candidate.route.address_family == (ipv6 ? "ipv6" : "ipv4") &&
-          candidate.route.destination == destination)
-        matches.push_back(&candidate);
-    if (matches.empty()) { failed.emplace_back(index, 2U); continue; }
-    if (matches.size() != 1U) { failed.emplace_back(index, 0U); continue; }
-    if (!matches.front()->mutable_route) {
+  const auto replace = [&](const ObservedRoute& observed_route,
+                           std::uint64_t index, xmlNodePtr options) {
+    if (!observed_route.mutable_route) {
       failed.emplace_back(index, 0U);
-      continue;
+      return;
     }
-    Route replacement = matches.front()->route;
+    const Route original = observed_route.route;
+    Route replacement = original;
     replacement.index = index;
     if (registry)
       replacement.nexthop_ref = registry->RouteReference(replacement);
-    if (xmlNodePtr updated = Child(node, "updated-nexthop")) {
-      xmlNodePtr base = Child(updated, "nexthop-base");
-      if (!base) { failed.emplace_back(index, 3U); continue; }
-      replacement.gateway.reset();
-      replacement.interface.reset();
-      replacement.nexthop_ref.reset();
-      replacement.special.reset();
-      replacement.gateway = Text(Child(base, ipv6 ? "ipv6-address"
-                                                   : "ipv4-address"));
-      replacement.interface = Text(Child(base, "outgoing-interface"));
-      const std::string special = LocalIdentity(Text(Child(base, "special")));
-      if (!special.empty()) replacement.special = special;
-      if (xmlNodePtr combined = Child(
-              base, ipv6 ? "egress-interface-ipv6-address"
-                         : "egress-interface-ipv4-address")) {
-        replacement.gateway = Text(Child(combined, ipv6 ? "ipv6-address"
-                                                         : "ipv4-address"));
-        replacement.interface = Text(Child(combined, "outgoing-interface"));
-      }
-      if (replacement.gateway->empty()) replacement.gateway.reset();
-      if (replacement.interface->empty()) replacement.interface.reset();
-      if (xmlNodePtr reference = Child(base, "nexthop-ref")) {
-        std::uint32_t id = 0;
-        if (replacement.special || replacement.gateway ||
-            replacement.interface || !resolver || !Unsigned(reference, &id) ||
-            !resolver(rib_name, id, &replacement.gateway,
-                      &replacement.interface, &replacement.special)) {
-          failed.emplace_back(index, 2U);
-          continue;
-        }
-        replacement.nexthop_ref = id;
-      } else {
-        replacement.nexthop_ref.reset();
-      }
-      if (replacement.special &&
-          (*replacement.special != "discard" &&
-           *replacement.special != "discard-with-error")) {
-        failed.emplace_back(index, 3U); continue;
-      }
-      if (replacement.special &&
-          (replacement.gateway || replacement.interface)) {
-        failed.emplace_back(index, 3U); continue;
-      }
-      if (!replacement.special && !replacement.gateway &&
-          !replacement.interface) {
-        failed.emplace_back(index, 3U); continue;
-      }
-    } else if (xmlNodePtr attributes = Child(node, "updated-route-attr")) {
-      bool local_only = false;
-      const std::string local = Text(Child(attributes, "local-only"));
-      if (!Unsigned(Child(attributes, "route-preference"),
-                    &replacement.preference) ||
-          (local != "true" && local != "1" && local != "false" &&
-           local != "0")) {
-        failed.emplace_back(index, 3U); continue;
-      }
-      local_only = local == "true" || local == "1";
-      if (local_only) {
-        failed.emplace_back(index, 3U);
-        continue;
-      }
-      replacement.local_only = local_only;
-    } else {
-      failed.emplace_back(index, 3U); continue;
+    unsigned update_error = 0;
+    if (!ApplyRouteUpdate(options,
+                          replacement.address_family == "ipv6", rib_name,
+                          resolver, &replacement, &update_error)) {
+      failed.emplace_back(index, update_error);
+      return;
     }
-    const Route original = matches.front()->route;
     const auto native_original = NativeRoute(original, native_rib);
     const auto native_replacement = NativeRoute(replacement, native_rib);
     if (!native_original || !native_replacement) {
       failed.emplace_back(index, 2U);
-      continue;
+      return;
     }
     if (replacement.nexthop_ref &&
         (!registry || !registry->Retain(rib_name, *replacement.nexthop_ref))) {
-      failed.emplace_back(index, 2U); continue;
+      failed.emplace_back(index, 2U);
+      return;
     }
     const ExecutionResult result = ExecuteChanges(
         platform, {{ChangeKind::kDelete, *native_original},
@@ -894,6 +914,49 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
         registry->Release(rib_name, *replacement.nexthop_ref);
       failed.emplace_back(index, 0U);
     }
+  };
+
+  if (prefix_selected) {
+    for (xmlNodePtr node = input_routes->children; node; node = node->next) {
+      if (!Is(node, "route-list")) continue;
+      std::uint64_t index = 0;
+      try { index = std::stoull(Text(Child(node, "route-index"))); }
+      catch (...) { failed.emplace_back(0U, 3U); continue; }
+      xmlNodePtr match = Child(node, "match");
+      xmlNodePtr family = Child(match, "ipv4");
+      bool ipv6 = false;
+      if (!family) { family = Child(match, "ipv6"); ipv6 = true; }
+      const std::string destination = Text(Child(
+          family, ipv6 ? "dest-ipv6-prefix" : "dest-ipv4-prefix"));
+      if (destination.empty()) { failed.emplace_back(index, 3U); continue; }
+      std::vector<const ObservedRoute*> matches;
+      for (const ObservedRoute& candidate : observed)
+        if (candidate.route.rib == rib_name &&
+            candidate.route.address_family == (ipv6 ? "ipv6" : "ipv4") &&
+            candidate.route.destination == destination)
+          matches.push_back(&candidate);
+      if (matches.empty()) { failed.emplace_back(index, 2U); continue; }
+      if (matches.size() != 1U) { failed.emplace_back(index, 0U); continue; }
+      replace(*matches.front(), index, node);
+    }
+  } else {
+    std::uint32_t preference = 0;
+    const std::string local = Text(Child(input_attributes, "local-only"));
+    if (!Unsigned(Child(input_attributes, "route-preference"), &preference) ||
+        (local != "true" && local != "1" && local != "false" &&
+         local != "0")) {
+      *error = "route-attribute selector requires route-preference and "
+               "local-only";
+      *error_path =
+          "/ietf-i2rs-rib:route-update/input-route-attributes";
+      return false;
+    }
+    const bool local_only = local == "true" || local == "1";
+    for (const ObservedRoute& candidate : observed)
+      if (candidate.route.rib == rib_name &&
+          candidate.route.preference == preference &&
+          candidate.route.local_only == local_only)
+        replace(candidate, candidate.route.index, update_parameters);
   }
   std::vector<Change> compensation;
   for (auto replacement = replacements.rbegin();

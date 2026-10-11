@@ -9,6 +9,14 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Implemented RFC 8431 attribute-selected `route-update`. A request now matches
+  the complete portable `route-preference`/`local-only` pair within one RIB and
+  applies a common supported nexthop or attribute replacement to every match.
+  Each route uses the same captured before-image, native acknowledgement,
+  compensation, durable nexthop binding, and notification path as prefix
+  selection. Unit tests cover multi-family selection and malformed selectors;
+  the Linux/FreeBSD NETCONF lifecycle now performs and verifies both selectors.
+
 - Expanded the isolated RFC 8431 NETCONF session to cover every implemented
   imperative operation after the candidate lifecycle: `rib-add`, `nh-add`,
   `nh-delete`, `route-add`, duplicate `route-add`, `route-update`,

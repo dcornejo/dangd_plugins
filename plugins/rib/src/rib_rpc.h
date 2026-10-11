@@ -138,7 +138,7 @@ using RouteObserver =
     const RegistryWriter& writer = {}, const RouteEventSink& events = {},
     const RibNameResolver& native_rib = {});
 
-/** Updates prefix-selected routes with a base nexthop or route attributes. */
+/** Updates prefix- or attribute-selected routes with supported replacements. */
 [[nodiscard]] bool InvokeRouteUpdate(
     NativePlatform platform, const char* input_xml, std::string* output_xml,
     std::string* error, std::string* error_path,
