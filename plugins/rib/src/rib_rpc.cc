@@ -12,6 +12,7 @@
 #include <set>
 #include <sstream>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -275,6 +276,61 @@ bool ApplyRouteUpdate(xmlNodePtr options, bool ipv6,
 
   *error_code = 3U;
   return false;
+}
+
+/** Parses the exact portable base-nexthop subset accepted as a selector. */
+bool ParseNexthopSelector(xmlNodePtr input, const std::string& rib_name,
+                          const NexthopResolver& resolver, Route* selector) {
+  xmlNodePtr base = Child(input, "nexthop-base");
+  if (!base) return false;
+  const std::string ipv4 = Text(Child(base, "ipv4-address"));
+  const std::string ipv6 = Text(Child(base, "ipv6-address"));
+  if (!ipv4.empty()) {
+    selector->gateway = ipv4;
+    selector->address_family = "ipv4";
+  }
+  if (!ipv6.empty()) {
+    if (selector->gateway) return false;
+    selector->gateway = ipv6;
+    selector->address_family = "ipv6";
+  }
+  const std::string interface = Text(Child(base, "outgoing-interface"));
+  if (!interface.empty()) selector->interface = interface;
+  for (const auto [container, address, family] : {
+           std::tuple{"egress-interface-ipv4-address", "ipv4-address", "ipv4"},
+           std::tuple{"egress-interface-ipv6-address", "ipv6-address", "ipv6"}}) {
+    if (xmlNodePtr combined = Child(base, container)) {
+      if (selector->gateway || selector->interface) return false;
+      selector->gateway = Text(Child(combined, address));
+      selector->interface = Text(Child(combined, "outgoing-interface"));
+      selector->address_family = family;
+      if (selector->gateway->empty() || selector->interface->empty())
+        return false;
+    }
+  }
+  const std::string special = LocalIdentity(Text(Child(base, "special")));
+  if (!special.empty()) selector->special = special;
+  if (xmlNodePtr reference = Child(base, "nexthop-ref")) {
+    std::uint32_t id = 0;
+    std::optional<std::string> gateway;
+    std::optional<std::string> outgoing_interface;
+    std::optional<std::string> resolved_special;
+    if (selector->gateway || selector->interface || selector->special ||
+        !resolver || !Unsigned(reference, &id) ||
+        !resolver(rib_name, id, &gateway, &outgoing_interface,
+                  &resolved_special))
+      return false;
+    selector->nexthop_ref = id;
+  }
+  if (selector->special &&
+      (*selector->special != "discard" &&
+       *selector->special != "discard-with-error"))
+    return false;
+  if ((selector->special && (selector->gateway || selector->interface)) ||
+      (!selector->special && !selector->gateway && !selector->interface &&
+       !selector->nexthop_ref))
+    return false;
+  return true;
 }
 
 bool PersistRegistryChange(NativePlatform platform, NexthopRegistry* registry,
@@ -851,13 +907,29 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
   xmlNodePtr input_routes = Child(root, "input-routes");
   xmlNodePtr input_attributes = Child(root, "input-route-attributes");
   xmlNodePtr update_parameters = Child(root, "update-parameters");
+  xmlNodePtr input_nexthop = Child(root, "input-nexthop");
+  xmlNodePtr update_parameters_nexthop =
+      Child(root, "update-parameters-nexthop");
   const bool prefix_selected = input_routes != nullptr;
   const bool attribute_selected =
       input_attributes != nullptr && update_parameters != nullptr;
-  if (rib_name.empty() || prefix_selected == attribute_selected) {
-    *error = "route-update requires exactly one supported prefix or route-"
-             "attribute selector";
+  const bool nexthop_selected =
+      input_nexthop != nullptr && update_parameters_nexthop != nullptr;
+  const unsigned selector_count = static_cast<unsigned>(prefix_selected) +
+                                  static_cast<unsigned>(attribute_selected) +
+                                  static_cast<unsigned>(nexthop_selected);
+  if (rib_name.empty() || selector_count != 1U) {
+    *error = "route-update requires exactly one supported prefix, route-"
+             "attribute, or base-nexthop selector";
     *error_path = "/ietf-i2rs-rib:route-update";
+    return false;
+  }
+  Route nexthop_selector;
+  if (nexthop_selected &&
+      !ParseNexthopSelector(input_nexthop, rib_name, resolver,
+                            &nexthop_selector)) {
+    *error = "nexthop selector requires one supported portable base nexthop";
+    *error_path = "/ietf-i2rs-rib:route-update/input-nexthop";
     return false;
   }
   std::vector<ObservedRoute> observed;
@@ -939,7 +1011,7 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
       if (matches.size() != 1U) { failed.emplace_back(index, 0U); continue; }
       replace(*matches.front(), index, node);
     }
-  } else {
+  } else if (attribute_selected) {
     std::uint32_t preference = 0;
     const std::string local = Text(Child(input_attributes, "local-only"));
     if (!Unsigned(Child(input_attributes, "route-preference"), &preference) ||
@@ -957,6 +1029,26 @@ bool InvokeRouteUpdate(NativePlatform platform, const char* input_xml,
           candidate.route.preference == preference &&
           candidate.route.local_only == local_only)
         replace(candidate, candidate.route.index, update_parameters);
+  } else {
+    for (const ObservedRoute& candidate : observed) {
+      if (candidate.route.rib != rib_name) continue;
+      const std::optional<std::uint32_t> reference =
+          registry ? registry->RouteReference(candidate.route) : std::nullopt;
+      bool matches = false;
+      if (nexthop_selector.nexthop_ref) {
+        matches = reference == nexthop_selector.nexthop_ref;
+      } else {
+        matches = !reference &&
+                  candidate.route.gateway == nexthop_selector.gateway &&
+                  candidate.route.interface == nexthop_selector.interface &&
+                  candidate.route.special == nexthop_selector.special &&
+                  (nexthop_selector.address_family.empty() ||
+                   candidate.route.address_family ==
+                       nexthop_selector.address_family);
+      }
+      if (matches)
+        replace(candidate, candidate.route.index, update_parameters_nexthop);
+    }
   }
   std::vector<Change> compensation;
   for (auto replacement = replacements.rbegin();

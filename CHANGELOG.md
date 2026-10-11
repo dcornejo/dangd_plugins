@@ -9,6 +9,14 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Implemented RFC 8431 nexthop-selected `route-update` for the exact portable
+  base-nexthop subset. Gateway, outgoing-interface, combined, special, and
+  durable reference identities can select every matching route in one RIB;
+  load-balance-wide and vendor selection remain explicit gaps. The shared
+  replacement path preserves per-route acknowledgement, rollback, persistence,
+  and notification behavior. Unit and real Linux/FreeBSD NETCONF tests now
+  exercise all three supported selectors.
+
 - Implemented RFC 8431 attribute-selected `route-update`. A request now matches
   the complete portable `route-preference`/`local-only` pair within one RIB and
   applies a common supported nexthop or attribute replacement to every match.

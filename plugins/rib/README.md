@@ -17,7 +17,7 @@ The source files are unmodified copies from the IETF YangModels RFC registry:
 The `dangd_rib_plugin` advertises the pinned model and implements the documented
 destination-prefix configuration slice. It claims ABI-v8 exclusive ownership
 of `routing`, so dangd rejects loading it together with the FRR provider. The
-portable `route-add`, `route-delete`, prefix- and attribute-selected
+portable `route-add`, `route-delete`, prefix-, attribute-, and base-nexthop-selected
 `route-update`, `rib-add`,
 `rib-delete`, `nh-add`, and `nh-delete` RPCs are implemented. Managed
 `route-change` delivery covers managed and externally observed changes, and
@@ -244,7 +244,9 @@ the RFC attribute selector: all routes in the named RIB whose complete
 replacement. Both forms capture each matching observed route as a before-image,
 reject an unrepresentable local-only replacement before deletion, install the
 supported replacement, and restore the exact before-image if installation
-fails. Nexthop-wide and vendor selectors remain explicitly unsupported.
+fails. The nexthop selector compares one exact portable base nexthop, including
+a durable `nexthop-ref`; load-balance-wide and vendor selectors remain
+explicitly unsupported.
 
 `rib-add` validates a numeric native namespace. Linux tables are created by
 their first route, while FreeBSD FIBs must already exist in `net.fibs`; no
@@ -267,7 +269,7 @@ failure without changing allocation state or durable data.
 `nh-delete` removes exactly that RIB/identifier pair and reports a modeled
 failure for an unknown pair. This portable registry is intentionally owned by
 the plugin because Linux and FreeBSD do not expose equivalent standalone
-nexthop objects. Configuration commits, `route-add`, and both supported
+nexthop objects. Configuration commits, `route-add`, and all supported
 `route-update` selectors resolve `nexthop-ref` against the
 containing RIB and fail closed for absent or cross-RIB identifiers. Reference
 lifetime is enforced for prepared and active datastore configurations, and
