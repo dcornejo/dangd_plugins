@@ -517,6 +517,15 @@ if(BUILD_TESTING)
   target_compile_options(ntp_chrony_files_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME rfc9249_chrony_file_transaction COMMAND ntp_chrony_files_test)
+  add_executable(ntp_chrony_transaction_test tests/ntp_chrony_transaction_test.cc
+    plugins/ntp/src/chrony_transaction.cc plugins/ntp/src/chrony_files.cc
+    plugins/ntp/src/managed_file.cc)
+  target_compile_features(ntp_chrony_transaction_test PRIVATE cxx_std_20)
+  target_include_directories(ntp_chrony_transaction_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(ntp_chrony_transaction_test PRIVATE GTest::gtest_main)
+  target_compile_options(ntp_chrony_transaction_test PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME rfc9249_chrony_service_transaction COMMAND ntp_chrony_transaction_test)
   add_executable(ntp_adapter_test
     tests/ntp_adapter_test.cc
     plugins/ntp/src/chrony_config.cc

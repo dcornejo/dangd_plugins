@@ -188,8 +188,19 @@ recovery state. The service adapter must keep chrony stopped until recovery
 finishes; the helper itself cannot acknowledge service state. The pair remains
 an in-memory compensating transaction, not a crash-recoverable atomic update.
 
-The next Linux increment is adapter integration with acknowledged chrony lifecycle
-control over systemd D-Bus. FreeBSD still needs its base-ntpd translation.
+`src/chrony_transaction.cc` now implements the service bracket around this pair.
+The `ChronyService` boundary requires observed state after job completion;
+request acceptance alone is insufficient. Apply acknowledges stopped state,
+changes files, and activates a present configuration. Compensation confirms
+stopped state again (a failed activation may have started the daemon), restores
+files, and restores the initial active/inactive state. Any compensation failure
+retains retryable recovery state. File recovery failure keeps the daemon
+stopped. Tests use real files and injected service outcomes, including errors
+that change native state. This coordinator is not yet wired to systemd or the
+loaded plugin's hardware-action callbacks.
+
+The next Linux increment is native implementation of this service boundary
+over systemd D-Bus and ABI action integration. FreeBSD still needs its base-ntpd translation.
 Both adapters then need NMDA operational readback and isolated tests.
 Programmatic daemon or service-manager APIs are required where the platform
 supplies them; a process boundary is acceptable only when no supported API

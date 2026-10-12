@@ -9,6 +9,16 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Added a service-bracketed chrony transaction over the existing file-pair
+  coordinator. It captures initial service state, requires an acknowledged
+  stop before file changes, activates only after successful file installation,
+  and compensates activation or stop failures by confirming stopped state,
+  restoring files and restoring the original service state. Recovery failures
+  retain retryable checkpoints; failed file restoration keeps the service
+  stopped. Tests combine real temporary files with an injected service that
+  can change state despite reporting failure. Native systemd implementation
+  and ABI action wiring remain pending; loaded plugin mutation stays closed.
+
 - Added a compensating transaction for chrony's configuration fragment and
   private key file. Both original images are captured before mutation;
   installation writes keys before the fragment, removal deletes the fragment
