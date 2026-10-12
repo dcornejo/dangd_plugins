@@ -99,7 +99,7 @@ not yet have an RFC 8519 ACL datastore owner, so enabling that feature would
 offer a leafref target users cannot manage. Deprecated authentication and all
 interface-mode features also remain disabled.
 
-Apply, rollback, and ABI-v5 operational callbacks deliberately return an
+In ordinary deployments, apply, rollback, and ABI-v5 operational callbacks return an
 attributed `... unavailable` error. Linux validation additionally translates
 the proposed tree to complete managed chrony file images, so daemon-specific
 semantic gaps fail before any hardware action can run. The operational
@@ -215,8 +215,28 @@ runs service mutations. This is service-manager evidence, not a live chronyd
 configuration/readback test. The loaded plugin is still not wired to this
 boundary and continues to fail closed at hardware actions.
 
-The next Linux increment is ABI action integration and isolated chronyd
-configuration/readback validation. FreeBSD still needs its base-ntpd translation.
+`src/chrony_action_adapter.cc` now connects the planner's ordered ABI hardware
+actions to staged stop/install/activate. It captures shared before-images,
+installs the complete file pair once while stopped, and activates only at the
+activation step. Skipped or replayed actions fail; reverse callbacks restore
+the shared transaction once and clear each acknowledged checkpoint.
+
+On Linux, `DANG_NTP_NATIVE_TEST_ROOT` must explicitly name an existing disposable
+directory starting with `/tmp/dang-ntp-` (no `..`), and
+`DANG_NTP_NATIVE_TEST_UNIT` must be `dangd-ntp-native-test.service` or
+`dangd-ntp-native-fail-test.service`. The adapter then uses `managed.conf` and
+`managed.keys` in that directory. Both variables are a development-only test
+boundary, not installation options. Without this exact pair, mutation remains
+closed. Readiness flags and operational publication remain unchanged.
+
+The privileged `ntp_plugin_native_test PLUGIN UNIT` creates its temporary root,
+loads ABI v7, applies each action, and verifies files/service restoration through
+reverse callbacks. The failure unit proves compensation after failed activation.
+Linux ran both successfully. This uses disposable systemd units, not chronyd,
+and does not prove daemon configuration acceptance or clock-state fidelity.
+
+The next Linux increment is production ownership/include preflight and isolated
+chronyd configuration/readback validation. FreeBSD still needs its base-ntpd translation.
 Both adapters then need NMDA operational readback and isolated tests.
 Programmatic daemon or service-manager APIs are required where the platform
 supplies them; a process boundary is acceptable only when no supported API

@@ -166,6 +166,8 @@ endif()
 # This development target deliberately is not installed or packaged until a
 # native Linux/FreeBSD adapter can acknowledge apply and rollback operations.
 add_library(dangd_ntp_plugin MODULE
+  plugins/ntp/src/chrony_action_adapter.cc plugins/ntp/src/chrony_transaction.cc
+  plugins/ntp/src/chrony_files.cc plugins/ntp/src/managed_file.cc
   plugins/ntp/src/chrony_config.cc
   plugins/ntp/src/ntp_adapter.cc
   plugins/ntp/src/ntp_config.cc
@@ -285,6 +287,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
       plugins/system/src/linux/platform_linux.cc plugins/common/systemd_unit.cc)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(DANG_SYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
+    target_sources(dangd_ntp_plugin PRIVATE plugins/common/systemd_unit.cc)
+    target_link_libraries(dangd_ntp_plugin PRIVATE PkgConfig::DANG_SYSTEMD)
     set(DANG_SYSTEM_PLATFORM_LIBRARIES PkgConfig::DANG_SYSTEMD)
     find_library(DANG_CRYPT_LIBRARY crypt REQUIRED)
   else()
@@ -535,16 +539,28 @@ if(BUILD_TESTING)
     target_compile_options(ntp_systemd_native_test PRIVATE
       -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
     # Explicit privileged execution only; default CTest never mutates services.
+    add_executable(ntp_plugin_native_test tests/ntp_plugin_native_test.cc plugins/common/systemd_unit.cc)
+    target_compile_features(ntp_plugin_native_test PRIVATE cxx_std_20)
+    target_include_directories(ntp_plugin_native_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${DANGD_INCLUDE_DIR}")
+    target_link_libraries(ntp_plugin_native_test PRIVATE PkgConfig::DANG_SYSTEMD "${CMAKE_DL_LIBS}")
+    target_compile_options(ntp_plugin_native_test PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   endif()
   add_executable(ntp_adapter_test
     tests/ntp_adapter_test.cc
+    plugins/ntp/src/ntp_config.cc
+    plugins/ntp/src/chrony_action_adapter.cc plugins/ntp/src/chrony_transaction.cc
+    plugins/ntp/src/chrony_files.cc plugins/ntp/src/managed_file.cc
     plugins/ntp/src/chrony_config.cc
     plugins/ntp/src/ntp_adapter.cc
     ${DANG_NTP_PLATFORM_SOURCE})
   target_compile_features(ntp_adapter_test PRIVATE cxx_std_20)
   target_include_directories(ntp_adapter_test PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}")
-  target_link_libraries(ntp_adapter_test PRIVATE GTest::gtest_main)
+  target_link_libraries(ntp_adapter_test PRIVATE GTest::gtest_main LibXml2::LibXml2)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(ntp_adapter_test PRIVATE plugins/common/systemd_unit.cc)
+    target_link_libraries(ntp_adapter_test PRIVATE PkgConfig::DANG_SYSTEMD)
+  endif()
   target_compile_options(ntp_adapter_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME rfc9249_native_adapter_contract COMMAND ntp_adapter_test)

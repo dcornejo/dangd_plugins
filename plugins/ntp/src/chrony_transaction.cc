@@ -30,18 +30,43 @@ bool ChronyTransaction::Apply(const ChronyConfigImage& image,
     return Fail("chrony transaction is not ready to apply", error);
   if (image.fragment.empty() && !image.key_file.empty())
     return Fail("chrony keys cannot be installed without a fragment", error);
+  if (!Stop(error) || !Install(image, error)) return false;
+  return image.fragment.empty() || Activate(error);
+}
+
+bool ChronyTransaction::Stop(std::string* error) {
+  if (state_ != State::kCaptured)
+    return Fail("chrony transaction is not ready to stop", error);
   std::string failure;
-  bool success = service_.SetActive(false, &failure);
-  if (success) {
-    files_attempted_ = true;
-    success = files_.Apply(image, &failure);
-  }
-  if (success && !image.fragment.empty())
-    success = service_.SetActive(true, &failure);
-  if (success) {
-    state_ = State::kApplied;
-    return true;
-  }
+  if (!service_.SetActive(false, &failure)) return Abort(failure, error);
+  state_ = State::kStopped;
+  return true;
+}
+
+bool ChronyTransaction::Install(const ChronyConfigImage& image,
+                                std::string* error) {
+  if (state_ != State::kStopped)
+    return Fail("chrony transaction requires an acknowledged stop", error);
+  if (image.fragment.empty() && !image.key_file.empty())
+    return Fail("chrony keys cannot be installed without a fragment", error);
+  std::string failure;
+  files_attempted_ = true;
+  if (!files_.Apply(image, &failure)) return Abort(failure, error);
+  state_ = image.fragment.empty() ? State::kApplied : State::kInstalled;
+  return true;
+}
+
+bool ChronyTransaction::Activate(std::string* error) {
+  if (state_ != State::kInstalled)
+    return Fail("chrony transaction requires installed files before activation",
+                error);
+  std::string failure;
+  if (!service_.SetActive(true, &failure)) return Abort(failure, error);
+  state_ = State::kApplied;
+  return true;
+}
+
+bool ChronyTransaction::Abort(const std::string& failure, std::string* error) {
   state_ = State::kRecoveryPending;
   std::string compensation;
   const bool restored = Compensate(&compensation);
@@ -65,7 +90,8 @@ bool ChronyTransaction::Compensate(std::string* error) {
 
 bool ChronyTransaction::Rollback(std::string* error) {
   if (state_ == State::kRestored) return true;
-  if (state_ != State::kApplied && state_ != State::kRecoveryPending)
+  if (state_ != State::kApplied && state_ != State::kRecoveryPending &&
+      state_ != State::kStopped && state_ != State::kInstalled)
     return Fail("chrony transaction has no applied checkpoint", error);
   return Compensate(error);
 }

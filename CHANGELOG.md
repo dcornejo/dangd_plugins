@@ -9,6 +9,16 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Wired RFC 9249 hardware actions to staged stop/install/activate and shared
+  compensation checkpoints. Skipped or replayed steps are rejected, complete
+  file images are installed once while stopped, and reverse action callbacks
+  compensate the shared transaction once. Linux execution is restricted to
+  explicitly selected disposable test roots and test systemd units; ordinary
+  deployment stays closed pending ownership/include preflight and live chronyd
+  readback. Native loaded-plugin tests verified successful apply/rollback and
+  failed activation compensation, restoring initial files and service state.
+  Portable tests cover action ordering, replay refusal and checkpoint cleanup.
+
 - Added the native Linux chrony service boundary using a shared systemd sd-bus
   helper. RFC 7317 now uses that helper too. It subscribes before enqueueing,
   retains early job signals, correlates the exact job, bounds method calls and

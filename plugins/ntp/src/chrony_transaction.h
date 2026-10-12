@@ -38,6 +38,10 @@ class ChronyTransaction {
   bool Capture(const std::string& fragment_path, const std::string& key_path,
                std::string* error);
   bool Apply(const ChronyConfigImage& image, std::string* error);
+  /** Staged equivalents for dependency-ordered hardware actions. */
+  bool Stop(std::string* error);
+  bool Install(const ChronyConfigImage& image, std::string* error);
+  bool Activate(std::string* error);
   bool Rollback(std::string* error);
   bool applied() const { return state_ == State::kApplied; }
   bool recovery_pending() const { return state_ == State::kRecoveryPending; }
@@ -46,12 +50,15 @@ class ChronyTransaction {
   enum class State {
     kNew,
     kCaptured,
+    kStopped,
+    kInstalled,
     kApplied,
     kRecoveryPending,
     kRestored,
     kInvalid
   };
   bool Compensate(std::string* error);
+  bool Abort(const std::string& failure, std::string* error);
   ChronyService& service_;
   ChronyFiles files_;
   State state_ = State::kNew;

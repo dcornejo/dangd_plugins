@@ -3,10 +3,13 @@
 
 /** @file Linux chrony selection and daemon-specific validation boundary. */
 
+#include <cstdlib>
 #include <memory>
 #include <utility>
 
+#include "plugins/ntp/src/chrony_action_adapter.h"
 #include "plugins/ntp/src/chrony_config.h"
+#include "plugins/ntp/src/linux/chrony_service.h"
 #include "plugins/ntp/src/ntp_adapter.h"
 
 namespace dang::ntp {
@@ -64,6 +67,18 @@ Platform NativePlatform() { return Platform::kLinux; }
 
 std::unique_ptr<NativeAdapter> CreatePlatformAdapter(
     AdapterDescriptor descriptor) {
+  // Development ABI integration is restricted to explicit disposable files
+  // and test units. Production ownership/include preflight is still pending.
+  const char* root = std::getenv("DANG_NTP_NATIVE_TEST_ROOT");
+  const char* unit = std::getenv("DANG_NTP_NATIVE_TEST_UNIT");
+  if (root && unit && std::string_view(root).starts_with("/tmp/dang-ntp-") &&
+      std::string_view(root).find("..") == std::string_view::npos &&
+      (std::string_view(unit) == "dangd-ntp-native-test.service" ||
+       std::string_view(unit) == "dangd-ntp-native-fail-test.service"))
+    return CreateChronyActionAdapter(
+        std::move(descriptor), std::make_unique<SystemdChronyService>(unit),
+        std::string(root) + "/managed.conf",
+        std::string(root) + "/managed.keys");
   return std::make_unique<ChronyAdapter>(std::move(descriptor));
 }
 

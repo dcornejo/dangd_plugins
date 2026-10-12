@@ -6,8 +6,9 @@
  * Development-stage dangd ABI adapter for RFC 9249 transaction planning.
  *
  * The adapter exposes model discovery, preparation, validation, and generic
- * hardware-action ordering. Apply and rollback deliberately fail closed until
- * a native Linux or FreeBSD implementation is linked into this target.
+ * hardware-action ordering. Linux action execution is available only through
+ * the explicit disposable-file/service test boundary; ordinary deployment
+ * and all operational publication remain fail closed during development.
  */
 
 #include <algorithm>

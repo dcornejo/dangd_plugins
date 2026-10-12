@@ -6,12 +6,79 @@
 #include "plugins/ntp/src/ntp_adapter.h"
 
 #include <gtest/gtest.h>
+#include <unistd.h>
 
+#include <filesystem>
 #include <memory>
 #include <string>
 
+#include "plugins/ntp/src/chrony_action_adapter.h"
+
 namespace dang::ntp {
 namespace {
+AdapterDescriptor Select(Platform platform, std::string_view requested);
+
+class ActionService final : public ChronyService {
+ public:
+  bool active = false;
+  unsigned calls = 0;
+  bool Active(bool* result, std::string*) override {
+    *result = active;
+    return true;
+  }
+  bool SetActive(bool value, std::string*) override {
+    active = value;
+    ++calls;
+    return true;
+  }
+};
+
+TEST(NtpAdapterTest, RejectsSkippedStepsAndCompensatesSharedActionCheckpoints) {
+  char pattern[] = "/tmp/dang-ntp-action-XXXXXX";
+  const char* created = mkdtemp(pattern);
+  ASSERT_NE(created, nullptr);
+  const std::string root(created);
+  auto service = std::make_unique<ActionService>();
+  auto* observed = service.get();
+  auto adapter = CreateChronyActionAdapter(
+      Select(Platform::kLinux, "auto"), std::move(service),
+      root + "/managed.conf", root + "/managed.keys");
+  Config before;
+  Config proposed;
+  proposed.present = true;
+  proposed.port = 1123;
+  const auto plan = PlanChanges(before, proposed);
+  ASSERT_EQ(plan.size(), 2U);
+  std::string error, path;
+  std::vector<AdapterCheckpoint> checkpoints(plan.size());
+  EXPECT_FALSE(adapter->ApplyAction(before, proposed, plan.back(),
+                                    &checkpoints.back(), &error, &path));
+  EXPECT_EQ(observed->calls, 0U);
+  ASSERT_TRUE(adapter->ApplyAction(before, proposed, plan[0], &checkpoints[0],
+                                   &error, &path))
+      << error;
+  EXPECT_FALSE(observed->active);
+  EXPECT_TRUE(std::filesystem::exists(root + "/managed.conf"));
+  EXPECT_FALSE(adapter->ApplyAction(before, proposed, plan[0], &checkpoints[0],
+                                    &error, &path));
+  ASSERT_TRUE(adapter->ApplyAction(before, proposed, plan[1], &checkpoints[1],
+                                   &error, &path))
+      << error;
+  EXPECT_TRUE(observed->active);
+  ASSERT_TRUE(adapter->RollbackAction(before, proposed, plan[1],
+                                      &checkpoints[1], &error, &path))
+      << error;
+  EXPECT_FALSE(observed->active);
+  EXPECT_FALSE(std::filesystem::exists(root + "/managed.conf"));
+  const auto calls = observed->calls;
+  ASSERT_TRUE(adapter->RollbackAction(before, proposed, plan[0],
+                                      &checkpoints[0], &error, &path))
+      << error;
+  EXPECT_EQ(observed->calls, calls);
+  EXPECT_FALSE(checkpoints[0].applied);
+  adapter.reset();
+  std::filesystem::remove_all(root);
+}
 
 AdapterDescriptor Select(Platform platform, std::string_view requested) {
   AdapterDescriptor descriptor;
