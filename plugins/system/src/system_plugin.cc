@@ -8,18 +8,18 @@
  * snapshot shared by transaction callbacks and authentication requests.
  */
 
-#include "dangd/plugin_api.h"
-#include "plugins/system/src/auth_server.h"
-#include "plugins/system/src/platform.h"
-#include "plugins/system/src/system_config.h"
-#include "system_model_sources.h"
-
 #include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+
+#include "dangd/plugin_api.h"
+#include "plugins/system/src/auth_server.h"
+#include "plugins/system/src/platform.h"
+#include "plugins/system/src/system_config.h"
+#include "system_model_sources.h"
 
 namespace {
 
@@ -76,8 +76,8 @@ int SourceAt(void*, std::size_t index, DangYangSourceV1* source,
              DangPluginErrorV1*) {
   static constexpr const char* system_features[] = {
       "authentication", "local-users", "ntp", "timezone-name"};
-  static constexpr const char* crypt_features[] = {
-      "crypt-hash-sha-256", "crypt-hash-sha-512"};
+  static constexpr const char* crypt_features[] = {"crypt-hash-sha-256",
+                                                   "crypt-hash-sha-512"};
   if (!source || index > 1) return -1;
   if (index == 0) {
     *source = {.module_name = "ietf-system",
@@ -141,7 +141,8 @@ int Apply(void* raw, void* prepared, DangPluginErrorV1* error) {
   auto* plan = static_cast<Prepared*>(prepared);
   if (!plan || !dang::system::ApplyPlatform(&plan->platform, &owner->error,
                                             &owner->path))
-    return Fail(owner, error, owner->error.empty() ? "apply failed" : owner->error,
+    return Fail(owner, error,
+                owner->error.empty() ? "apply failed" : owner->error,
                 owner->path.empty() ? "/ietf-system:system" : owner->path);
   {
     std::lock_guard lock(owner->mutex);
@@ -167,6 +168,43 @@ int Rollback(void* raw, void* prepared, DangPluginErrorV1* error) {
 
 void Release(void*, void* prepared) { delete static_cast<Prepared*>(prepared); }
 
+/** Expose the platform transaction as one reversible generic hardware step. */
+std::size_t HardwareActionCount(void*, void* prepared) {
+  return prepared ? 1 : 0;
+}
+
+int HardwareActionAt(void* raw, void* prepared, std::size_t index,
+                     DangHardwareActionV1* action, DangPluginErrorV1* error) {
+  auto* owner = static_cast<Context*>(raw);
+  if (!prepared || !action || index != 0)
+    return Fail(owner, error, "invalid RFC 7317 hardware action index",
+                "/ietf-system:system");
+  *action = {.action_id = "configuration",
+             .instance_path = "/ietf-system:system",
+             .action_class = DANG_HARDWARE_NORMAL_V1,
+             .dependencies = nullptr,
+             .dependency_count = 0};
+  return 1;
+}
+
+int ApplyHardwareAction(void* raw, void* prepared, const char* action_id,
+                        DangPluginErrorV1* error) {
+  auto* owner = static_cast<Context*>(raw);
+  if (!action_id || std::string_view(action_id) != "configuration")
+    return Fail(owner, error, "unknown RFC 7317 hardware action",
+                "/ietf-system:system");
+  return Apply(raw, prepared, error);
+}
+
+int RollbackHardwareAction(void* raw, void* prepared, const char* action_id,
+                           DangPluginErrorV1* error) {
+  auto* owner = static_cast<Context*>(raw);
+  if (!action_id || std::string_view(action_id) != "configuration")
+    return Fail(owner, error, "unknown RFC 7317 hardware rollback action",
+                "/ietf-system:system");
+  return Rollback(raw, prepared, error);
+}
+
 int Invoke(void* raw, const DangOperationV1* operation,
            DangOperationResultV1* result, DangPluginErrorV1* error) {
   auto* owner = static_cast<Context*>(raw);
@@ -191,9 +229,9 @@ int Invoke(void* raw, const DangOperationV1* operation,
     operation_error = "unsupported ietf-system operation";
   }
   if (!okay)
-    return Fail(owner, error, operation_error, operation->instance_path
-                                                    ? operation->instance_path
-                                                    : "/ietf-system:system");
+    return Fail(owner, error, operation_error,
+                operation->instance_path ? operation->instance_path
+                                         : "/ietf-system:system");
   if (result) result->output_xml = "";
   return 1;
 }
@@ -209,6 +247,21 @@ int Operational(void* raw, DangOperationalDataV1* result,
   return 1;
 }
 
+/** Publish the same complete system-state image through the ABI-v5 contract. */
+int OperationalV2(void* raw, DangOperationalDataV2* result,
+                  DangPluginErrorV1* error) {
+  if (!result) {
+    auto* owner = static_cast<Context*>(raw);
+    return Fail(owner, error, "missing operational-state output",
+                "/ietf-system:system-state");
+  }
+  DangOperationalDataV1 legacy{};
+  if (!Operational(raw, &legacy, error)) return 0;
+  result->data_xml = legacy.data_xml;
+  result->complete = 1;
+  return 1;
+}
+
 /** The RFC 7317 NTP subtree exclusively owns one native resource domain. */
 std::size_t ResourceDomainCount(void*) { return 1; }
 
@@ -218,28 +271,27 @@ const char* ResourceDomainAt(void*, std::size_t index) {
 }
 
 const DangPluginV7 plugin = {
-    .v6 = {.v5 = {.v4 = {.v3 = {.v2 = {.v1 = {
-                  .abi_version = DANG_PLUGIN_ABI_V7,
-                  .plugin_name = "ietf-system",
-                  .context = &context,
-                  .yang_source_count = SourceCount,
-                  .yang_source_at = SourceAt,
-                  .dependency_count = nullptr,
-                  .dependency_at = nullptr,
-                  .prepare = Prepare,
-                  .validate = Validate,
-                  .apply = Apply,
-                  .rollback = Rollback,
-                  .release = Release,
-                  .destroy = nullptr},
-           .invoke = Invoke},
-           .get_operational_data = Operational},
-    .hardware_action_count = nullptr,
-    .hardware_action_at = nullptr,
-    .apply_hardware_action = nullptr,
-    .rollback_hardware_action = nullptr},
-    .get_operational_data_v2 = nullptr},
-    .reconcile_applied_configuration = nullptr},
+    .v6 = {.v5 = {.v4 = {.v3 = {.v2 = {.v1 = {.abi_version = DANG_PLUGIN_ABI_V7,
+                                              .plugin_name = "ietf-system",
+                                              .context = &context,
+                                              .yang_source_count = SourceCount,
+                                              .yang_source_at = SourceAt,
+                                              .dependency_count = nullptr,
+                                              .dependency_at = nullptr,
+                                              .prepare = Prepare,
+                                              .validate = Validate,
+                                              .apply = Apply,
+                                              .rollback = Rollback,
+                                              .release = Release,
+                                              .destroy = nullptr},
+                                       .invoke = Invoke},
+                                .get_operational_data = Operational},
+                         .hardware_action_count = HardwareActionCount,
+                         .hardware_action_at = HardwareActionAt,
+                         .apply_hardware_action = ApplyHardwareAction,
+                         .rollback_hardware_action = RollbackHardwareAction},
+                  .get_operational_data_v2 = OperationalV2},
+           .reconcile_applied_configuration = nullptr},
     .resource_domain_count = ResourceDomainCount,
     .resource_domain_at = ResourceDomainAt};
 

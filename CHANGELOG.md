@@ -9,6 +9,27 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Fixed the RFC 7317 system provider's real dangd ABI-v7 loadability. The
+  provider now exposes its transactional platform update as one reversible
+  ABI-v4 hardware action and publishes its existing complete system-state image
+  through ABI v5. The integration test executes apply/rollback through the
+  action callbacks and verifies the completeness assertion. This also allows
+  generic `ntp` resource-domain collision detection to run before either the
+  RFC 7317 or RFC 9249 provider can touch the same daemon.
+
+- Added a development-only ABI-v7 RFC 9249 plugin target. It embeds the pinned
+  model closure, claims the generic `ntp` resource domain, enables only the
+  portable `ntp-port`, `authentication`, `hex-key-string`, and
+  `unicast-configuration` features, and exposes the parser's dependency graph
+  as generic hardware actions. Prepare and validation are usable, while apply
+  rollback, and operational publication fail closed with an attributed error
+  until native adapters exist. The runtime source closure also includes the
+  canonical pinned `ietf-interfaces` and `ietf-system` imports. The target is
+  deliberately excluded from installation and packages. Discovery,
+  transaction-contract, and real dangd startup tests cover source roles,
+  feature advertisement, resource ownership, action ordering, fail-closed
+  behavior, schema compilation, and parser error propagation.
+
 - Added the first daemon-independent RFC 9249 implementation layer. The strict
   parser projects listener, reference-clock, modern symmetric authentication,
   ACL binding, and unicast server/peer configuration with defaults and stable

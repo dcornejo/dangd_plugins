@@ -3,11 +3,11 @@
 
 # RFC 9249 NTP plugin
 
-This directory contains the pinned standards foundation and platform-neutral
-configuration planner for a separately packaged `ietf-ntp@2022-07-05`
-provider. The loadable plugin and native Linux/FreeBSD adapters are not
-implemented yet; installing the current source tree does not advertise
-RFC 9249 support.
+This directory contains the pinned standards foundation, platform-neutral
+configuration planner, and development-stage loadable target for an eventual
+separately packaged `ietf-ntp@2022-07-05` provider. Native Linux/FreeBSD
+adapters are not implemented yet; installing the current source tree does not
+install this target or advertise RFC 9249 support.
 
 RFC 9249 defines a top-level `/ntp` presence container for NTPv4 and NTPv3
 compatibility.  It covers unicast, broadcast, multicast, and manycast modes;
@@ -44,7 +44,7 @@ RFC 9249 `/ntp` and RFC 7317 `/system/ntp` are intentionally alternative
 configuration surfaces.  Both ultimately control the same daemon, native
 configuration files, sockets, and clock discipline.  The existing system
 provider therefore claims dangd's generic exclusive `ntp` resource domain.
-The future RFC 9249 provider must claim the same domain.  Loading both is a
+The development RFC 9249 provider claims the same domain.  Loading both is a
 configuration error detected by dangd's ordinary plugin contract; dangd needs
 no knowledge of either module.
 
@@ -83,6 +83,30 @@ precede new associations, and service startup depends on every configuration
 step. These are plans only: they make transaction ordering testable before a
 daemon-specific adapter is allowed to act.
 
+`dangd_ntp_plugin` wraps this layer in ABI v7 for development and contract
+testing. It returns `ietf-ntp` as the implemented source and the pinned RFC
+8519/RFC 8294, `ietf-interfaces`, and `ietf-system` closure as import-only
+sources, claims the exclusive `ntp` resource domain, retains complete
+before/proposed projections during prepare, validates the dependency graph,
+and publishes every planned step through the generic hardware-action
+interface. Deactivation and activation steps use the corresponding generic
+action classes, and all errors retain an RFC 9249 path.
+
+The development target advertises only `ntp-port`, `authentication`,
+`hex-key-string`, and `unicast-configuration`. In particular,
+`access-rules` stays disabled even though its syntax can be parsed: dangd does
+not yet have an RFC 8519 ACL datastore owner, so enabling that feature would
+offer a leafref target users cannot manage. Deprecated authentication and all
+interface-mode features also remain disabled.
+
+Apply, rollback, and ABI-v5 operational callbacks deliberately return an
+attributed `... unavailable` error. The operational callback exists because a
+complete ABI-v7 implementation must provide it, but it never fabricates clock
+state. This is a safety boundary, not a mock backend: configuration cannot be
+accepted merely because it parsed. The target is not part of any install or
+package component until both supported operating systems have acknowledged
+apply, readback, and rollback implementations.
+
 Broadcast, multicast, and manycast interface modes currently fail closed at
 `/ietf-ntp:ntp/interfaces`. They require explicit cross-daemon mappings before
 the parser accepts them. VRF behavior is also still pending because the base
@@ -96,15 +120,15 @@ Run the schema test through CTest after configuring against a dang checkout:
 ```sh
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug \
   -DDANGD_ROOT=/path/to/dang
-cmake --build build
+cmake --build build --target dangd_ntp_plugin ntp_config_test \
+  ntp_plugin_contract_test
 ctest --test-dir build -R rfc9249 --output-on-failure
 ```
 
-The next implementation increment must wrap the parser and planner in the
-loadable plugin transaction lifecycle without advertising unimplemented
-features. Linux and FreeBSD adapters must then implement acknowledged apply,
-retained before-image rollback, NMDA operational readback, and isolated tests.
-Programmatic daemon or service-manager APIs are required where the platform
-supplies them; a process boundary is acceptable only when no supported API
-exists and must use an absolute executable path and fixed argument vector
-without a shell.
+The next implementation increment must add Linux and FreeBSD adapter contracts
+and select supported native NTP daemons. The adapters must then implement
+acknowledged apply, retained before-image rollback, NMDA operational readback,
+and isolated tests. Programmatic daemon or service-manager APIs are required
+where the platform supplies them; a process boundary is acceptable only when
+no supported API exists and must use an absolute executable path and fixed
+argument vector without a shell.

@@ -88,6 +88,11 @@ restarting the service.
   `DANG_SYSTEM_ALLOW_POWER=1` deployment guard plus appropriate host privilege.
 - every file modified during a configuration transaction is snapshotted and
   restored on failure or dangd rollback. Symbolic links are restored as links.
+- ABI v4 exposes the complete platform transaction as one reversible generic
+  hardware action. This keeps the existing atomic native rollback boundary
+  while satisfying dangd's cross-plugin hardware planner contract.
+- ABI v5 publishes the `system-state` image with an explicit completeness
+  assertion, so omitted modeled state is decisively absent.
 
 Set `DANG_SYSTEM_ROOT` to a disposable filesystem root for testing. Production
 deployments must omit it or configuration will be redirected away from the
@@ -152,13 +157,10 @@ not a PAM operation and remains separate.
    real-time signals on Linux and init's documented signals on FreeBSD. dangd
    currently invokes plugin RPCs synchronously, so it cannot guarantee the
    RFC's recommended reply-before-power-transition sequencing.
-8. Operational data is published through ABI v3. Its contents are complete,
-   but ABI v5 completeness cannot be selected without also implementing the
-   complete ABI v4 fine-grained hardware action contract.
-9. PAM account management returns success after authentication because RFC
+8. PAM account management returns success after authentication because RFC
     7317 defines no expiry, lockout, login-class, credential, or session data.
     Password aging and OS account provisioning are outside this model.
-10. The embedded module intentionally remains byte-for-byte compatible with
+9. The embedded module intentionally remains byte-for-byte compatible with
     the published 2014-08-06 source. RFC 7317 erratum 6245 is classified as
     "Held for Document Update" and is therefore documented but not patched
     into the advertised model revision.

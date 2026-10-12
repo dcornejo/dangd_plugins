@@ -146,10 +146,10 @@ only with one another. Packaging does not weaken dangd's duplicate-owner check.
 
 - `ntp` has a pinned, schema-validated RFC 9249
   `ietf-ntp@2022-07-05` foundation, a side-effect-free configuration parser and
-  dependency-ordered English delta planner, and a documented migration policy.
-  The RFC 7317 `system` provider now claims the generic exclusive `ntp` resource
-  domain which the future provider must also claim, so dangd will fail closed
-  if both would manage the same daemon without containing plugin-specific
-  logic. Loadable transaction integration, native Linux/FreeBSD,
-  operational-state, and packaging implementation remains planned; see
-  `plugins/ntp/README.md`.
+  dependency-ordered English delta planner, and a development-only ABI-v7
+  loadable target. The target enables only its implemented portable model
+  features, claims the same generic exclusive `ntp` resource domain as the
+  RFC 7317 `system` provider, and fails closed at apply until a native adapter
+  is available. It is not installed or packaged yet. Native Linux/FreeBSD,
+  operational-state, and production packaging implementation remains planned;
+  see `plugins/ntp/README.md`.

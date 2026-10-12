@@ -139,6 +139,36 @@ file(READ plugins/system/models/iana-crypt-hash@2014-08-06.yang
 configure_file(plugins/system/src/system_model_sources.h.in
   generated/system_model_sources.h @ONLY)
 
+file(READ plugins/ntp/models/ietf-ntp@2022-07-05.yang IETF_NTP_YANG)
+file(READ plugins/ntp/models/ietf-access-control-list@2019-03-04.yang
+  IETF_ACCESS_CONTROL_LIST_YANG)
+file(READ plugins/ntp/models/ietf-packet-fields@2019-03-04.yang
+  IETF_PACKET_FIELDS_YANG)
+file(READ plugins/ntp/models/ietf-ethertypes@2019-03-04.yang
+  IETF_ETHERTYPES_YANG)
+file(READ plugins/ntp/models/ietf-routing-types@2017-12-04.yang
+  IETF_ROUTING_TYPES_YANG)
+file(READ plugins/rib/models/ietf-interfaces@2018-02-20.yang
+  NTP_IETF_INTERFACES_YANG)
+file(READ plugins/system/models/ietf-system@2014-08-06.yang
+  NTP_IETF_SYSTEM_YANG)
+configure_file(plugins/ntp/src/ntp_model_sources.h.in
+  generated/ntp_model_sources.h @ONLY)
+
+# This development target deliberately is not installed or packaged until a
+# native Linux/FreeBSD adapter can acknowledge apply and rollback operations.
+add_library(dangd_ntp_plugin MODULE
+  plugins/ntp/src/ntp_config.cc
+  plugins/ntp/src/ntp_plugin.cc)
+target_compile_features(dangd_ntp_plugin PRIVATE cxx_std_20)
+target_include_directories(dangd_ntp_plugin PRIVATE
+  "${DANGD_INCLUDE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/generated"
+  "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(dangd_ntp_plugin PRIVATE LibXml2::LibXml2)
+target_compile_options(dangd_ntp_plugin PRIVATE
+  -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+set_target_properties(dangd_ntp_plugin PROPERTIES PREFIX "")
+
 add_library(dangd_kea_plugin MODULE
   plugins/kea/src/kea_adapter.cc
   plugins/kea/src/kea_plugin.cc)
@@ -451,6 +481,43 @@ if(BUILD_TESTING)
   target_compile_options(ntp_config_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME rfc9249_configuration_planning COMMAND ntp_config_test)
+  add_test(NAME rfc9249_plugin_discovery
+    COMMAND plugin_loader_smoke_test $<TARGET_FILE:dangd_ntp_plugin>
+      ietf-ntp ietf-ntp 2022-07-05)
+  add_executable(ntp_plugin_contract_test tests/ntp_plugin_contract_test.cc)
+  target_compile_features(ntp_plugin_contract_test PRIVATE cxx_std_20)
+  target_include_directories(ntp_plugin_contract_test PRIVATE
+    "${DANGD_INCLUDE_DIR}")
+  target_link_libraries(ntp_plugin_contract_test PRIVATE "${CMAKE_DL_LIBS}")
+  target_compile_options(ntp_plugin_contract_test PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME rfc9249_plugin_transaction_contract
+    COMMAND ntp_plugin_contract_test $<TARGET_FILE:dangd_ntp_plugin>)
+  set(DANG_NTP_DANGD_EXECUTABLE "${DANGD_ROOT}/build/dangd")
+  set(DANG_NTP_WORKER_EXECUTABLE "${DANGD_ROOT}/build/dangd-plugin-worker")
+  if(EXISTS "${DANG_NTP_DANGD_EXECUTABLE}" AND
+     EXISTS "${DANG_NTP_WORKER_EXECUTABLE}")
+    add_test(NAME rfc9249_dangd_startup_contract
+      COMMAND "${DANG_NTP_DANGD_EXECUTABLE}"
+        --model "${DANGD_ROOT}/dangd/examples/appliance.yang"
+        --config "${DANGD_ROOT}/dangd/examples/config.xml"
+        --search "${DANGD_ROOT}/dangd/models"
+        --plugin $<TARGET_FILE:dangd_ntp_plugin>
+        --plugin-worker "${DANG_NTP_WORKER_EXECUTABLE}"
+        --no-default-superuser --check)
+    if(TARGET dangd_system_plugin)
+      add_test(NAME rfc9249_rfc7317_resource_conflict
+        COMMAND "${CMAKE_COMMAND}"
+          -DDANGD=${DANG_NTP_DANGD_EXECUTABLE}
+          -DWORKER=${DANG_NTP_WORKER_EXECUTABLE}
+          -DMODEL=${DANGD_ROOT}/dangd/examples/appliance.yang
+          -DCONFIG=${DANGD_ROOT}/dangd/examples/config.xml
+          -DSEARCH=${DANGD_ROOT}/dangd/models
+          -DNTP_PLUGIN=$<TARGET_FILE:dangd_ntp_plugin>
+          -DSYSTEM_PLUGIN=$<TARGET_FILE:dangd_system_plugin>
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_ntp_resource_conflict.cmake")
+    endif()
+  endif()
 
   find_program(DANG_YANGLINT_EXECUTABLE yanglint)
   if(DANG_YANGLINT_EXECUTABLE)

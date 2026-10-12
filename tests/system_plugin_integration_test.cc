@@ -1,9 +1,6 @@
 // Copyright 2026 David Cornejo
 // SPDX-License-Identifier: Apache-2.0
 
-#include "dangd/plugin_api.h"
-#include "plugins/system/src/auth_protocol.h"
-
 #include <dlfcn.h>
 #include <security/pam_appl.h>
 #include <sys/socket.h>
@@ -17,6 +14,9 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+
+#include "dangd/plugin_api.h"
+#include "plugins/system/src/auth_protocol.h"
 
 namespace {
 
@@ -41,12 +41,12 @@ bool Authenticate(const std::string& socket_path, std::string_view username,
         static_cast<std::uint32_t>(password.size())};
     dang::system::AuthResponse response{};
     accepted = write(socket, &request, sizeof(request)) == sizeof(request) &&
-        write(socket, username.data(), username.size()) ==
-            static_cast<ssize_t>(username.size()) &&
-        write(socket, password.data(), password.size()) ==
-            static_cast<ssize_t>(password.size()) &&
-        read(socket, &response, sizeof(response)) == sizeof(response) &&
-        response == dang::system::AuthResponse::kAccepted;
+               write(socket, username.data(), username.size()) ==
+                   static_cast<ssize_t>(username.size()) &&
+               write(socket, password.data(), password.size()) ==
+                   static_cast<ssize_t>(password.size()) &&
+               read(socket, &response, sizeof(response)) == sizeof(response) &&
+               response == dang::system::AuthResponse::kAccepted;
   }
   close(socket);
   return accepted;
@@ -79,8 +79,8 @@ bool PamAuthenticate(const char* service, const char* password) {
   if (status == PAM_SUCCESS) status = pam_authenticate(handle, 0);
   if (status == PAM_SUCCESS) status = pam_acct_mgmt(handle, 0);
   if (status != PAM_SUCCESS)
-    std::cerr << "PAM status " << status << ": "
-              << pam_strerror(handle, status) << '\n';
+    std::cerr << "PAM status " << status << ": " << pam_strerror(handle, status)
+              << '\n';
   if (handle) (void)pam_end(handle, status);
   return status == PAM_SUCCESS;
 }
@@ -89,7 +89,8 @@ bool PamAuthenticate(const char* service, const char* password) {
 
 int main(int argc, char** argv) {
   if (argc != 6) {
-    std::cerr << "usage: system_plugin_integration_test PLUGIN BEFORE PROPOSED ROOT PAM_SERVICE\n";
+    std::cerr << "usage: system_plugin_integration_test PLUGIN BEFORE PROPOSED "
+                 "ROOT PAM_SERVICE\n";
     return 2;
   }
   const std::filesystem::path root = argv[4];
@@ -110,8 +111,8 @@ int main(int argc, char** argv) {
     std::cerr << dlerror() << '\n';
     return 1;
   }
-  auto initialize = reinterpret_cast<DangPluginInitV7>(
-      dlsym(library, "dang_plugin_init_v7"));
+  auto initialize =
+      reinterpret_cast<DangPluginInitV7>(dlsym(library, "dang_plugin_init_v7"));
   const DangPluginV7* v7 = initialize ? initialize() : nullptr;
   if (!v7) return 3;
   const DangPluginV1& plugin = v7->v6.v5.v4.v3.v2.v1;
@@ -125,10 +126,26 @@ int main(int argc, char** argv) {
   DangPluginErrorV1 error{};
   void* prepared = nullptr;
   if (!plugin.prepare(plugin.context, &transaction, &prepared, &error) ||
-      !plugin.validate(plugin.context, prepared, &error) ||
-      !plugin.apply(plugin.context, prepared, &error)) {
+      !plugin.validate(plugin.context, prepared, &error)) {
     std::cerr << (error.instance_path ? error.instance_path : "") << ": "
               << (error.message ? error.message : "plugin failure") << '\n';
+    return 4;
+  }
+  DangHardwareActionV1 action{};
+  if (!v7->v6.v5.v4.hardware_action_count || !v7->v6.v5.v4.hardware_action_at ||
+      !v7->v6.v5.v4.apply_hardware_action ||
+      !v7->v6.v5.v4.rollback_hardware_action ||
+      v7->v6.v5.v4.hardware_action_count(plugin.context, prepared) != 1 ||
+      !v7->v6.v5.v4.hardware_action_at(plugin.context, prepared, 0, &action,
+                                       &error) ||
+      !action.action_id ||
+      std::string_view(action.action_id) != "configuration" ||
+      action.action_class != DANG_HARDWARE_NORMAL_V1 ||
+      !v7->v6.v5.v4.apply_hardware_action(plugin.context, prepared,
+                                          action.action_id, &error)) {
+    std::cerr << (error.instance_path ? error.instance_path : "") << ": "
+              << (error.message ? error.message : "action contract failure")
+              << '\n';
     return 4;
   }
   if (Read(root / "etc/resolv.conf").find("192.0.2.53") == std::string::npos) {
@@ -165,12 +182,21 @@ int main(int argc, char** argv) {
   }
   DangOperationalDataV1 operational{};
   if (!v7->v6.v5.v4.v3.get_operational_data(plugin.context, &operational,
-                                             &error) ||
+                                            &error) ||
       !operational.data_xml ||
       std::string_view(operational.data_xml).find("<os-name>") ==
           std::string_view::npos)
     return 6;
-  if (!plugin.rollback(plugin.context, prepared, &error) ||
+  DangOperationalDataV2 complete_operational{};
+  if (!v7->v6.v5.get_operational_data_v2 ||
+      !v7->v6.v5.get_operational_data_v2(plugin.context, &complete_operational,
+                                         &error) ||
+      !complete_operational.complete || !complete_operational.data_xml ||
+      std::string_view(complete_operational.data_xml).find("<os-name>") ==
+          std::string_view::npos)
+    return 6;
+  if (!v7->v6.v5.v4.rollback_hardware_action(plugin.context, prepared,
+                                             action.action_id, &error) ||
       Read(root / "etc/resolv.conf") != "original resolver\n" ||
       Read(ntp_path) != "original ntp\n")
     return 7;
