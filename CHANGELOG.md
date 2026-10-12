@@ -9,6 +9,18 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Added conservative chrony wrapper ownership preflight: require one literal
+  managed include and reject unmanaged sources, source directories, key files,
+  listener/local-clock policy, alternate includes and unknown directives.
+  Disposable tests alone allow explicit IPv4 loopback bind/access settings.
+  An isolated real chronyd 4.8 instance consumed the plugin-rendered port/local
+  clock and returned a correlated NTPv4 reply on UDP 1123 at stratum 8. Native
+  loaded-plugin tests also rejected a competing source before mutation and
+  restored original files/service state after rollback. The test disables
+  clock adjustment and uses a test-local binary copy to avoid distribution
+  AppArmor path restrictions without changing host policy. Production service
+  command-line verification, ownership checks and full readback remain pending.
+
 - Wired RFC 9249 hardware actions to staged stop/install/activate and shared
   compensation checkpoints. Skipped or replayed steps are rejected, complete
   file images are installed once while stopped, and reverse action callbacks

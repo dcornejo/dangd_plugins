@@ -1,0 +1,14 @@
+# Copyright 2026 David Cornejo
+# SPDX-License-Identifier: Apache-2.0
+[Unit]
+Description=Isolated dangd live chronyd validation
+[Service]
+Type=notify
+# Use a test-local copy of the installed binary so distribution AppArmor path
+# rules for /usr/sbin/chronyd do not reject the disposable configuration tree.
+ExecStart=/run/dangd-ntp-live-chronyd -n -x -u root -f /tmp/dang-ntp-live-test/main.conf
+NoNewPrivileges=yes
+CapabilityBoundingSet=~CAP_SYS_TIME
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+TimeoutStartSec=10
+TimeoutStopSec=10

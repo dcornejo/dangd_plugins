@@ -149,8 +149,9 @@ their model path:
 The generated key-file path is
 `/etc/chrony/dangd-rfc9249.keys`; native installation will use mode 0600 and
 must verify that the host configuration includes the managed fragment before
-restart. Neither file is written yet. Linux and FreeBSD readiness flags remain
-false, and apply, rollback, and operational readback still fail closed. Native
+restart. Ordinary deployment does not write these files; the native tests use
+disposable paths instead. Linux and FreeBSD readiness flags remain false, and
+ordinary apply, rollback, and operational readback still fail closed. Native
 code must prefer daemon or service-manager APIs and must never invoke a shell.
 
 Broadcast, multicast, and manycast interface modes currently fail closed at
@@ -178,7 +179,7 @@ restore either an existing file or absence. It refuses symlinks, hard links,
 non-regular files and changes made outside its transaction. A directory-sync
 failure after rename retains rollback state because the replacement is already
 visible. Captured secret buffers are erased on release. This helper expects a
-trusted existing parent directory and is not wired into daemon actions yet;
+trusted existing parent directory and is used by the disposable native action path;
 it does not provide crash recovery or atomicity across multiple files.
 
 `src/chrony_files.cc` now coordinates the pair: it captures both before-images,
@@ -212,8 +213,8 @@ names defined in `tests/systemd`. Linux validation installed those definitions
 under `/run/systemd/system`, tested start/reload/stop/repeated stop and failed
 start, then removed the definitions and reloaded systemd. Default CTest never
 runs service mutations. This is service-manager evidence, not a live chronyd
-configuration/readback test. The loaded plugin is still not wired to this
-boundary and continues to fail closed at hardware actions.
+configuration/readback test. The loaded plugin now uses this boundary only in
+the explicit disposable test mode described below.
 
 `src/chrony_action_adapter.cc` now connects the planner's ordered ABI hardware
 actions to staged stop/install/activate. It captures shared before-images,
@@ -235,8 +236,31 @@ reverse callbacks. The failure unit proves compensation after failed activation.
 Linux ran both successfully. This uses disposable systemd units, not chronyd,
 and does not prove daemon configuration acceptance or clock-state fidelity.
 
-The next Linux increment is production ownership/include preflight and isolated
-chronyd configuration/readback validation. FreeBSD still needs its base-ntpd translation.
+`src/chrony_preflight.cc` now checks the text ownership boundary of a dedicated
+wrapper: exactly one literal managed include, known infrastructure directives,
+and no unmanaged time sources, keys, listener/local-clock policy, source
+directories or alternate includes. Error messages report line numbers without
+echoing directive arguments. A production wrapper cannot enable unmanaged
+access rules; the disposable test mode alone allows `bindaddress 127.0.0.1`
+and `allow 127.0.0.1`. This intentionally rejects the distribution configuration
+that merges DHCP and other external time sources with the managed tree.
+
+Linux also supports the exact live-test pair: root `/tmp/dang-ntp-live-test`
+and unit `dangd-ntp-live-test.service`. Its wrapper is checked during service
+capture before any stop/file mutation. The native harness proves a competing
+source fails before mutation, applies port 1123 and local stratum 8, receives a
+correlated NTPv4 reply over loopback, and restores files/inactive service state
+through ABI rollback. The service starts chronyd with `-x`, which disables
+system-clock adjustments, and removes CAP_SYS_TIME. The test uses a private
+PID file and command socket and a test-local copy of installed chronyd at
+`/run/dangd-ntp-live-chronyd`; this avoids Ubuntu's executable-path AppArmor
+restrictions without changing the host policy. Runtime unit/binary fixtures
+are removed after testing. This validates one real daemon configuration slice,
+not full NMDA state, authentication, source behavior or production installation.
+
+The next Linux increment is native service command-line and file/directory
+ownership verification, followed by broader observed-state readback.
+FreeBSD still needs its base-ntpd translation.
 Both adapters then need NMDA operational readback and isolated tests.
 Programmatic daemon or service-manager APIs are required where the platform
 supplies them; a process boundary is acceptable only when no supported API

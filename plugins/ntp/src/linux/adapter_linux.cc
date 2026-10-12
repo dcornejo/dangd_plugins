@@ -4,16 +4,44 @@
 /** @file Linux chrony selection and daemon-specific validation boundary. */
 
 #include <cstdlib>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <utility>
 
 #include "plugins/ntp/src/chrony_action_adapter.h"
 #include "plugins/ntp/src/chrony_config.h"
+#include "plugins/ntp/src/chrony_preflight.h"
 #include "plugins/ntp/src/linux/chrony_service.h"
 #include "plugins/ntp/src/ntp_adapter.h"
 
 namespace dang::ntp {
 namespace {
+/** Dedicated live-test wrapper preflight runs before service capture/stop. */
+class WrapperService final : public ChronyService {
+ public:
+  explicit WrapperService(std::string root)
+      : root_(std::move(root)), service_("dangd-ntp-live-test.service") {}
+  bool Active(bool* active, std::string* error) override {
+    std::ifstream file(root_ + "/main.conf");
+    if (!file) {
+      if (error) *error = "cannot read dedicated chrony wrapper";
+      return false;
+    }
+    const std::string text{std::istreambuf_iterator<char>(file),
+                           std::istreambuf_iterator<char>()};
+    if (!ValidateChronyWrapper(text, root_ + "/managed.conf", true, error))
+      return false;
+    return service_.Active(active, error);
+  }
+  bool SetActive(bool active, std::string* error) override {
+    return service_.SetActive(active, error);
+  }
+
+ private:
+  std::string root_;
+  SystemdChronyService service_;
+};
 
 /**
  * Adds exact chrony semantic validation while native mutation remains closed.
@@ -71,6 +99,12 @@ std::unique_ptr<NativeAdapter> CreatePlatformAdapter(
   // and test units. Production ownership/include preflight is still pending.
   const char* root = std::getenv("DANG_NTP_NATIVE_TEST_ROOT");
   const char* unit = std::getenv("DANG_NTP_NATIVE_TEST_UNIT");
+  if (root && unit && std::string_view(root) == "/tmp/dang-ntp-live-test" &&
+      std::string_view(unit) == "dangd-ntp-live-test.service")
+    return CreateChronyActionAdapter(std::move(descriptor),
+                                     std::make_unique<WrapperService>(root),
+                                     std::string(root) + "/managed.conf",
+                                     std::string(root) + "/managed.keys");
   if (root && unit && std::string_view(root).starts_with("/tmp/dang-ntp-") &&
       std::string_view(root).find("..") == std::string_view::npos &&
       (std::string_view(unit) == "dangd-ntp-native-test.service" ||
