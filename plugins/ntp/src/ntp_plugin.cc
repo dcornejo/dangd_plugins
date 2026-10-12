@@ -11,6 +11,7 @@
  */
 
 #include <algorithm>
+#include <cstdlib>
 #include <memory>
 #include <new>
 #include <set>
@@ -20,6 +21,7 @@
 
 #include "dangd/plugin_api.h"
 #include "ntp_model_sources.h"
+#include "plugins/ntp/src/ntp_adapter.h"
 #include "plugins/ntp/src/ntp_config.h"
 
 namespace {
@@ -32,10 +34,13 @@ struct Prepared {
   Config proposed;
   std::vector<PlannedAction> actions;
   std::vector<std::vector<const char*>> dependency_views;
+  std::unique_ptr<dang::ntp::NativeAdapter> adapter;
+  std::vector<dang::ntp::AdapterCheckpoint> checkpoints;
 };
 
 thread_local std::string message;
 thread_local std::string path;
+thread_local std::string operational_xml;
 
 int Fail(DangPluginErrorV1* error, std::string text,
          std::string where = "/ietf-ntp:ntp") {
@@ -101,6 +106,11 @@ int Prepare(void*, const DangTransactionV1* transaction, void** output,
     return Fail(error, message, path);
   prepared->actions =
       dang::ntp::PlanChanges(prepared->before, prepared->proposed);
+  const char* requested = std::getenv("DANG_NTP_DAEMON");
+  prepared->adapter = dang::ntp::CreateNativeAdapter(
+      requested ? requested : "auto", &message, &path);
+  if (!prepared->adapter) return Fail(error, message, path);
+  prepared->checkpoints.resize(prepared->actions.size());
   prepared->dependency_views.resize(prepared->actions.size());
   for (std::size_t index = 0; index < prepared->actions.size(); ++index) {
     auto& views = prepared->dependency_views[index];
@@ -151,16 +161,6 @@ std::size_t HardwareActionCount(void*, void* opaque) {
   return prepared ? prepared->actions.size() : 0;
 }
 
-const char* ActionPath(std::string_view id) {
-  if (id == "configure-authentication") return "/ietf-ntp:ntp/authentication";
-  if (id == "configure-access-rules") return "/ietf-ntp:ntp/access-rules";
-  if (id == "configure-listener-port") return "/ietf-ntp:ntp/port";
-  if (id == "configure-reference-clock") return "/ietf-ntp:ntp/refclock-master";
-  if (id.find("unicast") != std::string_view::npos)
-    return "/ietf-ntp:ntp/unicast-configuration";
-  return "/ietf-ntp:ntp";
-}
-
 int HardwareActionAt(void*, void* opaque, std::size_t index,
                      DangHardwareActionV1* output, DangPluginErrorV1* error) {
   const auto* prepared = static_cast<const Prepared*>(opaque);
@@ -176,7 +176,7 @@ int HardwareActionAt(void*, void* opaque, std::size_t index,
     action_class = DANG_HARDWARE_ACTIVATE_V1;
   *output = {
       .action_id = action.id.c_str(),
-      .instance_path = ActionPath(action.id),
+      .instance_path = dang::ntp::ActionPath(action.id),
       .action_class = action_class,
       .dependencies = dependencies.empty() ? nullptr : dependencies.data(),
       .dependency_count = dependencies.size()};
@@ -185,29 +185,57 @@ int HardwareActionAt(void*, void* opaque, std::size_t index,
 
 int ApplyHardwareAction(void*, void* opaque, const char* action_id,
                         DangPluginErrorV1* error) {
-  if (!opaque || !action_id)
+  auto* prepared = static_cast<Prepared*>(opaque);
+  if (!prepared || !action_id || !prepared->adapter)
     return Fail(error, "invalid RFC 9249 hardware action request");
-  return Fail(error,
-              "RFC 9249 native action '" + std::string(action_id) +
-                  "' is unavailable in the development plugin",
-              ActionPath(action_id));
+  const auto found = std::find_if(
+      prepared->actions.begin(), prepared->actions.end(),
+      [&](const PlannedAction& action) { return action.id == action_id; });
+  if (found == prepared->actions.end())
+    return Fail(error, "unknown RFC 9249 hardware action", "/ietf-ntp:ntp");
+  const std::size_t index =
+      static_cast<std::size_t>(found - prepared->actions.begin());
+  if (!prepared->adapter->ApplyAction(prepared->before, prepared->proposed,
+                                      *found, &prepared->checkpoints[index],
+                                      &message, &path))
+    return Fail(error, message, path);
+  return 1;
 }
 
 int RollbackHardwareAction(void*, void* opaque, const char* action_id,
                            DangPluginErrorV1* error) {
-  if (!opaque || !action_id)
+  auto* prepared = static_cast<Prepared*>(opaque);
+  if (!prepared || !action_id || !prepared->adapter)
     return Fail(error, "invalid RFC 9249 hardware rollback request");
-  return Fail(error,
-              "RFC 9249 native rollback for action '" + std::string(action_id) +
-                  "' is unavailable in the development plugin",
-              ActionPath(action_id));
+  const auto found = std::find_if(
+      prepared->actions.begin(), prepared->actions.end(),
+      [&](const PlannedAction& action) { return action.id == action_id; });
+  if (found == prepared->actions.end())
+    return Fail(error, "unknown RFC 9249 hardware rollback action",
+                "/ietf-ntp:ntp");
+  const std::size_t index =
+      static_cast<std::size_t>(found - prepared->actions.begin());
+  if (!prepared->adapter->RollbackAction(prepared->before, prepared->proposed,
+                                         *found, &prepared->checkpoints[index],
+                                         &message, &path))
+    return Fail(error, message, path);
+  return 1;
 }
 
-int Operational(void*, DangOperationalDataV2*, DangPluginErrorV1* error) {
-  return Fail(error,
-              "RFC 9249 operational state is unavailable in the development "
-              "plugin",
-              "/ietf-ntp:ntp/clock-state");
+int Operational(void*, DangOperationalDataV2* output,
+                DangPluginErrorV1* error) {
+  if (!output)
+    return Fail(error, "missing RFC 9249 operational-state output",
+                "/ietf-ntp:ntp");
+  const char* requested = std::getenv("DANG_NTP_DAEMON");
+  auto adapter = dang::ntp::CreateNativeAdapter(requested ? requested : "auto",
+                                                &message, &path);
+  if (!adapter) return Fail(error, message, path);
+  if (!adapter->OperationalXml(&operational_xml, &message, &path))
+    return Fail(error, message, path);
+  output->data_xml = operational_xml.c_str();
+  output->complete = 1;
+  return 1;
 }
 
 std::size_t ResourceDomainCount(void*) { return 1; }

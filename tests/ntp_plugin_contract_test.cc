@@ -6,6 +6,7 @@
 #include <dlfcn.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <iostream>
 #include <set>
 #include <string>
@@ -123,10 +124,28 @@ int main(int argc, char** argv) {
           !plugin->v6.v5.v4.apply_hardware_action(base.context, prepared,
                                                   action.action_id, &error) &&
           error.message && error.instance_path &&
-          std::string_view(error.message).find("unavailable") !=
+          std::string_view(error.message).find("not implemented") !=
               std::string_view::npos &&
           std::string_view(error.instance_path) == "/ietf-ntp:ntp";
   if (prepared) base.release(base.context, prepared);
+
+#if defined(__linux__)
+  constexpr const char* unsupported_daemon = "ntpd";
+#elif defined(__FreeBSD__)
+  constexpr const char* unsupported_daemon = "chrony";
+#else
+  constexpr const char* unsupported_daemon = "chrony";
+#endif
+  setenv("DANG_NTP_DAEMON", unsupported_daemon, 1);
+  prepared = nullptr;
+  error = {};
+  valid = valid &&
+          !base.prepare(base.context, &transaction, &prepared, &error) &&
+          !prepared && error.message && error.instance_path &&
+          std::string_view(error.message).find("not supported") !=
+              std::string_view::npos &&
+          std::string_view(error.instance_path) == "/ietf-ntp:ntp";
+  unsetenv("DANG_NTP_DAEMON");
 
   constexpr char invalid[] =
       "<ntp xmlns=\"urn:ietf:params:xml:ns:yang:ietf-ntp\" "

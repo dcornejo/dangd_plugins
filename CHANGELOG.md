@@ -9,6 +9,17 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Added the RFC 9249 native-adapter contract and deterministic daemon
+  selection. Each prepared transaction now owns a typed adapter plus one
+  retained before-image/acknowledgement checkpoint per generic hardware
+  action. `DANG_NTP_DAEMON=auto` selects chrony only on Linux and base ntpd
+  only on FreeBSD; explicit cross-platform or unknown choices fail at the NTP
+  model root before mutation. The current OS-specific adapters deliberately
+  report configuration and operational readiness as false, reject apply and
+  rollback without inventing acknowledgement, and publish no operational
+  state. Cross-platform unit and plugin-contract tests cover selection,
+  attributed errors, checkpoint invariants, and fail-closed readback.
+
 - Fixed the RFC 7317 system provider's real dangd ABI-v7 loadability. The
   provider now exposes its transactional platform update as one reversible
   ABI-v4 hardware action and publishes its existing complete system-state image

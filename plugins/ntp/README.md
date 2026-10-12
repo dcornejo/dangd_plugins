@@ -107,6 +107,33 @@ accepted merely because it parsed. The target is not part of any install or
 package component until both supported operating systems have acknowledged
 apply, readback, and rollback implementations.
 
+## Native adapter and daemon selection contract
+
+The development plugin now creates one typed native adapter per prepared
+transaction. The adapter receives immutable before/proposed projections and
+one dependency-ordered action at a time. Each action has a retained checkpoint
+for its native before-image and acknowledgement state. A production adapter
+must capture reversible state before mutation, set `applied` only after the
+daemon or service manager acknowledges the change, compensate only an
+acknowledged checkpoint, and erase retained secrets when the transaction is
+released. Operational data is returned through the same selected adapter and
+must be a complete observed image rather than a projection of intended config.
+
+Daemon selection is explicit through `DANG_NTP_DAEMON`:
+
+- unset or `auto` chooses `chrony` on Linux and base `ntpd` on FreeBSD;
+- `chrony` is accepted only on Linux;
+- `ntpd` is accepted only on FreeBSD;
+- every other value, including a daemon from the other platform, fails prepare
+  at `/ietf-ntp:ntp` before any hardware action is available.
+
+This is intentionally a narrow support declaration, not daemon autodetection.
+It prevents an installed but unintended implementation from silently taking
+ownership of the host clock. The current Linux and FreeBSD adapters implement
+selection and the transaction boundary only: their readiness flags remain
+false, and apply, rollback, and operational readback still fail closed. Native
+code must prefer daemon or service-manager APIs and must never invoke a shell.
+
 Broadcast, multicast, and manycast interface modes currently fail closed at
 `/ietf-ntp:ntp/interfaces`. They require explicit cross-daemon mappings before
 the parser accepts them. VRF behavior is also still pending because the base
@@ -125,10 +152,10 @@ cmake --build build --target dangd_ntp_plugin ntp_config_test \
 ctest --test-dir build -R rfc9249 --output-on-failure
 ```
 
-The next implementation increment must add Linux and FreeBSD adapter contracts
-and select supported native NTP daemons. The adapters must then implement
-acknowledged apply, retained before-image rollback, NMDA operational readback,
-and isolated tests. Programmatic daemon or service-manager APIs are required
-where the platform supplies them; a process boundary is acceptable only when
-no supported API exists and must use an absolute executable path and fixed
-argument vector without a shell.
+The next implementation increment must make the selected Linux chrony and
+FreeBSD ntpd adapters functional. They must implement acknowledged apply,
+retained before-image rollback, NMDA operational readback, and isolated tests.
+Programmatic daemon or service-manager APIs are required where the platform
+supplies them; a process boundary is acceptable only when no supported API
+exists and must use an absolute executable path and fixed argument vector
+without a shell.

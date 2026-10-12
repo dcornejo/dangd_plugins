@@ -149,7 +149,9 @@ only with one another. Packaging does not weaken dangd's duplicate-owner check.
   dependency-ordered English delta planner, and a development-only ABI-v7
   loadable target. The target enables only its implemented portable model
   features, claims the same generic exclusive `ntp` resource domain as the
-  RFC 7317 `system` provider, and fails closed at apply until a native adapter
-  is available. It is not installed or packaged yet. Native Linux/FreeBSD,
-  operational-state, and production packaging implementation remains planned;
-  see `plugins/ntp/README.md`.
+  RFC 7317 `system` provider, and selects only chrony on Linux or base ntpd on
+  FreeBSD through a typed per-transaction adapter contract. Per-action rollback
+  checkpoints and strict daemon-choice errors are implemented, but native
+  mutation and readback still fail closed. It is not installed or packaged
+  yet. Native apply/rollback, operational state, and production packaging
+  remain planned; see `plugins/ntp/README.md`.

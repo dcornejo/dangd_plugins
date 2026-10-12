@@ -155,11 +155,21 @@ file(READ plugins/system/models/ietf-system@2014-08-06.yang
 configure_file(plugins/ntp/src/ntp_model_sources.h.in
   generated/ntp_model_sources.h @ONLY)
 
+set(DANG_NTP_PLATFORM_SOURCE
+  plugins/ntp/src/unsupported/adapter_unsupported.cc)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set(DANG_NTP_PLATFORM_SOURCE plugins/ntp/src/linux/adapter_linux.cc)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+  set(DANG_NTP_PLATFORM_SOURCE plugins/ntp/src/freebsd/adapter_freebsd.cc)
+endif()
+
 # This development target deliberately is not installed or packaged until a
 # native Linux/FreeBSD adapter can acknowledge apply and rollback operations.
 add_library(dangd_ntp_plugin MODULE
+  plugins/ntp/src/ntp_adapter.cc
   plugins/ntp/src/ntp_config.cc
-  plugins/ntp/src/ntp_plugin.cc)
+  plugins/ntp/src/ntp_plugin.cc
+  ${DANG_NTP_PLATFORM_SOURCE})
 target_compile_features(dangd_ntp_plugin PRIVATE cxx_std_20)
 target_include_directories(dangd_ntp_plugin PRIVATE
   "${DANGD_INCLUDE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/generated"
@@ -481,6 +491,17 @@ if(BUILD_TESTING)
   target_compile_options(ntp_config_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME rfc9249_configuration_planning COMMAND ntp_config_test)
+  add_executable(ntp_adapter_test
+    tests/ntp_adapter_test.cc
+    plugins/ntp/src/ntp_adapter.cc
+    ${DANG_NTP_PLATFORM_SOURCE})
+  target_compile_features(ntp_adapter_test PRIVATE cxx_std_20)
+  target_include_directories(ntp_adapter_test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(ntp_adapter_test PRIVATE GTest::gtest_main)
+  target_compile_options(ntp_adapter_test PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME rfc9249_native_adapter_contract COMMAND ntp_adapter_test)
   add_test(NAME rfc9249_plugin_discovery
     COMMAND plugin_loader_smoke_test $<TARGET_FILE:dangd_ntp_plugin>
       ietf-ntp ietf-ntp 2022-07-05)
