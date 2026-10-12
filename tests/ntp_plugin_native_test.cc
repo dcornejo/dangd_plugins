@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "dangd/plugin_api.h"
+#include "plugins/ntp/src/linux/chrony_process.h"
 #include "plugins/ntp/src/linux/chrony_service.h"
 
 std::string Read(const std::string& path) {
@@ -55,7 +56,7 @@ bool NtpReply() {
   return valid;
 }
 int main(int argc, char** argv) {
-  if (argc != 3 ||
+  if ((argc != 3 && argc != 4) ||
       (std::string_view(argv[2]) != "dangd-ntp-native-test.service" &&
        std::string_view(argv[2]) != "dangd-ntp-native-fail-test.service" &&
        std::string_view(argv[2]) != "dangd-ntp-live-test.service"))
@@ -63,6 +64,10 @@ int main(int argc, char** argv) {
   const bool expect_failure =
       std::string_view(argv[2]) == "dangd-ntp-native-fail-test.service";
   const bool live = std::string_view(argv[2]) == "dangd-ntp-live-test.service";
+  const bool policy_refusal = argc == 4;
+  if (policy_refusal &&
+      (!live || std::string_view(argv[3]) != "expect-policy-refusal"))
+    return 2;
   dang::ntp::SystemdChronyService service(argv[2]);
   std::string message;
   if (!service.SetActive(false, &message)) {
@@ -82,6 +87,12 @@ int main(int argc, char** argv) {
     out << (live ? "port 1124\nlocal stratum 8\n" : "original fragment");
   }
   if (live) {
+    std::string identity_error;
+    if (dang::ntp::ValidateChronyProcess(
+            static_cast<std::uint32_t>(getpid()), "/run/dangd-ntp-live-chronyd",
+            {"unrelated-process"}, geteuid(), &identity_error))
+      return 1;
+    std::cout << "PASS: unrelated process identity rejected\n";
     std::ofstream out(root + "/main.conf");
     out << "pidfile " << root << "/chronyd.pid\nbindcmdaddress " << root
         << "/chronyd.sock\ncmdport 0\nbindaddress 127.0.0.1\nallow "
@@ -125,6 +136,33 @@ int main(int argc, char** argv) {
         "[]"};
   DangPluginErrorV1 error{};
   void* prepared = nullptr;
+  if (policy_refusal) {
+    bool rejected = base.prepare(base.context, &input, &prepared, &error) &&
+                    base.validate(base.context, prepared, &error);
+    DangHardwareActionV1 first{};
+    rejected =
+        rejected &&
+        actions.hardware_action_at(base.context, prepared, 0, &first, &error) &&
+        !actions.apply_hardware_action(base.context, prepared, first.action_id,
+                                       &error) &&
+        error.message &&
+        std::string_view(error.message).find("service policy") !=
+            std::string_view::npos;
+    bool active = true;
+    rejected = rejected && service.Active(&active, &message) && !active &&
+               Read(root + "/managed.conf") == "port 1124\nlocal stratum 8\n" &&
+               Read(root + "/managed.keys") == "original keys";
+    if (prepared) base.release(base.context, prepared);
+    dlclose(library);
+    unsetenv("DANG_NTP_NATIVE_TEST_ROOT");
+    unsetenv("DANG_NTP_NATIVE_TEST_UNIT");
+    if (rejected) std::filesystem::remove_all(root);
+    std::cout
+        << (rejected
+                ? "PASS: native service override rejected before mutation\n"
+                : "FAIL: service override policy\n");
+    return rejected ? 0 : 1;
+  }
   bool preflight_ok = true;
   if (live) {
     const std::string wrapper = Read(root + "/main.conf");

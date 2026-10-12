@@ -9,6 +9,17 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Added and natively validated structured service-policy checks for
+  auxiliary commands, drop-ins, environment configuration, filesystem remaps,
+  extended command flags, identity/restart policy and clock-isolation settings.
+  Added read-only pidfd/procfs verification of the running executable inode,
+  exact argv, all four UIDs and stable MainPID. Unit-definition trust is checked
+  alongside existing binary/configuration checks, and stop remains available
+  for compensation. Portable refusal tests and the native Linux build/live
+  fixture pass. A real auxiliary-command drop-in is rejected before mutation,
+  and unrelated process identity is refused. Valid live activation, NTP reply
+  and file/service rollback still succeed. Temporary runtime fixtures are removed.
+
 - Added descriptor-based chrony deployment trust checks. Every path component
   is opened without following symbolic links; dedicated directories and files
   must have expected owners, avoid group/other writes, and use singly linked

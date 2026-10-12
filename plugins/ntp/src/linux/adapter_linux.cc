@@ -13,6 +13,7 @@
 #include "plugins/ntp/src/chrony_config.h"
 #include "plugins/ntp/src/chrony_deployment.h"
 #include "plugins/ntp/src/chrony_preflight.h"
+#include "plugins/ntp/src/linux/chrony_process.h"
 #include "plugins/ntp/src/linux/chrony_service.h"
 #include "plugins/ntp/src/ntp_adapter.h"
 
@@ -25,23 +26,29 @@ class WrapperService final : public ChronyService {
       : root_(std::move(root)), service_("dangd-ntp-live-test.service") {}
   bool Active(bool* active, std::string* error) override {
     if (!Check(error)) return false;
-    return service_.Active(active, error);
+    return service_.Active(active, error) && (!*active || Process(error));
   }
   bool SetActive(bool active, std::string* error) override {
     // Stop must remain available for compensation even after outside changes
     // make activation preflight fail. Revalidate ownership and argv on start.
     if (active && !Check(error)) return false;
-    return service_.SetActive(active, error);
+    return service_.SetActive(active, error) && (!active || Process(error));
   }
 
  private:
   bool Check(std::string* error) {
     std::string text;
     std::vector<native::UnitCommand> commands;
+    native::UnitPolicy policy;
     if (!ValidateChronyTree(root_, geteuid(), &text, error) ||
         !ValidateChronyWrapper(text, root_ + "/managed.conf", true, error) ||
         !native::SystemdExecStart("dangd-ntp-live-test.service", &commands,
-                                  error))
+                                  error) ||
+        !native::SystemdUnitPolicy("dangd-ntp-live-test.service", &policy,
+                                   error) ||
+        !ValidateChronyUnitPolicy(
+            policy, "/run/systemd/system/dangd-ntp-live-test.service", error) ||
+        !ValidateChronyDefinition(policy.fragment_path, geteuid(), error))
       return false;
     if (commands.size() != 1 || commands.front().ignore_failure) {
       if (error) *error = "chrony service must have one strict start command";
@@ -52,6 +59,29 @@ class WrapperService final : public ChronyService {
                                     "/run/dangd-ntp-live-chronyd",
                                     root_ + "/main.conf", true, error) &&
            ValidateChronyBinary(commands[0].executable, geteuid(), error);
+  }
+  bool Process(std::string* error) {
+    native::UnitPolicy before, after;
+    std::vector<native::UnitCommand> commands;
+    if (!native::SystemdUnitPolicy("dangd-ntp-live-test.service", &before,
+                                   error) ||
+        !native::SystemdExecStart("dangd-ntp-live-test.service", &commands,
+                                  error) ||
+        commands.size() != 1 ||
+        !ValidateChronyInvocation(commands[0].executable, commands[0].arguments,
+                                  "/run/dangd-ntp-live-chronyd",
+                                  root_ + "/main.conf", true, error) ||
+        !ValidateChronyProcess(before.main_pid, commands[0].executable,
+                               commands[0].arguments, geteuid(), error) ||
+        !native::SystemdUnitPolicy("dangd-ntp-live-test.service", &after,
+                                   error))
+      return false;
+    if (before.main_pid != after.main_pid) {
+      if (error) *error = "chrony MainPID changed during verification";
+      return false;
+    }
+    return ValidateChronyUnitPolicy(
+        after, "/run/systemd/system/dangd-ntp-live-test.service", error);
   }
   std::string root_;
   SystemdChronyService service_;

@@ -6,6 +6,8 @@
 
 #include <string>
 #include <vector>
+
+#include "plugins/common/systemd_unit.h"
 namespace dang::ntp {
 /** Check a strict direct chronyd argv; reject wrappers, substitutions and
  * extras. */
@@ -28,5 +30,13 @@ bool ValidateChronyTree(const std::string& root, uid_t owner,
 /** Verify an owned, non-writable-by-others regular executable and ancestors. */
 bool ValidateChronyBinary(const std::string& path, uid_t owner,
                           std::string* error);
+/** Dedicated test-unit policy; reject auxiliary hooks, drop-ins and overrides.
+ */
+bool ValidateChronyUnitPolicy(const native::UnitPolicy& policy,
+                              const std::string& expected_fragment,
+                              std::string* error);
+/** Check the ownership/type/permissions of a service definition file. */
+bool ValidateChronyDefinition(const std::string& path, uid_t owner,
+                              std::string* error);
 }  // namespace dang::ntp
 #endif

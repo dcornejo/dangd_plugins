@@ -213,4 +213,119 @@ bool SystemdExecStart(std::string_view unit, std::vector<UnitCommand>* commands,
   *commands = std::move(parsed);
   return true;
 }
+bool SystemdUnitPolicy(std::string_view unit, UnitPolicy* policy,
+                       std::string* error) {
+  if (!policy) return Fail("missing systemd policy output", error);
+  *policy = {};
+  Bus bus;
+  std::string state;
+  if (!Open(&bus, error) || !ReadState(&bus, std::string(unit), &state, error))
+    return false;
+  sd_bus_message_rewind(bus.reply, true);
+  const char* raw_path = nullptr;
+  if (sd_bus_message_read(bus.reply, "o", &raw_path) <= 0 || !raw_path)
+    return Fail("invalid unit policy object path", error);
+  const std::string path(raw_path);
+  const auto get = [&](const char* interface, const char* name,
+                       const char* signature) {
+    sd_bus_message_unref(bus.reply);
+    bus.reply = nullptr;
+    const int result = sd_bus_call_method(
+        bus.bus, kService, path.c_str(), "org.freedesktop.DBus.Properties",
+        "Get", &bus.error, &bus.reply, "ss", interface, name);
+    if (result < 0)
+      return BusFailure("read systemd policy property", result, bus, error);
+    return sd_bus_message_enter_container(bus.reply, 'v', signature) > 0 ||
+           Fail("invalid systemd policy property signature", error);
+  };
+  constexpr const char* service = "org.freedesktop.systemd1.Service";
+  constexpr const char* unit_interface = "org.freedesktop.systemd1.Unit";
+  const auto string = [&](const char* interface, const char* name,
+                          std::string* output) {
+    const char* value = nullptr;
+    if (!get(interface, name, "s") ||
+        sd_bus_message_read(bus.reply, "s", &value) <= 0 || !value)
+      return false;
+    *output = value;
+    return true;
+  };
+  const auto nonempty = [&](const char* interface, const char* name,
+                            const char* signature, const char* element,
+                            bool* output) {
+    if (!get(interface, name, signature) ||
+        sd_bus_message_enter_container(bus.reply, 'a', element) <= 0)
+      return false;
+    const int empty = sd_bus_message_at_end(bus.reply, false);
+    if (empty < 0) return false;
+    *output = *output || empty == 0;
+    return true;
+  };
+  UnitPolicy result;
+  if (!string(unit_interface, "FragmentPath", &result.fragment_path) ||
+      !string(service, "Type", &result.type) ||
+      !string(service, "User", &result.user) ||
+      !string(service, "Group", &result.group) ||
+      !string(service, "Restart", &result.restart) ||
+      !nonempty(unit_interface, "DropInPaths", "as", "s", &result.drop_ins))
+    return false;
+  for (const char* name : {"ExecCondition", "ExecStartPre", "ExecStartPost",
+                           "ExecReload", "ExecStop", "ExecStopPost"})
+    if (!nonempty(service, name, "a(sasbttttuii)", "(sasbttttuii)",
+                  &result.auxiliary_commands))
+      return false;
+  for (const char* name :
+       {"Environment", "PassEnvironment", "UnsetEnvironment"})
+    if (!nonempty(service, name, "as", "s", &result.environment)) return false;
+  if (!nonempty(service, "EnvironmentFiles", "a(sb)", "(sb)",
+                &result.environment))
+    return false;
+  for (const char* name : {"RootDirectory", "RootImage", "WorkingDirectory"}) {
+    std::string value;
+    if (!string(service, name, &value)) return false;
+    result.filesystem_override = result.filesystem_override || !value.empty();
+  }
+  for (const char* name : {"BindPaths", "BindReadOnlyPaths"})
+    if (!nonempty(service, name, "a(ssbt)", "(ssbt)",
+                  &result.filesystem_override))
+      return false;
+  if (!nonempty(service, "TemporaryFileSystem", "a(ss)", "(ss)",
+                &result.filesystem_override))
+    return false;
+  int no_new_privileges = 0;
+  if (!get(service, "NoNewPrivileges", "b") ||
+      sd_bus_message_read(bus.reply, "b", &no_new_privileges) <= 0 ||
+      !get(service, "CapabilityBoundingSet", "t") ||
+      sd_bus_message_read(bus.reply, "t", &result.capability_bounding_set) <=
+          0 ||
+      !get(service, "MainPID", "u") ||
+      sd_bus_message_read(bus.reply, "u", &result.main_pid) <= 0)
+    return false;
+  result.no_new_privileges = no_new_privileges != 0;
+  // Extended command flags can alter privilege/environment semantics even
+  // when the legacy executable and argv fields appear identical.
+  if (!get(service, "ExecStartEx", "a(sasasttttuii)") ||
+      sd_bus_message_enter_container(bus.reply, 'a', "(sasasttttuii)") <= 0)
+    return false;
+  int command;
+  while ((command = sd_bus_message_enter_container(bus.reply, 'r',
+                                                   "sasasttttuii")) > 0) {
+    if (sd_bus_message_skip(bus.reply, "sas") < 0 ||
+        sd_bus_message_enter_container(bus.reply, 'a', "s") <= 0)
+      return false;
+    const int empty = sd_bus_message_at_end(bus.reply, false);
+    if (empty < 0) return false;
+    result.privileged_start_flags = result.privileged_start_flags || empty == 0;
+    // Finish any flag array before reading timing metadata.
+    const char* flag = nullptr;
+    while (sd_bus_message_read(bus.reply, "s", &flag) > 0) {
+    }
+    if (sd_bus_message_exit_container(bus.reply) < 0 ||
+        sd_bus_message_skip(bus.reply, "ttttuii") < 0 ||
+        sd_bus_message_exit_container(bus.reply) < 0)
+      return false;
+  }
+  if (command < 0) return false;
+  *policy = std::move(result);
+  return true;
+}
 }  // namespace dang::native

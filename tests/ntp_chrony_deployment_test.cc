@@ -85,5 +85,26 @@ TEST(ChronyInvocation, RequiresExactExecutableWrapperAndClockIsolation) {
   EXPECT_FALSE(ValidateChronyInvocation(binary, arguments, binary, wrapper,
                                         true, &error));
 }
+TEST(ChronyServicePolicy, RejectsHooksOverridesAndClockPrivileges) {
+  native::UnitPolicy policy;
+  policy.fragment_path = "/run/systemd/system/test.service";
+  policy.type = "notify";
+  policy.restart = "no";
+  policy.no_new_privileges = true;
+  std::string error;
+  EXPECT_TRUE(ValidateChronyUnitPolicy(policy, policy.fragment_path, &error));
+  for (auto field :
+       {&native::UnitPolicy::auxiliary_commands, &native::UnitPolicy::drop_ins,
+        &native::UnitPolicy::environment,
+        &native::UnitPolicy::filesystem_override,
+        &native::UnitPolicy::privileged_start_flags}) {
+    auto altered = policy;
+    altered.*field = true;
+    EXPECT_FALSE(
+        ValidateChronyUnitPolicy(altered, policy.fragment_path, &error));
+  }
+  policy.capability_bounding_set = std::uint64_t{1} << 25;
+  EXPECT_FALSE(ValidateChronyUnitPolicy(policy, policy.fragment_path, &error));
+}
 }  // namespace
 }  // namespace dang::ntp

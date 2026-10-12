@@ -132,4 +132,32 @@ bool ValidateChronyBinary(const std::string& path, uid_t owner,
   return directory.fd >= 0 && File(directory.fd, parsed.filename().c_str(),
                                    owner, false, false, true, nullptr, error);
 }
+bool ValidateChronyUnitPolicy(const native::UnitPolicy& policy,
+                              const std::string& expected_fragment,
+                              std::string* error) {
+  // CAP_SYS_TIME is bit 25 in Linux's capability ABI. This policy is for the
+  // clock-isolated test service, not a production time-discipline deployment.
+  return (policy.fragment_path == expected_fragment &&
+          policy.type == "notify" &&
+          (policy.user.empty() || policy.user == "root") &&
+          (policy.group.empty() || policy.group == "root") &&
+          policy.restart == "no" && !policy.auxiliary_commands &&
+          !policy.drop_ins && !policy.environment &&
+          !policy.filesystem_override && !policy.privileged_start_flags &&
+          policy.no_new_privileges &&
+          !(policy.capability_bounding_set & (std::uint64_t{1} << 25))) ||
+         Fail(
+             "chrony service policy contains an unsupported execution override",
+             error);
+}
+bool ValidateChronyDefinition(const std::string& path, uid_t owner,
+                              std::string* error) {
+  const std::filesystem::path parsed(path);
+  if (!parsed.is_absolute() || parsed.lexically_normal() != parsed)
+    return Fail("chrony definition path must be absolute and normalized",
+                error);
+  Fd directory{Directory(parsed.parent_path().string(), owner, error)};
+  return directory.fd >= 0 && File(directory.fd, parsed.filename().c_str(),
+                                   owner, false, false, false, nullptr, error);
+}
 }  // namespace dang::ntp

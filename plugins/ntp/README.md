@@ -277,10 +277,24 @@ compensation. Native tests prove unsafe directories and public keys fail before
 mutation, then verify live NTP and rollback with corrected permissions.
 
 These are preflight checks, not locks against privileged concurrent edits.
-Full service-unit policy (including auxiliary commands/drop-ins), actual
-running-process argv and production deployment selection are still pending.
-The next Linux increment is broader observed-state readback and service-policy
-validation before enabling ordinary deployment.
+The service-policy boundary is now built and validated on Linux. Structured checks reject auxiliary command
+hooks, drop-ins, environment configuration, root/working-directory overrides,
+bind mounts, temporary filesystems and extended privilege-changing command
+flags. The dedicated unit requires notify/no-restart, root credentials,
+NoNewPrivileges and no CAP_SYS_TIME, and its definition file is checked for
+trusted ownership and permissions.
+
+The live identity check uses pidfd_open and a retained procfs directory
+to compare executable device/inode, exact NUL-delimited argv and real/effective/
+saved/filesystem UIDs, rejects process exit during observation, and compares
+MainPID before and after. It runs after activation and when capturing an active
+service. Native tests reject an unrelated process and a real auxiliary-command
+drop-in before mutation, then pass live activation/NTP/rollback with the valid
+service. The optional `expect-policy-refusal` argument to the native harness
+exercises the disposable override in `tests/systemd/ntp-live-refused-override.conf`.
+Production selection and
+broader observed-state readback remain pending; this is not a complete security
+audit of every systemd namespace/resource option.
 FreeBSD still needs its base-ntpd translation.
 Both adapters then need NMDA operational readback and isolated tests.
 Programmatic daemon or service-manager APIs are required where the platform
