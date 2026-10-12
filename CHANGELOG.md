@@ -9,6 +9,17 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Added a reusable POSIX managed-file primitive for the NTP native adapters.
+  It retains original bytes, ownership and permissions; replaces files through
+  exclusive temporary files and atomic rename; synchronizes file and directory
+  state; restores absence or previous contents; and refuses symlinks, hard
+  links, FIFOs and unrelated later edits. A post-rename directory-sync failure
+  retains the visible replacement and rollback checkpoint. Retained key bytes
+  are erased on release. Temporary-directory tests exercise real filesystem
+  operations plus an injected durability failure. This primitive is not yet
+  connected to the running daemon; two-file compensation and service
+  acknowledgement remain the next adapter integration work.
+
 - Added the side-effect-free Linux chrony translation boundary for RFC 9249.
   It produces deterministic managed configuration and separate key-file
   images intended for root-only installation. The translation covers listener

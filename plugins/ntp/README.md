@@ -171,7 +171,17 @@ cmake --build build --target dangd_ntp_plugin ntp_config_test \
 ctest --test-dir build -R rfc9249 --output-on-failure
 ```
 
-The next Linux increment is atomic installation/removal of the two rendered
+`src/managed_file.cc` now supplies a tested per-file replacement primitive for
+both POSIX platforms. It retains bytes, owner/group and permissions, atomically
+renames a synchronized temporary file, synchronizes the directory, and can
+restore either an existing file or absence. It refuses symlinks, hard links,
+non-regular files and changes made outside its transaction. A directory-sync
+failure after rename retains rollback state because the replacement is already
+visible. Captured secret buffers are erased on release. This helper expects a
+trusted existing parent directory and is not wired into daemon actions yet;
+it does not provide crash recovery or atomicity across multiple files.
+
+The next Linux increment is adapter integration for installation/removal of the two rendered
 files, retained before-image rollback, and acknowledged chrony lifecycle
 control over systemd D-Bus. FreeBSD still needs its base-ntpd translation.
 Both adapters then need NMDA operational readback and isolated tests.

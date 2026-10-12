@@ -501,6 +501,14 @@ if(BUILD_TESTING)
   target_compile_options(ntp_chrony_config_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME rfc9249_chrony_translation COMMAND ntp_chrony_config_test)
+  add_executable(ntp_managed_file_test
+    tests/ntp_managed_file_test.cc plugins/ntp/src/managed_file.cc)
+  target_compile_features(ntp_managed_file_test PRIVATE cxx_std_20)
+  target_include_directories(ntp_managed_file_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(ntp_managed_file_test PRIVATE GTest::gtest_main)
+  target_compile_options(ntp_managed_file_test PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME rfc9249_managed_file_rollback COMMAND ntp_managed_file_test)
   add_executable(ntp_adapter_test
     tests/ntp_adapter_test.cc
     plugins/ntp/src/chrony_config.cc
