@@ -41,6 +41,10 @@ class FailClosedAdapter final : public NativeAdapter {
 
   const AdapterDescriptor& descriptor() const override { return descriptor_; }
 
+  bool ValidateConfig(const Config&, std::string*, std::string*) override {
+    return true;
+  }
+
   bool ApplyAction(const Config&, const Config&, const PlannedAction& action,
                    AdapterCheckpoint* checkpoint, std::string* error,
                    std::string* error_path) override {
@@ -122,6 +126,11 @@ std::unique_ptr<NativeAdapter> CreateNativeAdapter(std::string_view requested,
   if (!SelectAdapter(NativePlatform(), requested, &descriptor, error,
                      error_path))
     return nullptr;
+  return CreatePlatformAdapter(std::move(descriptor));
+}
+
+std::unique_ptr<NativeAdapter> CreateFailClosedAdapter(
+    AdapterDescriptor descriptor) {
   return std::make_unique<FailClosedAdapter>(std::move(descriptor));
 }
 

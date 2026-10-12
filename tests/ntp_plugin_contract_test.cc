@@ -130,6 +130,27 @@ int main(int argc, char** argv) {
   if (prepared) base.release(base.context, prepared);
 
 #if defined(__linux__)
+  // The generic plugin delegates daemon semantics to the selected adapter.
+  // chronyd does not implement burst startup on a symmetric peer.
+  constexpr char chrony_semantic_error[] = R"xml(
+    <ntp xmlns="urn:ietf:params:xml:ns:yang:ietf-ntp">
+      <unicast-configuration><address>192.0.2.8</address>
+        <type>uc-peer</type><iburst>true</iburst>
+      </unicast-configuration>
+    </ntp>)xml";
+  transaction = {"<config/>", chrony_semantic_error, "[]"};
+  prepared = nullptr;
+  error = {};
+  valid = valid &&
+          base.prepare(base.context, &transaction, &prepared, &error) &&
+          prepared && !base.validate(base.context, prepared, &error) &&
+          error.instance_path &&
+          std::string_view(error.instance_path) ==
+              "/ietf-ntp:ntp/unicast-configuration/iburst";
+  if (prepared) base.release(base.context, prepared);
+#endif
+
+#if defined(__linux__)
   constexpr const char* unsupported_daemon = "ntpd";
 #elif defined(__FreeBSD__)
   constexpr const char* unsupported_daemon = "chrony";

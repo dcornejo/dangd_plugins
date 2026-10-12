@@ -3,10 +3,18 @@
 
 /** @file Fail-closed development platform selection for non-target hosts. */
 
+#include <memory>
+#include <utility>
+
 #include "plugins/ntp/src/ntp_adapter.h"
 
 namespace dang::ntp {
 
 Platform NativePlatform() { return Platform::kUnsupported; }
+
+std::unique_ptr<NativeAdapter> CreatePlatformAdapter(
+    AdapterDescriptor descriptor) {
+  return CreateFailClosedAdapter(std::move(descriptor));
+}
 
 }  // namespace dang::ntp

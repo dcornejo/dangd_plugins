@@ -166,6 +166,7 @@ endif()
 # This development target deliberately is not installed or packaged until a
 # native Linux/FreeBSD adapter can acknowledge apply and rollback operations.
 add_library(dangd_ntp_plugin MODULE
+  plugins/ntp/src/chrony_config.cc
   plugins/ntp/src/ntp_adapter.cc
   plugins/ntp/src/ntp_config.cc
   plugins/ntp/src/ntp_plugin.cc
@@ -491,8 +492,18 @@ if(BUILD_TESTING)
   target_compile_options(ntp_config_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME rfc9249_configuration_planning COMMAND ntp_config_test)
+  add_executable(ntp_chrony_config_test
+    tests/ntp_chrony_config_test.cc plugins/ntp/src/chrony_config.cc)
+  target_compile_features(ntp_chrony_config_test PRIVATE cxx_std_20)
+  target_include_directories(ntp_chrony_config_test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(ntp_chrony_config_test PRIVATE GTest::gtest_main)
+  target_compile_options(ntp_chrony_config_test PRIVATE
+    -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME rfc9249_chrony_translation COMMAND ntp_chrony_config_test)
   add_executable(ntp_adapter_test
     tests/ntp_adapter_test.cc
+    plugins/ntp/src/chrony_config.cc
     plugins/ntp/src/ntp_adapter.cc
     ${DANG_NTP_PLATFORM_SOURCE})
   target_compile_features(ntp_adapter_test PRIVATE cxx_std_20)

@@ -100,12 +100,14 @@ offer a leafref target users cannot manage. Deprecated authentication and all
 interface-mode features also remain disabled.
 
 Apply, rollback, and ABI-v5 operational callbacks deliberately return an
-attributed `... unavailable` error. The operational callback exists because a
-complete ABI-v7 implementation must provide it, but it never fabricates clock
-state. This is a safety boundary, not a mock backend: configuration cannot be
-accepted merely because it parsed. The target is not part of any install or
-package component until both supported operating systems have acknowledged
-apply, readback, and rollback implementations.
+attributed `... unavailable` error. Linux validation additionally translates
+the proposed tree to complete managed chrony file images, so daemon-specific
+semantic gaps fail before any hardware action can run. The operational
+callback exists because a complete ABI-v7 implementation must provide it, but
+it never fabricates clock state. This is a safety boundary, not a mock backend.
+The target is not part of any install or package component until both supported
+operating systems have acknowledged apply, readback, and rollback
+implementations.
 
 ## Native adapter and daemon selection contract
 
@@ -129,8 +131,25 @@ Daemon selection is explicit through `DANG_NTP_DAEMON`:
 
 This is intentionally a narrow support declaration, not daemon autodetection.
 It prevents an installed but unintended implementation from silently taking
-ownership of the host clock. The current Linux and FreeBSD adapters implement
-selection and the transaction boundary only: their readiness flags remain
+ownership of the host clock. The Linux adapter now also renders a deterministic
+chrony include fragment and separate key-file image. It maps listener port,
+`local stratum`, 128- or 256-bit AES-CMAC keys, and
+unicast server/peer associations. It normalizes colon-separated hexadecimal
+keys without placing their bytes in errors. These semantics fail closed at
+their model path:
+
+- `source` on an association, because chrony's interface binding is global;
+- `burst` or `iburst` on a peer, because chrony supports them only on servers;
+- an association key unless authentication is enabled and the key is trusted;
+- AES-CMAC material that is not exactly 128 or 256 bits;
+- modeled HMAC identities, because chrony's SHA MACs use a different algorithm;
+- `master-stratum` 16, because chrony's local reference supports 1 through 15;
+- access rules until an RFC 8519 datastore owner and exact ACL mapping exist.
+
+The generated key-file path is
+`/etc/chrony/dangd-rfc9249.keys`; native installation will use mode 0600 and
+must verify that the host configuration includes the managed fragment before
+restart. Neither file is written yet. Linux and FreeBSD readiness flags remain
 false, and apply, rollback, and operational readback still fail closed. Native
 code must prefer daemon or service-manager APIs and must never invoke a shell.
 
@@ -148,13 +167,14 @@ Run the schema test through CTest after configuring against a dang checkout:
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug \
   -DDANGD_ROOT=/path/to/dang
 cmake --build build --target dangd_ntp_plugin ntp_config_test \
-  ntp_plugin_contract_test
+  ntp_chrony_config_test ntp_plugin_contract_test
 ctest --test-dir build -R rfc9249 --output-on-failure
 ```
 
-The next implementation increment must make the selected Linux chrony and
-FreeBSD ntpd adapters functional. They must implement acknowledged apply,
-retained before-image rollback, NMDA operational readback, and isolated tests.
+The next Linux increment is atomic installation/removal of the two rendered
+files, retained before-image rollback, and acknowledged chrony lifecycle
+control over systemd D-Bus. FreeBSD still needs its base-ntpd translation.
+Both adapters then need NMDA operational readback and isolated tests.
 Programmatic daemon or service-manager APIs are required where the platform
 supplies them; a process boundary is acceptable only when no supported API
 exists and must use an absolute executable path and fixed argument vector

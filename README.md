@@ -151,7 +151,9 @@ only with one another. Packaging does not weaken dangd's duplicate-owner check.
   features, claims the same generic exclusive `ntp` resource domain as the
   RFC 7317 `system` provider, and selects only chrony on Linux or base ntpd on
   FreeBSD through a typed per-transaction adapter contract. Per-action rollback
-  checkpoints and strict daemon-choice errors are implemented, but native
-  mutation and readback still fail closed. It is not installed or packaged
-  yet. Native apply/rollback, operational state, and production packaging
-  remain planned; see `plugins/ntp/README.md`.
+  checkpoints and strict daemon-choice errors are implemented. Linux also has
+  a tested, side-effect-free RFC 9249-to-chrony configuration and key-file
+  translator whose daemon-specific semantic checks run during validation.
+  Native file/service mutation, rollback, and readback still fail closed, and
+  FreeBSD translation has not started. It is not installed or packaged yet;
+  see `plugins/ntp/README.md`.

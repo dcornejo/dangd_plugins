@@ -53,6 +53,10 @@ class NativeAdapter {
   virtual ~NativeAdapter() = default;
 
   [[nodiscard]] virtual const AdapterDescriptor& descriptor() const = 0;
+  /** Reject daemon-specific semantic gaps before any action can run. */
+  [[nodiscard]] virtual bool ValidateConfig(const Config& proposed,
+                                            std::string* error,
+                                            std::string* error_path) = 0;
   [[nodiscard]] virtual bool ApplyAction(const Config& before,
                                          const Config& proposed,
                                          const PlannedAction& action,
@@ -88,6 +92,14 @@ class NativeAdapter {
  */
 [[nodiscard]] std::unique_ptr<NativeAdapter> CreateNativeAdapter(
     std::string_view requested, std::string* error, std::string* error_path);
+
+/** OS translation-unit hook used by the platform-neutral factory. */
+[[nodiscard]] std::unique_ptr<NativeAdapter> CreatePlatformAdapter(
+    AdapterDescriptor descriptor);
+
+/** Construct the shared fail-closed implementation for an incomplete port. */
+[[nodiscard]] std::unique_ptr<NativeAdapter> CreateFailClosedAdapter(
+    AdapterDescriptor descriptor);
 
 /** Stable model path associated with a planned native action. */
 [[nodiscard]] const char* ActionPath(std::string_view action_id);

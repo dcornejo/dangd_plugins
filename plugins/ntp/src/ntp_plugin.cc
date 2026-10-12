@@ -122,7 +122,7 @@ int Prepare(void*, const DangTransactionV1* transaction, void** output,
 }
 
 int Validate(void*, void* opaque, DangPluginErrorV1* error) {
-  const auto* prepared = static_cast<const Prepared*>(opaque);
+  auto* prepared = static_cast<Prepared*>(opaque);
   if (!prepared)
     return Fail(error, "the prepared RFC 9249 transaction is missing");
   std::set<std::string> known;
@@ -135,6 +135,8 @@ int Validate(void*, void* opaque, DangPluginErrorV1* error) {
                     "the RFC 9249 action graph has a forward or unknown "
                     "dependency");
   }
+  if (!prepared->adapter->ValidateConfig(prepared->proposed, &message, &path))
+    return Fail(error, message, path);
   return 1;
 }
 

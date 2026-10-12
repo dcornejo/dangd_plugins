@@ -9,6 +9,18 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Added the side-effect-free Linux chrony translation boundary for RFC 9249.
+  It produces deterministic managed configuration and separate key-file
+  images intended for root-only installation. The translation covers listener
+  port, local-reference stratum, AES-CMAC symmetric
+  authentication, and unicast server/peer associations. The Linux adapter now
+  performs this daemon-specific semantic validation during the generic plugin
+  validation phase. Association-specific source interfaces, peer burst modes,
+  untrusted association keys, unsupported ACL mappings, ambiguous AES-CMAC key
+  sizes, modeled HMAC identities (chrony's SHA MACs are not HMAC), and
+  chrony-inexpressible stratum 16 fail at their exact model paths;
+  errors never expose key bytes. Apply, rollback, and readback remain closed.
+
 - Added the RFC 9249 native-adapter contract and deterministic daemon
   selection. Each prepared transaction now owns a typed adapter plus one
   retained before-image/acknowledgement checkpoint per generic hardware
