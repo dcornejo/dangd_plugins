@@ -181,8 +181,14 @@ visible. Captured secret buffers are erased on release. This helper expects a
 trusted existing parent directory and is not wired into daemon actions yet;
 it does not provide crash recovery or atomicity across multiple files.
 
-The next Linux increment is adapter integration for installation/removal of the two rendered
-files, retained before-image rollback, and acknowledged chrony lifecycle
+`src/chrony_files.cc` now coordinates the pair: it captures both before-images,
+installs keys before the fragment, removes the fragment before keys, and
+compensates in reverse order on failure. Failed compensation retains retryable
+recovery state. The service adapter must keep chrony stopped until recovery
+finishes; the helper itself cannot acknowledge service state. The pair remains
+an in-memory compensating transaction, not a crash-recoverable atomic update.
+
+The next Linux increment is adapter integration with acknowledged chrony lifecycle
 control over systemd D-Bus. FreeBSD still needs its base-ntpd translation.
 Both adapters then need NMDA operational readback and isolated tests.
 Programmatic daemon or service-manager APIs are required where the platform

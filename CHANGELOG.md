@@ -9,6 +9,17 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Added a compensating transaction for chrony's configuration fragment and
+  private key file. Both original images are captured before mutation;
+  installation writes keys before the fragment, removal deletes the fragment
+  before keys, and rollback reverses each sequence. Apply failures immediately
+  compensate both files, while compensation failures retain retryable recovery
+  state and prevent restoration of old keys beneath a new fragment. Tests
+  exercise failures after both files become visible, failed compensation,
+  retry, removal, unsafe second capture and outside edits. The service adapter
+  must keep chrony stopped throughout file changes and pending recovery;
+  lifecycle integration and crash recovery remain pending.
+
 - Added a reusable POSIX managed-file primitive for the NTP native adapters.
   It retains original bytes, ownership and permissions; replaces files through
   exclusive temporary files and atomic rename; synchronizes file and directory
