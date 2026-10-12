@@ -166,6 +166,7 @@ endif()
 # This development target deliberately is not installed or packaged until a
 # native Linux/FreeBSD adapter can acknowledge apply and rollback operations.
 add_library(dangd_ntp_plugin MODULE
+  plugins/ntp/src/chrony_deployment.cc
   plugins/ntp/src/chrony_preflight.cc
   plugins/ntp/src/chrony_action_adapter.cc plugins/ntp/src/chrony_transaction.cc
   plugins/ntp/src/chrony_files.cc plugins/ntp/src/managed_file.cc
@@ -512,6 +513,12 @@ if(BUILD_TESTING)
   target_link_libraries(ntp_chrony_preflight_test PRIVATE GTest::gtest_main)
   target_compile_options(ntp_chrony_preflight_test PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME rfc9249_chrony_ownership_preflight COMMAND ntp_chrony_preflight_test)
+  add_executable(ntp_chrony_deployment_test tests/ntp_chrony_deployment_test.cc plugins/ntp/src/chrony_deployment.cc)
+  target_compile_features(ntp_chrony_deployment_test PRIVATE cxx_std_20)
+  target_include_directories(ntp_chrony_deployment_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(ntp_chrony_deployment_test PRIVATE GTest::gtest_main)
+  target_compile_options(ntp_chrony_deployment_test PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+  add_test(NAME rfc9249_chrony_deployment_trust COMMAND ntp_chrony_deployment_test)
   add_executable(ntp_managed_file_test
     tests/ntp_managed_file_test.cc plugins/ntp/src/managed_file.cc)
   target_compile_features(ntp_managed_file_test PRIVATE cxx_std_20)
@@ -553,6 +560,7 @@ if(BUILD_TESTING)
     target_compile_options(ntp_plugin_native_test PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   endif()
   add_executable(ntp_adapter_test
+    plugins/ntp/src/chrony_deployment.cc
     plugins/ntp/src/chrony_preflight.cc
     tests/ntp_adapter_test.cc
     plugins/ntp/src/ntp_config.cc

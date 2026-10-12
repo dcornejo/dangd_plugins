@@ -158,4 +158,59 @@ bool ChangeSystemdUnit(std::string_view unit, UnitOperation operation,
          (operation == UnitOperation::kStop && state == "failed") ||
          Fail("systemd job completed but ActiveState is " + state, error);
 }
+bool SystemdExecStart(std::string_view unit, std::vector<UnitCommand>* commands,
+                      std::string* error) {
+  if (!commands) return Fail("missing systemd command output", error);
+  commands->clear();
+  Bus bus;
+  if (!Open(&bus, error)) return false;
+  std::string state;
+  if (!ReadState(&bus, std::string(unit), &state, error)) return false;
+  sd_bus_message_rewind(bus.reply, true);
+  const char* raw_path = nullptr;
+  if (sd_bus_message_read(bus.reply, "o", &raw_path) < 0 || !raw_path)
+    return Fail("invalid systemd service object path", error);
+  const std::string path(raw_path);
+  sd_bus_message_unref(bus.reply);
+  bus.reply = nullptr;
+  const int result = sd_bus_call_method(
+      bus.bus, kService, path.c_str(), "org.freedesktop.DBus.Properties", "Get",
+      &bus.error, &bus.reply, "ss", "org.freedesktop.systemd1.Service",
+      "ExecStart");
+  if (result < 0)
+    return BusFailure("read systemd ExecStart", result, bus, error);
+  if (sd_bus_message_enter_container(bus.reply, 'v', "a(sasbttttuii)") <= 0 ||
+      sd_bus_message_enter_container(bus.reply, 'a', "(sasbttttuii)") <= 0)
+    return Fail("invalid systemd ExecStart signature", error);
+  std::vector<UnitCommand> parsed;
+  int entry;
+  while ((entry = sd_bus_message_enter_container(bus.reply, 'r',
+                                                 "sasbttttuii")) > 0) {
+    UnitCommand command;
+    const char* value = nullptr;
+    if (sd_bus_message_read(bus.reply, "s", &value) <= 0 || !value ||
+        sd_bus_message_enter_container(bus.reply, 'a', "s") <= 0)
+      return Fail("invalid systemd command entry", error);
+    command.executable = value;
+    int arg;
+    while ((arg = sd_bus_message_read(bus.reply, "s", &value)) > 0) {
+      command.arguments.emplace_back(value ? value : "");
+      if (command.arguments.size() > 128)
+        return Fail("systemd command has too many arguments", error);
+    }
+    int ignore = 0;
+    if (arg < 0 || sd_bus_message_exit_container(bus.reply) < 0 ||
+        sd_bus_message_read(bus.reply, "b", &ignore) <= 0 ||
+        sd_bus_message_skip(bus.reply, "ttttuii") < 0 ||
+        sd_bus_message_exit_container(bus.reply) < 0)
+      return Fail("invalid systemd command metadata", error);
+    command.ignore_failure = ignore != 0;
+    parsed.push_back(std::move(command));
+    if (parsed.size() > 16)
+      return Fail("too many systemd start commands", error);
+  }
+  if (entry < 0) return Fail("invalid systemd command array", error);
+  *commands = std::move(parsed);
+  return true;
+}
 }  // namespace dang::native

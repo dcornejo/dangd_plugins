@@ -3,14 +3,15 @@
 
 /** @file Linux chrony selection and daemon-specific validation boundary. */
 
+#include <unistd.h>
+
 #include <cstdlib>
-#include <fstream>
-#include <iterator>
 #include <memory>
 #include <utility>
 
 #include "plugins/ntp/src/chrony_action_adapter.h"
 #include "plugins/ntp/src/chrony_config.h"
+#include "plugins/ntp/src/chrony_deployment.h"
 #include "plugins/ntp/src/chrony_preflight.h"
 #include "plugins/ntp/src/linux/chrony_service.h"
 #include "plugins/ntp/src/ntp_adapter.h"
@@ -23,22 +24,35 @@ class WrapperService final : public ChronyService {
   explicit WrapperService(std::string root)
       : root_(std::move(root)), service_("dangd-ntp-live-test.service") {}
   bool Active(bool* active, std::string* error) override {
-    std::ifstream file(root_ + "/main.conf");
-    if (!file) {
-      if (error) *error = "cannot read dedicated chrony wrapper";
-      return false;
-    }
-    const std::string text{std::istreambuf_iterator<char>(file),
-                           std::istreambuf_iterator<char>()};
-    if (!ValidateChronyWrapper(text, root_ + "/managed.conf", true, error))
-      return false;
+    if (!Check(error)) return false;
     return service_.Active(active, error);
   }
   bool SetActive(bool active, std::string* error) override {
+    // Stop must remain available for compensation even after outside changes
+    // make activation preflight fail. Revalidate ownership and argv on start.
+    if (active && !Check(error)) return false;
     return service_.SetActive(active, error);
   }
 
  private:
+  bool Check(std::string* error) {
+    std::string text;
+    std::vector<native::UnitCommand> commands;
+    if (!ValidateChronyTree(root_, geteuid(), &text, error) ||
+        !ValidateChronyWrapper(text, root_ + "/managed.conf", true, error) ||
+        !native::SystemdExecStart("dangd-ntp-live-test.service", &commands,
+                                  error))
+      return false;
+    if (commands.size() != 1 || commands.front().ignore_failure) {
+      if (error) *error = "chrony service must have one strict start command";
+      return false;
+    }
+    return ValidateChronyInvocation(commands[0].executable,
+                                    commands[0].arguments,
+                                    "/run/dangd-ntp-live-chronyd",
+                                    root_ + "/main.conf", true, error) &&
+           ValidateChronyBinary(commands[0].executable, geteuid(), error);
+  }
   std::string root_;
   SystemdChronyService service_;
 };

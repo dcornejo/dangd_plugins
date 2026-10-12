@@ -9,6 +9,18 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Added descriptor-based chrony deployment trust checks. Every path component
+  is opened without following symbolic links; dedicated directories and files
+  must have expected owners, avoid group/other writes, and use singly linked
+  regular files. Keys must have no group/other access. Wrapper reads are capped
+  at 1 MiB. The live adapter reads structured systemd ExecStart through the
+  shared native helper and requires the exact direct executable/argv/wrapper
+  with clock isolation; wrappers, extra flags, substitutions and ignored
+  startup failures are rejected. Recheck before activation while preserving
+  stop for compensation. Portable tests exercise unsafe files/permissions and
+  invocation mismatches; the loaded live test verifies permission refusals
+  before mutation and successful NTP reply/rollback after correction.
+
 - Added conservative chrony wrapper ownership preflight: require one literal
   managed include and reject unmanaged sources, source directories, key files,
   listener/local-clock policy, alternate includes and unknown directives.

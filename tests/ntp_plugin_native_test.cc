@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <dlfcn.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -91,6 +92,7 @@ int main(int argc, char** argv) {
     std::ofstream out(root + "/managed.keys");
     out << "original keys";
   }
+  if (live && chmod((root + "/managed.keys").c_str(), 0600) < 0) return 1;
   setenv("DANG_NTP_NATIVE_TEST_ROOT", root.c_str(), 1);
   setenv("DANG_NTP_NATIVE_TEST_UNIT", argv[2], 1);
   void* library = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
@@ -154,6 +156,36 @@ int main(int argc, char** argv) {
     std::cout << (preflight_ok
                       ? "PASS: competing source rejected before mutation\n"
                       : "FAIL: wrapper preflight\n");
+  }
+  if (live) {
+    const auto refused = [&]() {
+      void* probe = nullptr;
+      bool rejected = base.prepare(base.context, &input, &probe, &error) &&
+                      base.validate(base.context, probe, &error);
+      DangHardwareActionV1 first{};
+      rejected =
+          rejected &&
+          actions.hardware_action_at(base.context, probe, 0, &first, &error) &&
+          !actions.apply_hardware_action(base.context, probe, first.action_id,
+                                         &error);
+      bool active = true;
+      rejected = rejected && service.Active(&active, &message) && !active &&
+                 Read(root + "/managed.conf") == "port 1124\nlocal stratum 8\n";
+      if (probe) base.release(base.context, probe);
+      return rejected;
+    };
+    if (chmod(root.c_str(), 0777) < 0) return 1;
+    const bool directory_refused = refused();
+    if (chmod(root.c_str(), 0755) < 0 ||
+        chmod((root + "/managed.keys").c_str(), 0644) < 0)
+      return 1;
+    const bool keys_refused = refused();
+    if (chmod((root + "/managed.keys").c_str(), 0600) < 0) return 1;
+    preflight_ok = preflight_ok && directory_refused && keys_refused;
+    std::cout << (directory_refused && keys_refused
+                      ? "PASS: unsafe directory and public keys rejected "
+                        "before mutation\n"
+                      : "FAIL: ownership preflight\n");
   }
   bool ok =
       preflight_ok && base.prepare(base.context, &input, &prepared, &error);

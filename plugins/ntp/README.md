@@ -258,8 +258,29 @@ restrictions without changing the host policy. Runtime unit/binary fixtures
 are removed after testing. This validates one real daemon configuration slice,
 not full NMDA state, authentication, source behavior or production installation.
 
-The next Linux increment is native service command-line and file/directory
-ownership verification, followed by broader observed-state readback.
+`src/chrony_deployment.cc` now opens each path component without following
+symbolic links and validates directory/file ownership and permission bits.
+The dedicated root and configuration files belong to the daemon supervisor's
+effective UID; ancestors belong to root or that UID. Group/other writable
+ancestors are rejected except root-owned sticky system temporary directories;
+the dedicated root cannot use that exception. Wrapper/fragment/key files must
+be singly linked regular files, and keys have no group/other permissions.
+The wrapper is read from its checked descriptor with a 1 MiB limit.
+
+The live adapter additionally reads structured systemd `ExecStart` through the
+shared native helper. It requires one direct trusted executable and the exact
+`-n -x -u root -f WRAPPER` test argv, with no ignored startup errors, alternate
+wrappers, substitutions or extra flags. The executable and its ancestors are
+checked too. These checks run before initial service capture and again before
+activation. Stop remains available even if later checks fail, allowing
+compensation. Native tests prove unsafe directories and public keys fail before
+mutation, then verify live NTP and rollback with corrected permissions.
+
+These are preflight checks, not locks against privileged concurrent edits.
+Full service-unit policy (including auxiliary commands/drop-ins), actual
+running-process argv and production deployment selection are still pending.
+The next Linux increment is broader observed-state readback and service-policy
+validation before enabling ordinary deployment.
 FreeBSD still needs its base-ntpd translation.
 Both adapters then need NMDA operational readback and isolated tests.
 Programmatic daemon or service-manager APIs are required where the platform
