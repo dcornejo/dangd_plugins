@@ -9,6 +9,16 @@ All notable changes to the external dangd plugin collection are recorded here.
 
 ### Changed
 
+- Added the native Linux chrony service boundary using a shared systemd sd-bus
+  helper. RFC 7317 now uses that helper too. It subscribes before enqueueing,
+  retains early job signals, correlates the exact job, bounds method calls and
+  waits, and verifies observed ActiveState. Readback loads and retains inactive
+  units that systemd may have garbage-collected; a completed stop accepts stable
+  inactive/failed state, while failed activation is rejected. Disposable native
+  units validated start, reload/restart, stop, repeated stop and failed start.
+  The host chrony service was not modified. RFC 9249 ABI action wiring remains
+  pending; its loaded plugin continues to reject mutation.
+
 - Added a service-bracketed chrony transaction over the existing file-pair
   coordinator. It captures initial service state, requires an acknowledged
   stop before file changes, activates only after successful file installation,

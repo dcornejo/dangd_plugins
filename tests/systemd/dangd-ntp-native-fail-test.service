@@ -1,0 +1,8 @@
+# Copyright 2026 David Cornejo
+# SPDX-License-Identifier: Apache-2.0
+[Unit]
+Description=Disposable dangd failed native service acknowledgement test
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/false
+RemainAfterExit=yes

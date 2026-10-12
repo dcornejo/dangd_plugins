@@ -28,7 +28,9 @@ failure and rollback tests.
   deployment guard remains. Linux NTP service control now calls the systemd
   manager over sd-bus, subscribes before enqueueing the unit job, correlates
   its object path with `JobRemoved`, and accepts only the `done` result under a
-  bounded timeout. FreeBSD base ntpd exposes no service-manager socket or
+  bounded timeout. The shared `plugins/common/systemd_unit.cc` helper now also
+  checks observed ActiveState and serves RFC 9249's native service boundary;
+  disposable-unit tests cover start/reload/stop and failed starts. FreeBSD base ntpd exposes no service-manager socket or
   library API; its documented lifecycle boundary is service(8) and rc.d. The
   provider therefore uses `posix_spawn(3)` with the absolute
   `/usr/sbin/service` path and the fixed argv `ntpd onerestart` or

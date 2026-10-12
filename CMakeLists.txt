@@ -282,7 +282,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
   set_target_properties(dangd_rib_plugin PROPERTIES PREFIX "")
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(DANG_SYSTEM_PLATFORM_SOURCE
-      plugins/system/src/linux/platform_linux.cc)
+      plugins/system/src/linux/platform_linux.cc plugins/common/systemd_unit.cc)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(DANG_SYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
     set(DANG_SYSTEM_PLATFORM_LIBRARIES PkgConfig::DANG_SYSTEMD)
@@ -526,6 +526,16 @@ if(BUILD_TESTING)
   target_compile_options(ntp_chrony_transaction_test PRIVATE
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   add_test(NAME rfc9249_chrony_service_transaction COMMAND ntp_chrony_transaction_test)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(ntp_systemd_native_test tests/ntp_systemd_native_test.cc
+      plugins/common/systemd_unit.cc)
+    target_compile_features(ntp_systemd_native_test PRIVATE cxx_std_20)
+    target_include_directories(ntp_systemd_native_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(ntp_systemd_native_test PRIVATE PkgConfig::DANG_SYSTEMD)
+    target_compile_options(ntp_systemd_native_test PRIVATE
+      -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    # Explicit privileged execution only; default CTest never mutates services.
+  endif()
   add_executable(ntp_adapter_test
     tests/ntp_adapter_test.cc
     plugins/ntp/src/chrony_config.cc

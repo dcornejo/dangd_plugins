@@ -206,7 +206,11 @@ at a time with local console recovery available. Leave
 and restricted by NACM.
 
 Linux NTP reload/restart and stop use the systemd D-Bus manager and wait for
-the exact asynchronous job outcome. FreeBSD uses `posix_spawn(3)` to execute
+the exact asynchronous job outcome through the collection's shared
+`plugins/common/systemd_unit.cc` helper, then verify observed ActiveState.
+Stopped units are loaded/retained for readback, including units garbage-collected
+by systemd; a completed stop can leave stable inactive or failed state.
+FreeBSD uses `posix_spawn(3)` to execute
 the absolute `/usr/sbin/service` path with only `ntpd onerestart` or
 `ntpd onestop`. This is the documented base-system lifecycle interface; no
 modeled data enters its argv and no shell is involved. See the collection-wide

@@ -196,11 +196,27 @@ stopped state again (a failed activation may have started the daemon), restores
 files, and restores the initial active/inactive state. Any compensation failure
 retains retryable recovery state. File recovery failure keeps the daemon
 stopped. Tests use real files and injected service outcomes, including errors
-that change native state. This coordinator is not yet wired to systemd or the
-loaded plugin's hardware-action callbacks.
+that change native state.
 
-The next Linux increment is native implementation of this service boundary
-over systemd D-Bus and ABI action integration. FreeBSD still needs its base-ntpd translation.
+`src/linux/chrony_service.h` implements this boundary through shared
+`plugins/common/systemd_unit.cc` native sd-bus calls. It subscribes before
+enqueueing, correlates the exact job (including early signals), and checks
+observed ActiveState afterwards. Method calls have five-second timeouts and
+job completion a thirty-second limit. State readback loads/retains units that
+systemd may unload after stopping. Failed starts are rejected; an acknowledged
+stop may leave an inactive or failed unit, both stable non-running states.
+RFC 7317 uses the same helper for its reload/restart and stop operations.
+
+The explicit privileged `ntp_systemd_native_test` accepts only disposable unit
+names defined in `tests/systemd`. Linux validation installed those definitions
+under `/run/systemd/system`, tested start/reload/stop/repeated stop and failed
+start, then removed the definitions and reloaded systemd. Default CTest never
+runs service mutations. This is service-manager evidence, not a live chronyd
+configuration/readback test. The loaded plugin is still not wired to this
+boundary and continues to fail closed at hardware actions.
+
+The next Linux increment is ABI action integration and isolated chronyd
+configuration/readback validation. FreeBSD still needs its base-ntpd translation.
 Both adapters then need NMDA operational readback and isolated tests.
 Programmatic daemon or service-manager APIs are required where the platform
 supplies them; a process boundary is acceptable only when no supported API
