@@ -3,6 +3,8 @@
 
 # dang_plugins
 
+[![CI](https://github.com/dcornejo/dangd_plugins/actions/workflows/ci.yml/badge.svg)](https://github.com/dcornejo/dangd_plugins/actions/workflows/ci.yml)
+
 `dang_plugins` is the development home for YANG models and their implementation
 plugins for the `dangd` NETCONF server. It is intentionally separate from the
 server repository so model-specific experiments, platform integrations, and
@@ -11,6 +13,14 @@ release schedules do not become part of the trusted server core.
 The plugin ABI and runtime contract remain owned by `dang`. This repository
 includes `dangd/plugin_api.h` from an installed `dang` development package or a
 specified `dang` source tree; it does not carry a private copy of the ABI.
+
+## Development approach
+
+This collection is developed with LLM assistance (ChatGPT) under the
+maintainer's direction. Generated code is held to the same standard as any other
+contribution: it must come with thorough tests, and before it is committed it
+must build and pass the test suite on Linux and FreeBSD virtual machines. See
+[Testing and validation](#testing-and-validation).
 
 ## Repository layout
 
@@ -50,12 +60,14 @@ The live inventory and ordered removal work are maintained in
 
 Install the complete collection's build dependencies first. PAM development
 headers are required even when testing another provider because the default
-build includes `pam_dangd`:
+build includes `pam_dangd`, and `libsystemd-dev` is required on Linux for the
+system and NTP providers:
 
 ```sh
 # Debian/Ubuntu
 sudo apt install build-essential cmake ninja-build git pkg-config \
-  libxml2-dev nlohmann-json3-dev libpugixml-dev libgtest-dev libpam0g-dev
+  libxml2-dev nlohmann-json3-dev libpugixml-dev libgtest-dev libpam0g-dev \
+  libsystemd-dev
 
 # FreeBSD (PAM headers are part of the base system)
 sudo pkg install cmake ninja git pkgconf libxml2 nlohmann-json pugixml googletest
@@ -85,6 +97,25 @@ corresponding module suffix on another supported POSIX platform. Load it with:
 dangd --model /path/to/root.yang --config /path/to/config.xml \
   --plugin ./build/dangd_example_external_plugin.so --check
 ```
+
+## Testing and validation
+
+- **Portable tests.** `ctest` runs plugin loader, contract, parser, translator,
+  and transaction tests that need no special privileges. These run in
+  [GitHub Actions](.github/workflows/ci.yml) on every push and pull request
+  (Linux only).
+- **Native tests.** Tests that change operating-system state are opt-in
+  (`-DDANG_RIB_NATIVE_TESTS=ON`, `-DDANG_FRR_NATIVE_TESTS=ON`,
+  `-DDANG_SYSTEM_NATIVE_TESTS=ON`, or `DANG_RUN_PRIVILEGED_IP_TESTS=1`) and run
+  only in disposable isolation: network namespaces on Linux and VNET jails on
+  FreeBSD. The `tests/run_*_native.sh` scripts drive these runs, and
+  `tests/platform` holds the two-host Kea scenarios.
+- **Pre-commit validation on real systems.** GitHub-hosted runners do not cover
+  FreeBSD or privileged network behavior. Before a change is committed it is
+  built and tested on Linux and FreeBSD virtual machines. The evidence is
+  recorded in the `dang` [standards compliance ledger](https://github.com/dcornejo/dang/blob/main/docs/COMPLIANCE.md).
+- **Command-execution audit.** Provider code is audited for process creation;
+  see [`COMMAND_EXECUTION_AUDIT.md`](COMMAND_EXECUTION_AUDIT.md).
 
 ## Adding a model plugin
 
