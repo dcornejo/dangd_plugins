@@ -1,0 +1,36 @@
+# Copyright 2026 David Cornejo
+# SPDX-License-Identifier: Apache-2.0
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check out dang (plugin ABI headers)
+        uses: actions/checkout@v6
+        with:
+          repository: dcornejo/dang
+          path: dang
+      - name: Install dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          build-essential cmake ninja-build pkg-config libxml2-dev
+          nlohmann-json3-dev libpugixml-dev libgtest-dev libpam0g-dev
+          libsystemd-dev
+      - name: Configure
+        run: >-
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DDANGD_ROOT="${{ github.workspace }}/dang"
+      - name: Build
+        run: cmake --build build
+      - name: Test (portable suite; native tests stay opt-in)
+        run: ctest --test-dir build --output-on-failure
